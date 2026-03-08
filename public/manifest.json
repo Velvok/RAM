@@ -1,0 +1,24 @@
+{
+  "name": "RAM - Sistema de Gestión de Corte y Stock",
+  "short_name": "RAM Velvok",
+  "description": "Sistema industrial de gestión de corte y stock para operaciones metalúrgicas",
+  "start_url": "/planta",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#1e40af",
+  "orientation": "landscape",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
