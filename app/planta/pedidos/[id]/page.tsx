@@ -4,7 +4,9 @@ import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { finishCutOrder } from '@/app/actions/cut-orders'
-import { CheckCircle2, ArrowLeft, X } from 'lucide-react'
+import { reassignCutOrder } from '@/app/actions/reassignments'
+import { CheckCircle2, ArrowLeft, X, ArrowRightLeft } from 'lucide-react'
+import ReassignmentModal from '@/components/stock/reassignment-modal'
 
 export default function PlantaPedidoDetallePage() {
   const router = useRouter()
@@ -15,6 +17,7 @@ export default function PlantaPedidoDetallePage() {
   const [pedido, setPedido] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
+  const [reassignModalOpen, setReassignModalOpen] = useState(false)
   const [selectedCutOrder, setSelectedCutOrder] = useState<any>(null)
   const [formData, setFormData] = useState({
     quantityCut: '',
@@ -115,6 +118,23 @@ export default function PlantaPedidoDetallePage() {
     }
   }
 
+  function openReassignModal(cutOrder: any) {
+    setSelectedCutOrder(cutOrder)
+    setReassignModalOpen(true)
+  }
+
+  async function handleReassign(fromCutOrderId: string, toCutOrderId: string) {
+    try {
+      const result = await reassignCutOrder(fromCutOrderId, toCutOrderId, 'Reasignación desde planta')
+      alert(`Material reasignado correctamente. ${result.wasDisassembled ? 'Pedido origen desarmado.' : ''}`)
+      await loadPedido()
+    } catch (error: any) {
+      console.error('Error reassigning:', error)
+      alert(error.message || 'Error al reasignar material')
+      throw error
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -186,13 +206,11 @@ export default function PlantaPedidoDetallePage() {
                         </p>
                       </div>
                       <span className={`px-3 py-1.5 rounded-full text-xs font-bold ${
-                        cutOrder.status === 'lanzada'
-                          ? 'bg-blue-500/20 text-blue-400'
-                          : cutOrder.status === 'en_proceso'
+                        cutOrder.status === 'pendiente'
                           ? 'bg-yellow-500/20 text-yellow-400'
                           : 'bg-green-500/20 text-green-400'
                       }`}>
-                        {cutOrder.status}
+                        {cutOrder.status === 'pendiente' ? 'Pendiente' : 'Completada'}
                       </span>
                     </div>
 
@@ -214,16 +232,26 @@ export default function PlantaPedidoDetallePage() {
                     </div>
                   </div>
 
-                  {/* Botón de Confirmar a la derecha */}
-                  <div className="flex-shrink-0">
-                    {cutOrder.status !== 'completada' && (
-                      <button
-                        onClick={() => openFinishModal(cutOrder)}
-                        className="px-6 py-3 bg-green-600 hover:bg-green-500 text-white rounded-lg font-bold transition-colors flex items-center gap-2"
-                      >
-                        <CheckCircle2 className="w-5 h-5" />
-                        Confirmar
-                      </button>
+                  {/* Botones a la derecha */}
+                  <div className="flex-shrink-0 flex gap-2">
+                    {cutOrder.status === 'pendiente' && (
+                      <>
+                        <button
+                          onClick={() => openReassignModal(cutOrder)}
+                          className="px-4 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold transition-colors flex items-center gap-2"
+                          title="Reasignar material de otro pedido"
+                        >
+                          <ArrowRightLeft className="w-5 h-5" />
+                          Reasignar
+                        </button>
+                        <button
+                          onClick={() => openFinishModal(cutOrder)}
+                          className="px-6 py-3 bg-green-600 hover:bg-green-500 text-white rounded-lg font-bold transition-colors flex items-center gap-2"
+                        >
+                          <CheckCircle2 className="w-5 h-5" />
+                          Confirmar
+                        </button>
+                      </>
                     )}
                     {cutOrder.status === 'completada' && (
                       <div className="px-6 py-3 bg-green-500/20 text-green-400 rounded-lg font-bold flex items-center gap-2">
@@ -349,6 +377,14 @@ export default function PlantaPedidoDetallePage() {
             </div>
           </div>
         )}
+
+        {/* Modal de Reasignación */}
+        <ReassignmentModal
+          isOpen={reassignModalOpen}
+          onClose={() => setReassignModalOpen(false)}
+          targetCutOrder={selectedCutOrder}
+          onReassign={handleReassign}
+        />
       </div>
     </div>
   )

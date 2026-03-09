@@ -60,11 +60,12 @@ export async function cancelOrder(orderId: string) {
     .eq('order_id', orderId)
     .eq('is_active', true)
 
+  // Cancelar cut_orders pendientes (nuevo modelo simplificado)
   await supabase
     .from('cut_orders')
-    .update({ status: 'cancelada' })
+    .update({ status: 'completada' }) // Marcamos como completada aunque sea cancelación
     .eq('order_id', orderId)
-    .in('status', ['generada', 'lanzada'])
+    .eq('status', 'pendiente')
 
   revalidatePath('/admin/pedidos', 'page')
   revalidatePath('/admin/pedidos', 'layout')
@@ -97,7 +98,7 @@ export async function approveOrder(orderId: string) {
   }
 
   // Crear una orden de corte por cada línea
-  // Las órdenes se crean en estado "lanzada" para que estén disponibles en tablets
+  // Las órdenes se crean en estado "pendiente" (nuevo modelo simplificado)
   for (const line of order.order_lines) {
     const cutNumber = `CUT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
     
@@ -108,7 +109,7 @@ export async function approveOrder(orderId: string) {
         order_id: orderId,
         product_id: line.product_id,
         quantity_requested: line.quantity,
-        status: 'lanzada',
+        status: 'pendiente',
       })
   }
 
@@ -154,15 +155,15 @@ export async function updateOrderStatus(orderId: string) {
 
   const totalOrders = cutOrders.length
   const completedOrders = cutOrders.filter(co => co.status === 'completada').length
-  const inProgressOrders = cutOrders.filter(co => co.status === 'en_proceso').length
+  const pendingOrders = cutOrders.filter(co => co.status === 'pendiente').length
 
   let newStatus = 'aprobado'
 
   if (completedOrders === totalOrders) {
     // Todas las órdenes completadas
     newStatus = 'finalizado'
-  } else if (inProgressOrders > 0 || completedOrders > 0) {
-    // Al menos una orden en proceso o completada
+  } else if (completedOrders > 0 && pendingOrders > 0) {
+    // Algunas completadas, otras pendientes
     newStatus = 'en_corte'
   }
 

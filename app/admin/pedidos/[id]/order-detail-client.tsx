@@ -119,7 +119,15 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                     {line.product?.name}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                    {line.quantity} m
+                    {line.units && line.length_meters ? (
+                      <div>
+                        <span className="font-semibold">{line.units} unidades</span>
+                        <span className="text-slate-400"> × {line.length_meters}m</span>
+                        <div className="text-xs text-slate-400">Total: {line.quantity}m</div>
+                      </div>
+                    ) : (
+                      <span>{line.quantity} m</span>
+                    )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
                     {formatCurrency(line.unit_price)}
