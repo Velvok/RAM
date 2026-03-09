@@ -1,123 +1,139 @@
-import { createClient } from '@/lib/supabase/server'
-import Link from 'next/link'
-import { Package, Calendar, Layers } from 'lucide-react'
+'use client'
 
-// Deshabilitar caché
-export const dynamic = 'force-dynamic'
-export const revalidate = 0
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { getCutOrders } from '@/app/actions/cut-orders'
 
-export default async function PlantaPedidosPage() {
-  const supabase = await createClient()
+export default function PlantaPedidosPage() {
+  const router = useRouter()
+  const [operator, setOperator] = useState<any>(null)
+  const [orders, setOrders] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
 
-  // Obtener pedidos aprobados y en corte con sus órdenes de corte
-  const { data: orders, error } = await supabase
-    .from('orders')
-    .select(`
-      *,
-      client:clients(*),
-      cut_orders(
-        *,
-        product:products!cut_orders_product_id_fkey(*),
-        assigned_operator:users!cut_orders_assigned_to_fkey(*)
-      )
-    `)
-    .in('status', ['aprobado', 'en_corte'])
-    .order('created_at', { ascending: false })
+  useEffect(() => {
+    const operatorData = localStorage.getItem('operator')
+    if (!operatorData) {
+      router.push('/planta/login')
+      return
+    }
+    setOperator(JSON.parse(operatorData))
+    loadOrders()
+  }, [router])
 
-  if (error) {
-    console.error('Error loading orders:', error)
+  async function loadOrders() {
+    try {
+      // Mostrar TODAS las órdenes lanzadas
+      const data = await getCutOrders('lanzada')
+      setOrders(data || [])
+    } catch (error) {
+      console.error('Error loading orders:', error)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const pedidos = orders || []
+  function handleLogout() {
+    localStorage.removeItem('operator')
+    router.push('/')
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-white text-xl">Cargando...</div>
+      </div>
+    )
+  }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-900">Pedidos Disponibles</h2>
-        <p className="text-slate-600 mt-1">
-          Selecciona un pedido para ver sus órdenes de corte
-        </p>
-      </div>
-
-      {pedidos.length === 0 ? (
-        <div className="bg-white rounded-lg shadow p-12 text-center">
-          <Package className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-          <p className="text-slate-500 text-lg">No hay pedidos disponibles</p>
-          <p className="text-slate-400 text-sm mt-2">
-            Los pedidos aparecerán aquí cuando el admin los apruebe
-          </p>
+    <div className="min-h-screen p-6">
+      <div className="max-w-6xl mx-auto space-y-6">
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold text-white">Órdenes de Corte</h1>
+            <p className="text-slate-300 mt-1">
+              Operario: {operator?.full_name}
+            </p>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="px-6 py-3 bg-red-600 hover:bg-red-500 text-white rounded-lg font-semibold transition-colors"
+          >
+            Cerrar Sesión
+          </button>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {pedidos.map((order) => {
-            const totalCutOrders = order.cut_orders?.length || 0
-            const completedCutOrders = order.cut_orders?.filter((co: any) => co.status === 'completada').length || 0
-            const inProgressCutOrders = order.cut_orders?.filter((co: any) => co.status === 'en_proceso').length || 0
-            const pendingCutOrders = totalCutOrders - completedCutOrders - inProgressCutOrders
 
-            return (
-              <Link
+        {orders.length === 0 ? (
+          <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg p-12 border border-slate-700 text-center">
+            <svg className="mx-auto h-16 w-16 text-slate-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <h3 className="text-xl font-semibold text-white mb-2">
+              No hay órdenes disponibles
+            </h3>
+            <p className="text-slate-400">
+              No hay órdenes de corte disponibles en este momento
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {orders.map((order: any) => (
+              <div
                 key={order.id}
-                href={`/planta/pedidos/${order.id}`}
-                className="bg-white rounded-lg border-2 border-slate-200 hover:border-blue-400 p-5 transition-all hover:shadow-lg"
+                onClick={() => router.push(`/planta/ordenes/${order.id}`)}
+                className="bg-slate-800/50 backdrop-blur-sm rounded-lg p-6 border border-slate-700 hover:border-blue-500 cursor-pointer transition-all"
               >
-                {/* Header */}
-                <div className="flex items-start justify-between mb-4">
+                <div className="flex justify-between items-start mb-4">
                   <div>
-                    <h3 className="text-lg font-bold text-slate-900">
-                      {order.order_number}
+                    <h3 className="text-xl font-bold text-white">
+                      {order.cut_number}
                     </h3>
-                    <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
-                      <Calendar className="w-3.5 h-3.5" />
-                      {new Date(order.created_at).toLocaleDateString('es-ES', {
-                        day: '2-digit',
-                        month: 'short'
-                      })}
-                    </div>
+                    <p className="text-sm text-slate-400 mt-1">
+                      Pedido: {order.order?.order_number}
+                    </p>
                   </div>
-                  <span className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
-                    order.status === 'en_corte' 
-                      ? 'bg-blue-100 text-blue-800' 
-                      : 'bg-yellow-100 text-yellow-800'
-                  }`}>
-                    {order.status === 'en_corte' ? 'En Corte' : 'Aprobado'}
+                  <span className="px-3 py-1 bg-blue-500/20 text-blue-400 rounded-full text-sm font-semibold">
+                    {order.status}
                   </span>
                 </div>
 
-                {/* Órdenes de Corte */}
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-                    <Layers className="w-4 h-4" />
-                    Órdenes de Corte
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Producto:</span>
+                    <span className="text-white font-semibold">
+                      {order.product?.name}
+                    </span>
                   </div>
-                  
-                  <div className="grid grid-cols-3 gap-2 text-center">
-                    <div className="bg-slate-50 rounded-lg p-2">
-                      <p className="text-2xl font-bold text-slate-900">{totalCutOrders}</p>
-                      <p className="text-xs text-slate-600">Total</p>
-                    </div>
-                    <div className="bg-blue-50 rounded-lg p-2">
-                      <p className="text-2xl font-bold text-blue-600">{inProgressCutOrders}</p>
-                      <p className="text-xs text-slate-600">En Proceso</p>
-                    </div>
-                    <div className="bg-yellow-50 rounded-lg p-2">
-                      <p className="text-2xl font-bold text-yellow-600">{pendingCutOrders}</p>
-                      <p className="text-xs text-slate-600">Pendientes</p>
-                    </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Cantidad:</span>
+                    <span className="text-white font-semibold">
+                      {order.quantity_requested} kg
+                    </span>
                   </div>
+                  {order.assigned_operator && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Asignado a:</span>
+                      <span className="text-yellow-400 font-semibold">
+                        {order.assigned_operator.full_name}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
-                {/* Indicador de acción */}
-                <div className="mt-4 pt-4 border-t border-slate-100">
-                  <p className="text-sm text-blue-600 font-semibold text-center">
-                    Toca para ver órdenes →
-                  </p>
+                <div className="mt-6 pt-4 border-t border-slate-700">
+                  <button className={`w-full py-3 rounded-lg font-semibold transition-colors ${
+                    order.assigned_operator 
+                      ? 'bg-yellow-600 hover:bg-yellow-500' 
+                      : 'bg-blue-600 hover:bg-blue-500'
+                  } text-white`}>
+                    {order.assigned_operator ? 'Ver Orden Asignada →' : 'Iniciar Corte →'}
+                  </button>
                 </div>
-              </Link>
-            )
-          })}
-        </div>
-      )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

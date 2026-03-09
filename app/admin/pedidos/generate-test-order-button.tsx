@@ -3,11 +3,13 @@
 import { useState } from 'react'
 import { generateTestOrder } from '@/app/actions/test-data'
 import { useRouter } from 'next/navigation'
+import ErrorAlertModal from '@/components/error-alert-modal'
 
 export default function GenerateTestOrderButton() {
   const [isOpen, setIsOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [numLines, setNumLines] = useState(1)
+  const [errorModal, setErrorModal] = useState({ isOpen: false, message: '' })
   const router = useRouter()
 
   async function handleGenerate() {
@@ -16,19 +18,30 @@ export default function GenerateTestOrderButton() {
       const result = await generateTestOrder('nuevo', numLines)
       
       if (result.error) {
-        alert('Error: ' + result.error)
+        // Cerrar modal de generar y mostrar error
+        setIsOpen(false)
+        
+        const errorMessage = result.error.includes('order_status') || result.error.includes('nuevo')
+          ? 'Primero debes ejecutar la migración de estados en Supabase.\n\nPasos:\n1. Ve a Supabase Dashboard → SQL Editor\n2. Ejecuta el archivo:\n   supabase/migrations/00003_update_order_states.sql\n3. Intenta generar el pedido nuevamente'
+          : result.error
+        
+        setErrorModal({ isOpen: true, message: errorMessage })
       } else {
         setIsOpen(false)
-        // Forzar refresh del router sin caché
+        // Forzar refresh múltiple para evitar caché
         router.refresh()
-        // Pequeño delay y segundo refresh para asegurar
         setTimeout(() => {
           router.refresh()
-        }, 100)
+        }, 50)
+        setTimeout(() => {
+          router.refresh()
+        }, 200)
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error generating test order:', error)
-      alert('Error al generar pedido de prueba')
+      setIsOpen(false)
+      const errorMessage = error?.message || 'Error desconocido al generar pedido de prueba'
+      setErrorModal({ isOpen: true, message: errorMessage })
     } finally {
       setLoading(false)
     }
@@ -36,6 +49,13 @@ export default function GenerateTestOrderButton() {
 
   return (
     <>
+      <ErrorAlertModal
+        isOpen={errorModal.isOpen}
+        onClose={() => setErrorModal({ isOpen: false, message: '' })}
+        title="Error al Generar Pedido"
+        message={errorModal.message}
+      />
+
       <button
         onClick={() => setIsOpen(true)}
         className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-semibold transition-colors"
