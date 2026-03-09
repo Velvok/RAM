@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { updateOrderStatus } from './orders'
 
 export async function getCutOrders(status?: string) {
   const supabase = await createClient()
@@ -93,6 +94,9 @@ export async function startCutOrder(cutOrderId: string, operatorId: string) {
     .update({ stock_en_proceso: supabase.rpc('increment', { x: cutOrder.quantity_requested }) })
     .eq('product_id', cutOrder.product_id)
 
+  // Actualizar estado del pedido
+  await updateOrderStatus(cutOrder.order_id)
+
   revalidatePath('/planta/ordenes', 'page')
   revalidatePath('/planta/ordenes', 'layout')
   revalidatePath(`/planta/ordenes/${cutOrderId}`, 'page')
@@ -149,9 +153,9 @@ export async function finishCutOrder(
   const { error: updateError } = await supabase
     .from('cut_orders')
     .update({
-      status: 'finalizada',
+      status: 'completada',
       quantity_cut: quantityCut,
-      finished_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
     })
     .eq('id', cutOrderId)
 
@@ -213,6 +217,9 @@ export async function finishCutOrder(
     .update({ is_active: false, released_at: new Date().toISOString() })
     .eq('cut_order_id', cutOrderId)
     .eq('is_active', true)
+
+  // Actualizar estado del pedido
+  await updateOrderStatus(cutOrder.order_id)
 
   revalidatePath('/planta/ordenes', 'page')
   revalidatePath('/planta/ordenes', 'layout')
