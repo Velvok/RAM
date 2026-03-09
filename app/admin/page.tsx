@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { MetricCard } from '@/components/metric-card'
 import { Package, TrendingUp, AlertTriangle, Clock } from 'lucide-react'
+import DashboardOrdersList from '@/components/dashboard-orders-list'
 
 import { getOrders } from '@/app/actions/orders'
 import { getCutOrders } from '@/app/actions/cut-orders'
@@ -19,9 +20,15 @@ export default async function AdminDashboard() {
   try {
     const supabase = await createClient()
 
+    // Obtener pedidos con toda la información necesaria
     const ordersResult = await supabase
       .from('orders')
-      .select('*')
+      .select(`
+        *,
+        client:clients(*),
+        lines:order_lines(*, product:products(*)),
+        cut_orders(*)
+      `)
       .order('created_at', { ascending: false })
       .limit(10)
     orders = ordersResult.data || []
@@ -108,63 +115,8 @@ export default async function AdminDashboard() {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-slate-900 mb-4">
-            Pedidos Recientes
-          </h3>
-          <div className="space-y-3">
-            {orders?.slice(0, 5).map((order) => (
-              <div
-                key={order.id}
-                className="flex items-center justify-between p-3 bg-slate-50 rounded-lg"
-              >
-                <div>
-                  <p className="font-medium text-slate-900">{order.order_number}</p>
-                  <p className="text-sm text-slate-600">
-                    {new Date(order.created_at).toLocaleDateString('es-AR')}
-                  </p>
-                </div>
-                <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                  order.status === 'lanzado' ? 'bg-blue-100 text-blue-800' :
-                  order.status === 'en_corte' ? 'bg-yellow-100 text-yellow-800' :
-                  order.status === 'despachado' ? 'bg-green-100 text-green-800' :
-                  'bg-slate-100 text-slate-800'
-                }`}>
-                  {order.status}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-slate-900 mb-4">
-            Órdenes de Corte Activas
-          </h3>
-          <div className="space-y-3">
-            {cutOrders?.slice(0, 5).map((cutOrder) => (
-              <div
-                key={cutOrder.id}
-                className="flex items-center justify-between p-3 bg-slate-50 rounded-lg"
-              >
-                <div>
-                  <p className="font-medium text-slate-900">{cutOrder.cut_number}</p>
-                  <p className="text-sm text-slate-600">
-                    {cutOrder.quantity_requested} kg solicitados
-                  </p>
-                </div>
-                <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                  cutOrder.status === 'en_proceso' ? 'bg-yellow-100 text-yellow-800' :
-                  'bg-blue-100 text-blue-800'
-                }`}>
-                  {cutOrder.status}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+      {/* Lista de Pedidos Recientes */}
+      <DashboardOrdersList orders={orders} />
     </div>
   )
 }
