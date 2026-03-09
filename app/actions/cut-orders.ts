@@ -70,13 +70,15 @@ export async function assignCutOrder(cutOrderId: string, operatorId: string) {
   return data
 }
 
-export async function startCutOrder(cutOrderId: string) {
+export async function startCutOrder(cutOrderId: string, operatorId: string) {
   const supabase = await createClient()
 
+  // Al iniciar el corte, asignar automáticamente al operario
   const { data, error } = await supabase
     .from('cut_orders')
     .update({
       status: 'en_proceso',
+      assigned_to: operatorId,
       started_at: new Date().toISOString(),
     })
     .eq('id', cutOrderId)

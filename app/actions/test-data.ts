@@ -57,7 +57,6 @@ export async function generateTestOrder(status: string = 'ingresado', numLines: 
       status: status,
       total_weight: totalWeight,
       total_amount: totalAmount,
-      payment_verified: status !== 'ingresado',
       notes: `Pedido de prueba con ${numLines} línea(s)`,
     })
     .select()

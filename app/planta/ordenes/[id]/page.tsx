@@ -11,6 +11,7 @@ export default function OrdenDetallePage() {
   const router = useRouter()
   const params = useParams()
   const [order, setOrder] = useState<any>(null)
+  const [operator, setOperator] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
   const [showFinishModal, setShowFinishModal] = useState(false)
@@ -18,6 +19,13 @@ export default function OrdenDetallePage() {
   const { showError, ErrorDialog } = useError()
 
   useEffect(() => {
+    // Obtener operario del localStorage
+    const operatorData = localStorage.getItem('operator')
+    if (!operatorData) {
+      router.push('/planta/login')
+      return
+    }
+    setOperator(JSON.parse(operatorData))
     loadOrder()
   }, [params.id])
 
@@ -33,10 +41,20 @@ export default function OrdenDetallePage() {
   }
 
   async function handleStart() {
+    if (!operator) {
+      showError('No se pudo identificar al operario', 'Error de Sesión')
+      return
+    }
+
     setProcessing(true)
     try {
-      await startCutOrder(order.id)
+      // Pasar el ID del operario para asignación automática
+      await startCutOrder(order.id, operator.id)
       await loadOrder()
+      showSuccess(
+        'Orden iniciada y asignada correctamente',
+        '¡Corte Iniciado!'
+      )
     } catch (error: any) {
       console.error('Error starting order:', error)
       showError(error?.message || 'No se pudo iniciar la orden', 'Error al Iniciar')

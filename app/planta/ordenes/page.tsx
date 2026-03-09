@@ -22,6 +22,7 @@ export default function OrdenesPlantaPage() {
 
   async function loadOrders() {
     try {
+      // Mostrar TODAS las órdenes lanzadas, no solo las asignadas al operario
       const data = await getCutOrders('lanzada')
       setOrders(data || [])
     } catch (error) {
@@ -71,7 +72,7 @@ export default function OrdenesPlantaPage() {
               No hay órdenes disponibles
             </h3>
             <p className="text-slate-400">
-              No tienes órdenes de corte asignadas en este momento
+              No hay órdenes de corte disponibles en este momento
             </p>
           </div>
         ) : (
@@ -115,11 +116,23 @@ export default function OrdenesPlantaPage() {
                       {order.order?.client?.business_name}
                     </span>
                   </div>
+                  {order.assigned_operator && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Asignado a:</span>
+                      <span className="text-yellow-400 font-semibold">
+                        {order.assigned_operator.full_name}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-6 pt-4 border-t border-slate-700">
-                  <button className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold transition-colors">
-                    Ver Detalle →
+                  <button className={`w-full py-3 rounded-lg font-semibold transition-colors ${
+                    order.assigned_operator 
+                      ? 'bg-yellow-600 hover:bg-yellow-500' 
+                      : 'bg-blue-600 hover:bg-blue-500'
+                  } text-white`}>
+                    {order.assigned_operator ? 'Ver Orden Asignada →' : 'Iniciar Corte →'}
                   </button>
                 </div>
               </div>

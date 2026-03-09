@@ -42,44 +42,6 @@ export async function getOrderById(id: string) {
   return data
 }
 
-export async function approveOrder(orderId: string, operatorId?: string | null) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  const { data, error } = await supabase
-    .from('orders')
-    .update({
-      status: 'lanzado',
-      payment_verified: true,
-      approved_by: user?.id,
-      approved_at: new Date().toISOString(),
-    })
-    .eq('id', orderId)
-    .select()
-    .single()
-
-  if (error) throw error
-
-  // Actualizar órdenes de corte: lanzarlas y asignar operario si se especificó
-  const updateData: any = { status: 'lanzada' }
-  if (operatorId) {
-    updateData.assigned_to = operatorId
-  }
-
-  await supabase
-    .from('cut_orders')
-    .update(updateData)
-    .eq('order_id', orderId)
-    .eq('status', 'generada')
-
-  revalidatePath('/admin/pedidos', 'page')
-  revalidatePath('/admin/pedidos', 'layout')
-  revalidatePath(`/admin/pedidos/${orderId}`, 'page')
-  revalidatePath('/admin/cortes', 'page')
-  revalidatePath('/planta/ordenes', 'page')
-  return data
-}
-
 export async function cancelOrder(orderId: string) {
   const supabase = await createClient()
 
@@ -111,23 +73,7 @@ export async function cancelOrder(orderId: string) {
   return data
 }
 
-export async function verifyPayment(orderId: string) {
-  const supabase = await createClient()
-
-  const { data, error } = await supabase
-    .from('orders')
-    .update({ payment_verified: true })
-    .eq('id', orderId)
-    .select()
-    .single()
-
-  if (error) throw error
-
-  revalidatePath('/admin/pedidos', 'page')
-  revalidatePath('/admin/pedidos', 'layout')
-  revalidatePath(`/admin/pedidos/${orderId}`, 'page')
-  return data
-}
+// verifyPayment eliminada - Los pedidos ya vienen con pago verificado
 
 export async function generateCutOrders(orderId: string) {
   const supabase = await createClient()
@@ -142,6 +88,8 @@ export async function generateCutOrders(orderId: string) {
   if (orderError) throw orderError
 
   // Crear una orden de corte por cada línea
+  // Las órdenes se crean directamente en estado "lanzada" 
+  // para que estén disponibles inmediatamente en las tablets
   for (const line of order.order_lines) {
     const cutNumber = `CUT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
     
@@ -152,19 +100,20 @@ export async function generateCutOrders(orderId: string) {
         order_id: orderId,
         product_id: line.product_id,
         quantity_requested: line.quantity,
-        status: 'generada',
+        status: 'lanzada', // Auto-lanzar al generar
       })
   }
 
-  // Actualizar estado del pedido
+  // Actualizar estado del pedido a "lanzado"
   await supabase
     .from('orders')
-    .update({ status: 'generado' })
+    .update({ status: 'lanzado' })
     .eq('id', orderId)
 
   revalidatePath('/admin/pedidos', 'page')
   revalidatePath('/admin/pedidos', 'layout')
   revalidatePath(`/admin/pedidos/${orderId}`, 'page')
   revalidatePath('/admin/cortes', 'page')
+  revalidatePath('/planta/ordenes', 'page')
   return { success: true }
 }
