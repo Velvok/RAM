@@ -24,37 +24,47 @@ export async function loginWithEmail(formData: FormData) {
 }
 
 export async function loginWithPin(pin: string) {
-  const supabase = await createClient()
+  try {
+    const supabase = await createClient()
 
-  const { data: users, error } = await supabase
-    .from('users')
-    .select('*')
-    .eq('role', 'operator')
-    .eq('is_active', true)
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('role', 'operator')
+      .eq('is_active', true)
 
-  if (error || !users) {
-    return { error: 'Error al verificar PIN' }
-  }
+    if (error) {
+      console.error('Error fetching users:', error)
+      return { error: 'Error de conexión. Verifica tu conexión a internet.' }
+    }
 
-  for (const user of users) {
-    if (user.pin_hash && await bcrypt.compare(pin, user.pin_hash)) {
-      await supabase
-        .from('users')
-        .update({ last_login_at: new Date().toISOString() })
-        .eq('id', user.id)
+    if (!users || users.length === 0) {
+      return { error: 'No hay operarios registrados en el sistema' }
+    }
 
-      return { 
-        success: true, 
-        user: {
-          id: user.id,
-          full_name: user.full_name,
-          role: user.role
+    for (const user of users) {
+      if (user.pin_hash && await bcrypt.compare(pin, user.pin_hash)) {
+        await supabase
+          .from('users')
+          .update({ last_login_at: new Date().toISOString() })
+          .eq('id', user.id)
+
+        return { 
+          success: true, 
+          user: {
+            id: user.id,
+            full_name: user.full_name,
+            role: user.role
+          }
         }
       }
     }
-  }
 
-  return { error: 'PIN incorrecto' }
+    return { error: 'PIN incorrecto' }
+  } catch (error) {
+    console.error('Login error:', error)
+    return { error: 'Error del servidor. Por favor, intenta más tarde.' }
+  }
 }
 
 export async function logout() {
