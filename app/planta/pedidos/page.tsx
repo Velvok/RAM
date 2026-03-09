@@ -63,7 +63,7 @@ export default function PlantaPedidosPage() {
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold text-white">Órdenes de Corte</h1>
+            <h1 className="text-3xl font-bold text-white">Pedidos</h1>
             <p className="text-slate-300 mt-1">
               Operario: {operator?.full_name}
             </p>
@@ -98,22 +98,17 @@ export default function PlantaPedidosPage() {
                   className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700 hover:border-blue-500 cursor-pointer transition-all p-6"
                 >
                   {/* Header */}
-                  <div className="flex justify-between items-start mb-4">
-                    <div>
-                      <h3 className="text-xl font-bold text-white">
-                        {pedido.order_number}
-                      </h3>
-                      <p className="text-sm text-slate-400 mt-1">
-                        {new Date(pedido.created_at).toLocaleDateString('es-ES', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric'
-                        })}
-                      </p>
-                    </div>
-                    <span className="px-3 py-1 bg-yellow-500/20 text-yellow-400 rounded-full text-sm font-semibold">
-                      Aprobado
-                    </span>
+                  <div className="mb-4">
+                    <h3 className="text-xl font-bold text-white">
+                      {pedido.order_number}
+                    </h3>
+                    <p className="text-sm text-slate-400 mt-1">
+                      {new Date(pedido.created_at).toLocaleDateString('es-ES', {
+                        day: '2-digit',
+                        month: 'short',
+                        year: 'numeric'
+                      })}
+                    </p>
                   </div>
 
                   {/* Info */}
@@ -127,13 +122,6 @@ export default function PlantaPedidosPage() {
                       <span className="text-slate-400 text-sm">Peso Total:</span>
                       <span className="text-white font-bold">{pedido.total_weight} kg</span>
                     </div>
-                  </div>
-
-                  {/* Footer */}
-                  <div className="mt-6 pt-4 border-t border-slate-700">
-                    <p className="text-sm text-blue-400 font-semibold text-center">
-                      Toca para ver órdenes →
-                    </p>
                   </div>
                 </div>
               )
