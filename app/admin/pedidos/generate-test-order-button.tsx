@@ -7,32 +7,31 @@ import { useRouter } from 'next/navigation'
 export default function GenerateTestOrderButton() {
   const [isOpen, setIsOpen] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [selectedStatus, setSelectedStatus] = useState('ingresado')
   const [numLines, setNumLines] = useState(1)
   const router = useRouter()
 
-  const statuses = [
-    { value: 'ingresado', label: 'Ingresado' },
-    { value: 'generado', label: 'Generado' },
-    { value: 'pendiente_aprobacion', label: 'Pendiente Aprobación' },
-    { value: 'lanzado', label: 'Lanzado' },
-    { value: 'en_corte', label: 'En Corte' },
-    { value: 'preparado_pendiente_retiro', label: 'Preparado' },
-    { value: 'despachado', label: 'Despachado' },
-  ]
-
   async function handleGenerate() {
     setLoading(true)
-    const result = await generateTestOrder(selectedStatus, numLines)
-    
-    if (result.error) {
-      alert('Error: ' + result.error)
-    } else {
-      setIsOpen(false)
-      // Forzar recarga completa
-      window.location.reload()
+    try {
+      const result = await generateTestOrder('nuevo', numLines)
+      
+      if (result.error) {
+        alert('Error: ' + result.error)
+      } else {
+        setIsOpen(false)
+        // Forzar refresh del router sin caché
+        router.refresh()
+        // Pequeño delay y segundo refresh para asegurar
+        setTimeout(() => {
+          router.refresh()
+        }, 100)
+      }
+    } catch (error) {
+      console.error('Error generating test order:', error)
+      alert('Error al generar pedido de prueba')
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   return (
@@ -51,21 +50,11 @@ export default function GenerateTestOrderButton() {
               Generar Pedido de Prueba
             </h3>
             
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Estado del pedido:
-              </label>
-              <select
-                value={selectedStatus}
-                onChange={(e) => setSelectedStatus(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {statuses.map((status) => (
-                  <option key={status.value} value={status.value}>
-                    {status.label}
-                  </option>
-                ))}
-              </select>
+            <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm text-blue-800">
+                <strong>Nota:</strong> El pedido se creará en estado <strong>"Nuevo Pedido"</strong> 
+                y deberás aprobarlo desde el dashboard para generar las órdenes de corte.
+              </p>
             </div>
 
             <div className="mb-4">
@@ -77,14 +66,14 @@ export default function GenerateTestOrderButton() {
                 onChange={(e) => setNumLines(parseInt(e.target.value))}
                 className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value={1}>1 línea (1 orden de corte)</option>
-                <option value={2}>2 líneas (2 órdenes de corte)</option>
-                <option value={3}>3 líneas (3 órdenes de corte)</option>
-                <option value={4}>4 líneas (4 órdenes de corte)</option>
-                <option value={5}>5 líneas (5 órdenes de corte)</option>
+                <option value={1}>1 línea</option>
+                <option value={2}>2 líneas</option>
+                <option value={3}>3 líneas</option>
+                <option value={4}>4 líneas</option>
+                <option value={5}>5 líneas</option>
               </select>
               <p className="text-xs text-slate-500 mt-1">
-                Cada línea genera una orden de corte diferente
+                Cada línea se convertirá en una orden de corte al aprobar el pedido
               </p>
             </div>
 

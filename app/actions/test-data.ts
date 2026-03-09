@@ -3,7 +3,7 @@
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 
-export async function generateTestOrder(status: string = 'ingresado', numLines: number = 1) {
+export async function generateTestOrder(status: string = 'nuevo', numLines: number = 1) {
   const supabase = await createClient()
 
   // Obtener un cliente aleatorio
@@ -48,13 +48,13 @@ export async function generateTestOrder(status: string = 'ingresado', numLines: 
     })
   }
 
-  // Crear pedido
+  // Crear pedido - SIEMPRE en estado 'nuevo'
   const { data: order, error: orderError } = await supabase
     .from('orders')
     .insert({
       order_number: orderNumber,
       client_id: clients.id,
-      status: status,
+      status: 'nuevo', // Siempre nuevo, independiente del parámetro
       total_weight: totalWeight,
       total_amount: totalAmount,
       notes: `Pedido de prueba con ${numLines} línea(s)`,
@@ -85,29 +85,14 @@ export async function generateTestOrder(status: string = 'ingresado', numLines: 
     return { error: lineError.message }
   }
 
-  // Si el estado es "lanzado", crear órdenes de corte
-  if (status === 'lanzado') {
-    const cutOrdersToInsert = orderLines.map((line, index) => ({
-      cut_number: `CUT-${Date.now()}-${index}`,
-      order_id: order.id,
-      product_id: line.product_id,
-      quantity_requested: line.quantity,
-      status: 'generada',
-    }))
-    
-    const { error: cutError } = await supabase
-      .from('cut_orders')
-      .insert(cutOrdersToInsert)
-
-    if (cutError) {
-      console.error('Error creating cut orders:', cutError)
-    }
-  }
+  // NO crear órdenes de corte automáticamente
+  // Las órdenes de corte se crean solo cuando el admin aprueba el pedido
 
   // Revalidar múltiples rutas
   revalidatePath('/admin/pedidos', 'page')
   revalidatePath('/admin/pedidos', 'layout')
   revalidatePath('/admin', 'page')
+  revalidatePath('/admin', 'layout')
   
   return { success: true, order }
 }

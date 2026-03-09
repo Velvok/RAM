@@ -2,9 +2,11 @@ import { createClient } from '@/lib/supabase/server'
 import OrdersGridWithFilters from '@/components/orders-grid-with-filters'
 import GenerateTestOrderButton from './generate-test-order-button'
 
-// Deshabilitar caché para esta página
+// Deshabilitar caché COMPLETAMENTE
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
+export const fetchCache = 'force-no-store'
+export const runtime = 'nodejs'
 
 export default async function PedidosPage() {
   let orders = []

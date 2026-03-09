@@ -7,9 +7,11 @@ import { getOrders } from '@/app/actions/orders'
 import { getCutOrders } from '@/app/actions/cut-orders'
 import { getInventory } from '@/app/actions/inventory'
 
-// Deshabilitar caché para esta página
+// Deshabilitar caché COMPLETAMENTE
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
+export const fetchCache = 'force-no-store'
+export const runtime = 'nodejs'
 
 export default async function AdminDashboard() {
   let orders = []
