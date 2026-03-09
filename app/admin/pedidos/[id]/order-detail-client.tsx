@@ -2,15 +2,19 @@
 
 import { useState, useEffect } from 'react'
 import { getOrderById } from '@/app/actions/orders'
+import { reassignCutOrder } from '@/app/actions/reassignments'
 import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Clock, ArrowRightLeft } from 'lucide-react'
 import Link from 'next/link'
 import OrderActions from './order-actions'
+import ReassignmentModal from '@/components/stock/reassignment-modal'
 
 export default function OrderDetailClient({ initialOrder }: { initialOrder: any }) {
   const [order, setOrder] = useState(initialOrder)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [reassignModalOpen, setReassignModalOpen] = useState(false)
+  const [selectedCutOrder, setSelectedCutOrder] = useState<any>(null)
 
   // Función para recargar el pedido completo
   async function reloadOrder() {
@@ -20,6 +24,23 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
       setRefreshKey(prev => prev + 1)
     } catch (error) {
       console.error('Error reloading order:', error)
+    }
+  }
+
+  function openReassignModal(cutOrder: any) {
+    setSelectedCutOrder(cutOrder)
+    setReassignModalOpen(true)
+  }
+
+  async function handleReassign(fromCutOrderId: string, toCutOrderId: string) {
+    try {
+      const result = await reassignCutOrder(fromCutOrderId, toCutOrderId, 'Reasignación desde admin')
+      alert(`Material reasignado correctamente. ${result.wasDisassembled ? 'Pedido origen desarmado.' : ''}`)
+      await reloadOrder()
+    } catch (error: any) {
+      console.error('Error reassigning:', error)
+      alert(error.message || 'Error al reasignar material')
+      throw error
     }
   }
 
@@ -120,11 +141,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
                     {line.units && line.length_meters ? (
-                      <div>
-                        <span className="font-semibold">{line.units} unidades</span>
-                        <span className="text-slate-400"> × {line.length_meters}m</span>
-                        <div className="text-xs text-slate-400">Total: {line.quantity}m</div>
-                      </div>
+                      <span className="font-semibold">{line.units} × {line.length_meters}m</span>
                     ) : (
                       <span>{line.quantity} m</span>
                     )}
@@ -142,6 +159,81 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
         </div>
       </div>
 
+      {/* Órdenes de Corte */}
+      {order.cut_orders && order.cut_orders.length > 0 && (
+        <div className="bg-white rounded-lg shadow">
+          <div className="px-6 py-4 border-b border-slate-200">
+            <h3 className="text-lg font-semibold text-slate-900">
+              Órdenes de Corte
+            </h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                    Número
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                    Producto
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                    Cantidad
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                    Estado
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                    Acciones
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-slate-200">
+                {order.cut_orders.map((cutOrder: any) => (
+                  <tr key={cutOrder.id}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">
+                      {cutOrder.cut_number}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                      {cutOrder.product?.name}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                      {cutOrder.quantity_requested} m
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {cutOrder.status === 'pendiente' ? (
+                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                          <Clock className="w-3 h-3 mr-1" />
+                          Pendiente
+                        </span>
+                      ) : (
+                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                          <CheckCircle2 className="w-3 h-3 mr-1" />
+                          Completada
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      {cutOrder.status === 'pendiente' && (
+                        <button
+                          onClick={() => openReassignModal(cutOrder)}
+                          className="inline-flex items-center px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded transition-colors"
+                        >
+                          <ArrowRightLeft className="w-3 h-3 mr-1" />
+                          Reasignar
+                        </button>
+                      )}
+                      {cutOrder.status === 'completada' && (
+                        <span className="text-xs text-slate-400">Completado</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Grid con Cliente y Acciones */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -187,6 +279,14 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
         {/* Acciones - Pasar función de recarga */}
         <OrderActions key={refreshKey} order={order} onUpdate={reloadOrder} />
       </div>
+
+      {/* Modal de Reasignación */}
+      <ReassignmentModal
+        isOpen={reassignModalOpen}
+        onClose={() => setReassignModalOpen(false)}
+        targetCutOrder={selectedCutOrder}
+        onReassign={handleReassign}
+      />
     </div>
   )
 }
