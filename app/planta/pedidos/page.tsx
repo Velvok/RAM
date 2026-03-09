@@ -119,8 +119,8 @@ export default function PlantaPedidosPage() {
                     </div>
                     
                     <div className="flex items-center justify-between p-3 bg-slate-700/30 rounded-lg">
-                      <span className="text-slate-400 text-sm">Total:</span>
-                      <span className="text-white font-bold">{pedido.total_weight} m</span>
+                      <span className="text-slate-400 text-sm">Unidades:</span>
+                      <span className="text-white font-bold">{cutOrdersCount}</span>
                     </div>
                   </div>
                 </div>

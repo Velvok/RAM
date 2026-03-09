@@ -199,7 +199,7 @@ export default function PlantaPedidoDetallePage() {
                       <div className="p-3 bg-slate-700/30 rounded-lg">
                         <span className="text-slate-400 text-sm block mb-1">Cantidad:</span>
                         <span className="text-white font-bold text-lg">
-                          {cutOrder.quantity_requested} m
+                          1 unidad
                         </span>
                       </div>
                       {cutOrder.assigned_operator && (

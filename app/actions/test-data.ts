@@ -36,21 +36,23 @@ export async function generateTestOrder(status: string = 'nuevo', numLines: numb
   const orderLines = []
   
   for (const product of products) {
-    // Generar UNIDADES de chapas de diferentes longitudes
-    // Ejemplo: 5 chapas de 6m, 3 chapas de 8m, etc.
-    const possibleLengths = [6, 8, 10, 12] // metros
-    const randomLength = possibleLengths[Math.floor(Math.random() * possibleLengths.length)]
-    const units = Math.floor(Math.random() * 10) + 1 // Entre 1 y 10 unidades
-    const quantity = units * randomLength // Total en metros
+    // El producto YA tiene la longitud en su nombre (ej: "Chapa 3mm de 12m")
+    // Extraer longitud del nombre del producto
+    const lengthMatch = product.name.match(/(\d+)m/)
+    const lengthPerUnit = lengthMatch ? parseInt(lengthMatch[1]) : 6
+    
+    // Generar cantidad de unidades (entre 1 y 10)
+    const units = Math.floor(Math.random() * 10) + 1
+    const quantity = units * lengthPerUnit // Total en metros (para cálculos de precio)
     
     const unitPrice = Math.floor(Math.random() * 2000) + 1000 // Entre 1000 y 3000 por metro
     totalWeight += quantity
     totalAmount += quantity * unitPrice
     orderLines.push({
       product_id: product.id,
-      quantity, // metros totales
-      units, // cantidad de chapas
-      length: randomLength, // metros por chapa
+      quantity, // metros totales (solo para precio)
+      units, // cantidad de chapas (LO IMPORTANTE)
+      length_meters: lengthPerUnit, // metros por chapa
       unitPrice,
       subtotal: quantity * unitPrice
     })
@@ -81,7 +83,7 @@ export async function generateTestOrder(status: string = 'nuevo', numLines: numb
     product_id: line.product_id,
     quantity: line.quantity, // metros totales
     units: line.units, // cantidad de chapas
-    length_meters: line.length, // metros por chapa
+    length_meters: line.length_meters, // metros por chapa
     unit_price: line.unitPrice,
     subtotal: line.subtotal,
   }))

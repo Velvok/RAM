@@ -97,20 +97,29 @@ export async function approveOrder(orderId: string) {
     throw new Error('Solo se pueden aprobar pedidos en estado "nuevo"')
   }
 
-  // Crear una orden de corte por cada línea
-  // Las órdenes se crean en estado "pendiente" (nuevo modelo simplificado)
+  // Crear UNA orden de corte por cada UNIDAD
+  // Si la línea tiene 4 unidades de 12m, se crean 4 órdenes de corte de 12m cada una
   for (const line of order.order_lines) {
-    const cutNumber = `CUT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    const units = line.units || 1 // Si no tiene units, crear 1 orden
+    const lengthPerUnit = line.length_meters || line.quantity // Longitud de cada unidad
     
-    await supabase
-      .from('cut_orders')
-      .insert({
-        cut_number: cutNumber,
-        order_id: orderId,
-        product_id: line.product_id,
-        quantity_requested: line.quantity,
-        status: 'pendiente',
-      })
+    // Crear una orden de corte por cada unidad
+    for (let i = 0; i < units; i++) {
+      const cutNumber = `CUT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+      
+      await supabase
+        .from('cut_orders')
+        .insert({
+          cut_number: cutNumber,
+          order_id: orderId,
+          product_id: line.product_id,
+          quantity_requested: lengthPerUnit, // Longitud de UNA unidad
+          status: 'pendiente',
+        })
+      
+      // Pequeño delay para evitar duplicados en el timestamp
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
   }
 
   // Actualizar estado del pedido a "aprobado"

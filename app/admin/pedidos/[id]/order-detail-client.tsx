@@ -198,7 +198,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                       {cutOrder.product?.name}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                      {cutOrder.quantity_requested} m
+                      1 unidad
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {cutOrder.status === 'pendiente' ? (
