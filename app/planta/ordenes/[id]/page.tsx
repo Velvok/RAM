@@ -151,7 +151,7 @@ export default function OrdenDetallePage() {
             </div>
             <div>
               <div className="text-sm text-slate-400 mb-1">Cantidad Solicitada</div>
-              <div className="text-lg font-semibold text-white">{order.quantity_requested} kg</div>
+              <div className="text-lg font-semibold text-white">{order.quantity_requested} m</div>
             </div>
             {order.material_base && (
               <>
@@ -161,7 +161,7 @@ export default function OrdenDetallePage() {
                 </div>
                 <div>
                   <div className="text-sm text-slate-400 mb-1">Cantidad Material</div>
-                  <div className="text-lg font-semibold text-white">{order.material_base_quantity} kg</div>
+                  <div className="text-lg font-semibold text-white">{order.material_base_quantity} m</div>
                 </div>
               </>
             )}

@@ -81,16 +81,16 @@ export default async function StockPage() {
                   {item.product?.name}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
-                  {item.stock_total?.toFixed(2)} kg
+                  {item.stock_total?.toFixed(2)} m
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-yellow-600">
-                  {item.stock_reservado?.toFixed(2)} kg
+                  {item.stock_reservado?.toFixed(2)} m
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-blue-600">
-                  {item.stock_en_proceso?.toFixed(2)} kg
+                  {item.stock_en_proceso?.toFixed(2)} m
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-slate-900">
-                  {item.stock_disponible?.toFixed(2)} kg
+                  {item.stock_disponible?.toFixed(2)} m
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   {item.stock_disponible <= 0 ? (

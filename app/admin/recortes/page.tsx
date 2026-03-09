@@ -63,7 +63,7 @@ export default async function RecortesPage() {
             Cantidad Total
           </div>
           <div className="text-2xl font-bold text-slate-900">
-            {stats.totalQuantity.toFixed(2)} kg
+            {stats.totalQuantity.toFixed(2)} m
           </div>
         </div>
       </div>
@@ -110,7 +110,7 @@ export default async function RecortesPage() {
                     {remnant.product?.name || 'N/A'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
-                    {remnant.quantity} kg
+                    {remnant.quantity} m
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
                     {remnant.cut_order?.cut_number || 'N/A'}

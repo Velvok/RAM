@@ -173,7 +173,7 @@ export default function PlantaPedidoDetallePage() {
                 key={cutOrder.id}
                 className="p-5 rounded-lg border-2 border-slate-600 bg-slate-800/50"
               >
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex items-center justify-between gap-4">
                   {/* Contenido */}
                   <div className="flex-1">
                     <div className="flex justify-between items-start mb-3">
@@ -196,11 +196,11 @@ export default function PlantaPedidoDetallePage() {
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div className="grid grid-cols-2 gap-4">
                       <div className="p-3 bg-slate-700/30 rounded-lg">
                         <span className="text-slate-400 text-sm block mb-1">Cantidad:</span>
                         <span className="text-white font-bold text-lg">
-                          {cutOrder.quantity_requested} kg
+                          {cutOrder.quantity_requested} m
                         </span>
                       </div>
                       {cutOrder.assigned_operator && (
@@ -212,21 +212,23 @@ export default function PlantaPedidoDetallePage() {
                         </div>
                       )}
                     </div>
+                  </div>
 
-                    {/* Botón de Confirmar */}
+                  {/* Botón de Confirmar a la derecha */}
+                  <div className="flex-shrink-0">
                     {cutOrder.status !== 'completada' && (
                       <button
                         onClick={() => openFinishModal(cutOrder)}
-                        className="w-full py-3 bg-green-600 hover:bg-green-500 text-white rounded-lg font-bold transition-colors flex items-center justify-center gap-2"
+                        className="px-6 py-3 bg-green-600 hover:bg-green-500 text-white rounded-lg font-bold transition-colors flex items-center gap-2"
                       >
                         <CheckCircle2 className="w-5 h-5" />
-                        Confirmar Corte
+                        Confirmar
                       </button>
                     )}
                     {cutOrder.status === 'completada' && (
-                      <div className="w-full py-3 bg-green-500/20 text-green-400 rounded-lg font-bold text-center flex items-center justify-center gap-2">
+                      <div className="px-6 py-3 bg-green-500/20 text-green-400 rounded-lg font-bold flex items-center gap-2">
                         <CheckCircle2 className="w-5 h-5" />
-                        Corte Completado
+                        Completado
                       </div>
                     )}
                   </div>
@@ -268,7 +270,7 @@ export default function PlantaPedidoDetallePage() {
 
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Cantidad Cortada (kg) *
+                    Cantidad Cortada (m) *
                   </label>
                   <input
                     type="number"
@@ -300,7 +302,7 @@ export default function PlantaPedidoDetallePage() {
 
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Cantidad de Material Usado (kg) *
+                    Cantidad de Material Usado (m) *
                   </label>
                   <input
                     type="number"
@@ -314,7 +316,7 @@ export default function PlantaPedidoDetallePage() {
 
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Recorte Generado (kg)
+                    Recorte Generado (m)
                   </label>
                   <input
                     type="number"

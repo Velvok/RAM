@@ -68,7 +68,7 @@ export default function FinishCutModal({ order, onClose, onSuccess }: any) {
               autoFocus
             />
             <p className="text-base text-slate-300 mt-2 font-semibold">
-              📋 Solicitado: {order.quantity_requested} kg
+              📋 Solicitado: {order.quantity_requested} m
             </p>
           </div>
 

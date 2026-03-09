@@ -63,10 +63,10 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white rounded-lg shadow p-6">
           <div className="text-sm font-medium text-slate-600 mb-1">
-            Peso Total
+            Total
           </div>
           <div className="text-2xl font-bold text-slate-900">
-            {order.total_weight} kg
+            {order.total_weight} m
           </div>
         </div>
         <div className="bg-white rounded-lg shadow p-6">
@@ -119,7 +119,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                     {line.product?.name}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                    {line.quantity} kg
+                    {line.quantity} m
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
                     {formatCurrency(line.unit_price)}

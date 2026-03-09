@@ -81,7 +81,7 @@ export default async function RemnantDetallePage({
             Cantidad
           </div>
           <div className="text-2xl font-bold text-slate-900">
-            {remnant.quantity} kg
+            {remnant.quantity} m
           </div>
         </div>
         <div className="bg-white rounded-lg shadow p-6">
@@ -199,7 +199,7 @@ export default async function RemnantDetallePage({
           <p className="text-sm text-blue-700">
             Este recorte puede ser utilizado para pedidos que requieran{' '}
             {remnant.product?.name} en cantidades menores a {remnant.quantity}{' '}
-            kg.
+            m.
           </p>
           <p className="text-sm text-blue-600 mt-2">
             <strong>Próximamente:</strong> Matching automático con pedidos
