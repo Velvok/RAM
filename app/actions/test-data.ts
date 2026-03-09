@@ -36,13 +36,21 @@ export async function generateTestOrder(status: string = 'nuevo', numLines: numb
   const orderLines = []
   
   for (const product of products) {
-    const quantity = Math.floor(Math.random() * 500) + 100 // Entre 100 y 600 kg
-    const unitPrice = Math.floor(Math.random() * 2000) + 1000 // Entre 1000 y 3000
+    // Generar UNIDADES de chapas de diferentes longitudes
+    // Ejemplo: 5 chapas de 6m, 3 chapas de 8m, etc.
+    const possibleLengths = [6, 8, 10, 12] // metros
+    const randomLength = possibleLengths[Math.floor(Math.random() * possibleLengths.length)]
+    const units = Math.floor(Math.random() * 10) + 1 // Entre 1 y 10 unidades
+    const quantity = units * randomLength // Total en metros
+    
+    const unitPrice = Math.floor(Math.random() * 2000) + 1000 // Entre 1000 y 3000 por metro
     totalWeight += quantity
     totalAmount += quantity * unitPrice
     orderLines.push({
       product_id: product.id,
-      quantity,
+      quantity, // metros totales
+      units, // cantidad de chapas
+      length: randomLength, // metros por chapa
       unitPrice,
       subtotal: quantity * unitPrice
     })
@@ -71,7 +79,9 @@ export async function generateTestOrder(status: string = 'nuevo', numLines: numb
   const linesToInsert = orderLines.map(line => ({
     order_id: order.id,
     product_id: line.product_id,
-    quantity: line.quantity,
+    quantity: line.quantity, // metros totales
+    units: line.units, // cantidad de chapas
+    length_meters: line.length, // metros por chapa
     unit_price: line.unitPrice,
     subtotal: line.subtotal,
   }))
