@@ -14,8 +14,8 @@ ALTER TABLE cut_orders ADD COLUMN status_new cut_order_status_new;
 -- 3. Migrar datos existentes (si hubiera)
 UPDATE cut_orders SET status_new = 
   CASE 
-    WHEN status IN ('generada', 'lanzada', 'en_proceso', 'pausada', 'observada') THEN 'pendiente'::cut_order_status_new
-    WHEN status IN ('finalizada', 'completada') THEN 'completada'::cut_order_status_new
+    WHEN status::text IN ('generada', 'lanzada', 'en_proceso', 'pausada', 'observada') THEN 'pendiente'::cut_order_status_new
+    WHEN status::text IN ('finalizada', 'cancelada') THEN 'completada'::cut_order_status_new
     ELSE 'pendiente'::cut_order_status_new
   END;
 
