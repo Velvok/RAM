@@ -14,86 +14,74 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
   const [statusFilter, setStatusFilter] = useState<string>('todos')
   const router = useRouter()
 
-  // Función para calcular el estado real basado en órdenes de corte
-  function getOrderRealStatus(order: any) {
-    const cutOrders = order.cut_orders || []
-    const totalCutOrders = cutOrders.length
-    
-    if (totalCutOrders === 0) {
-      return 'ingresado'
-    }
-
-    const completedCutOrders = cutOrders.filter((co: any) => co.status === 'completada').length
-    const inProgressCutOrders = cutOrders.filter((co: any) => co.status === 'en_proceso').length
-
-    if (completedCutOrders === totalCutOrders) {
-      return 'completado'
-    } else if (inProgressCutOrders > 0 || completedCutOrders > 0) {
-      return 'en_proceso'
-    } else {
-      return 'lanzado'
-    }
-  }
 
   // Función para obtener info de estado
   function getStatusInfo(status: string) {
     const statusMap: any = {
-      ingresado: {
+      nuevo: {
         color: 'bg-slate-500',
         textColor: 'text-slate-700',
         bgColor: 'bg-slate-50',
         borderColor: 'border-slate-300',
-        text: 'Ingresado',
+        text: 'Nuevo Pedido',
         icon: AlertCircle
       },
-      lanzado: {
+      aprobado: {
         color: 'bg-yellow-500',
         textColor: 'text-yellow-700',
         bgColor: 'bg-yellow-50',
         borderColor: 'border-yellow-300',
-        text: 'Lanzado',
+        text: 'Aprobado',
         icon: Package
       },
-      en_proceso: {
+      en_corte: {
         color: 'bg-blue-500',
         textColor: 'text-blue-700',
         bgColor: 'bg-blue-50',
         borderColor: 'border-blue-300',
-        text: 'En Proceso',
+        text: 'En Corte',
         icon: Clock
       },
-      completado: {
+      finalizado: {
         color: 'bg-green-500',
         textColor: 'text-green-700',
         bgColor: 'bg-green-50',
         borderColor: 'border-green-300',
-        text: 'Completado',
+        text: 'Finalizado',
         icon: CheckCircle
+      },
+      cancelado: {
+        color: 'bg-red-500',
+        textColor: 'text-red-700',
+        bgColor: 'bg-red-50',
+        borderColor: 'border-red-300',
+        text: 'Cancelado',
+        icon: AlertCircle
       }
     }
-    return statusMap[status] || statusMap.ingresado
+    return statusMap[status] || statusMap.nuevo
   }
 
   // Filtrar pedidos
   const filteredOrders = statusFilter === 'todos' 
     ? orders 
-    : orders.filter(o => getOrderRealStatus(o) === statusFilter)
+    : orders.filter(o => o.status === statusFilter)
 
   // Contar por estado
   const statusCounts = {
     todos: orders.length,
-    ingresado: orders.filter(o => getOrderRealStatus(o) === 'ingresado').length,
-    lanzado: orders.filter(o => getOrderRealStatus(o) === 'lanzado').length,
-    en_proceso: orders.filter(o => getOrderRealStatus(o) === 'en_proceso').length,
-    completado: orders.filter(o => getOrderRealStatus(o) === 'completado').length
+    nuevo: orders.filter(o => o.status === 'nuevo').length,
+    aprobado: orders.filter(o => o.status === 'aprobado').length,
+    en_corte: orders.filter(o => o.status === 'en_corte').length,
+    finalizado: orders.filter(o => o.status === 'finalizado').length
   }
 
   const filters = [
     { id: 'todos', label: 'Todos', count: statusCounts.todos, color: 'bg-slate-600' },
-    { id: 'ingresado', label: 'Ingresados', count: statusCounts.ingresado, color: 'bg-slate-500' },
-    { id: 'lanzado', label: 'Lanzados', count: statusCounts.lanzado, color: 'bg-yellow-500' },
-    { id: 'en_proceso', label: 'En Proceso', count: statusCounts.en_proceso, color: 'bg-blue-500' },
-    { id: 'completado', label: 'Completados', count: statusCounts.completado, color: 'bg-green-500' }
+    { id: 'nuevo', label: 'Nuevos', count: statusCounts.nuevo, color: 'bg-slate-500' },
+    { id: 'aprobado', label: 'Aprobados', count: statusCounts.aprobado, color: 'bg-yellow-500' },
+    { id: 'en_corte', label: 'En Corte', count: statusCounts.en_corte, color: 'bg-blue-500' },
+    { id: 'finalizado', label: 'Finalizados', count: statusCounts.finalizado, color: 'bg-green-500' }
   ]
 
   async function handleGenerateCutOrders(e: React.MouseEvent, orderId: string) {
@@ -157,8 +145,7 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
           </div>
         ) : (
           filteredOrders.map((order) => {
-            const realStatus = getOrderRealStatus(order)
-            const statusInfo = getStatusInfo(realStatus)
+            const statusInfo = getStatusInfo(order.status)
             const StatusIcon = statusInfo.icon
 
             return (
@@ -226,7 +213,7 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
                 </div>
 
                 {/* Acción */}
-                {realStatus === 'ingresado' && (
+                {order.status === 'nuevo' && (
                   <button
                     onClick={(e) => handleGenerateCutOrders(e, order.id)}
                     disabled={loading === order.id}
@@ -235,10 +222,10 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
                     {loading === order.id ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        Generando...
+                        Aprobando...
                       </>
                     ) : (
-                      '🚀 Generar Órdenes'
+                      '✓ Aprobar Pedido'
                     )}
                   </button>
                 )}

@@ -18,32 +18,24 @@ export default function OrderDetailModal({ order, isOpen, onClose, onUpdate }: O
 
   if (!isOpen || !order) return null
 
-  // Calcular estado real basado en órdenes de corte
+  // Obtener info de estado
   const cutOrders = order.cut_orders || []
   const totalCutOrders = cutOrders.length
   const completedCutOrders = cutOrders.filter((co: any) => co.status === 'completada').length
   const inProgressCutOrders = cutOrders.filter((co: any) => co.status === 'en_proceso').length
   const pendingCutOrders = cutOrders.filter((co: any) => co.status === 'lanzada').length
 
-  let realStatus = 'ingresado'
-  let statusColor = 'bg-slate-500'
-  let statusText = 'Ingresado'
-
-  if (totalCutOrders > 0) {
-    if (completedCutOrders === totalCutOrders) {
-      realStatus = 'completado'
-      statusColor = 'bg-green-500'
-      statusText = 'Completado'
-    } else if (inProgressCutOrders > 0 || completedCutOrders > 0) {
-      realStatus = 'en_proceso'
-      statusColor = 'bg-blue-500'
-      statusText = 'En Proceso'
-    } else {
-      realStatus = 'lanzado'
-      statusColor = 'bg-yellow-500'
-      statusText = 'Lanzado'
-    }
+  const statusMap: any = {
+    nuevo: { color: 'bg-slate-500', text: 'Nuevo Pedido' },
+    aprobado: { color: 'bg-yellow-500', text: 'Aprobado' },
+    en_corte: { color: 'bg-blue-500', text: 'En Corte' },
+    finalizado: { color: 'bg-green-500', text: 'Finalizado' },
+    cancelado: { color: 'bg-red-500', text: 'Cancelado' }
   }
+
+  const statusInfo = statusMap[order.status] || statusMap.nuevo
+  const statusColor = statusInfo.color
+  const statusText = statusInfo.text
 
   async function handleGenerateCutOrders() {
     setLoading(true)
@@ -203,13 +195,13 @@ export default function OrderDetailModal({ order, isOpen, onClose, onUpdate }: O
 
         {/* Footer - Acciones */}
         <div className="sticky bottom-0 bg-white border-t border-slate-200 px-6 py-4 flex gap-3">
-          {order.status === 'ingresado' && (
+          {order.status === 'nuevo' && (
             <button
               onClick={handleGenerateCutOrders}
               disabled={loading}
               className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-500 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? 'Generando...' : '🚀 Generar y Lanzar Órdenes'}
+              {loading ? 'Aprobando...' : '✓ Aprobar Pedido'}
             </button>
           )}
           

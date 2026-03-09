@@ -15,57 +15,51 @@ export default function DashboardOrdersList({ orders }: DashboardOrdersListProps
   const [loading, setLoading] = useState<string | null>(null)
   const router = useRouter()
 
-  // Función para calcular el estado real basado en órdenes de corte
-  function getOrderRealStatus(order: any) {
-    const cutOrders = order.cut_orders || []
-    const totalCutOrders = cutOrders.length
-    
-    if (totalCutOrders === 0) {
-      return {
-        status: 'ingresado',
+  // Función para obtener info de estado
+  function getOrderStatusInfo(status: string) {
+    const statusMap: any = {
+      nuevo: {
         color: 'bg-slate-500',
         textColor: 'text-slate-700',
         bgColor: 'bg-slate-50',
         borderColor: 'border-slate-200',
-        text: 'Ingresado',
+        text: 'Nuevo Pedido',
         icon: AlertCircle
-      }
-    }
-
-    const completedCutOrders = cutOrders.filter((co: any) => co.status === 'completada').length
-    const inProgressCutOrders = cutOrders.filter((co: any) => co.status === 'en_proceso').length
-
-    if (completedCutOrders === totalCutOrders) {
-      return {
-        status: 'completado',
-        color: 'bg-green-500',
-        textColor: 'text-green-700',
-        bgColor: 'bg-green-50',
-        borderColor: 'border-green-200',
-        text: 'Completado',
-        icon: CheckCircle
-      }
-    } else if (inProgressCutOrders > 0 || completedCutOrders > 0) {
-      return {
-        status: 'en_proceso',
-        color: 'bg-blue-500',
-        textColor: 'text-blue-700',
-        bgColor: 'bg-blue-50',
-        borderColor: 'border-blue-200',
-        text: 'En Proceso',
-        icon: Clock
-      }
-    } else {
-      return {
-        status: 'lanzado',
+      },
+      aprobado: {
         color: 'bg-yellow-500',
         textColor: 'text-yellow-700',
         bgColor: 'bg-yellow-50',
         borderColor: 'border-yellow-200',
-        text: 'Lanzado',
+        text: 'Aprobado',
         icon: Package
+      },
+      en_corte: {
+        color: 'bg-blue-500',
+        textColor: 'text-blue-700',
+        bgColor: 'bg-blue-50',
+        borderColor: 'border-blue-200',
+        text: 'En Corte',
+        icon: Clock
+      },
+      finalizado: {
+        color: 'bg-green-500',
+        textColor: 'text-green-700',
+        bgColor: 'bg-green-50',
+        borderColor: 'border-green-200',
+        text: 'Finalizado',
+        icon: CheckCircle
+      },
+      cancelado: {
+        color: 'bg-red-500',
+        textColor: 'text-red-700',
+        bgColor: 'bg-red-50',
+        borderColor: 'border-red-200',
+        text: 'Cancelado',
+        icon: AlertCircle
       }
     }
+    return statusMap[status] || statusMap.nuevo
   }
 
   async function handleGenerateCutOrders(e: React.MouseEvent, orderId: string) {
@@ -121,13 +115,8 @@ export default function DashboardOrdersList({ orders }: DashboardOrdersListProps
             </div>
           ) : (
             orders.map((order) => {
-              const statusInfo = getOrderRealStatus(order)
+              const statusInfo = getOrderStatusInfo(order.status)
               const StatusIcon = statusInfo.icon
-              const cutOrders = order.cut_orders || []
-              const completedCutOrders = cutOrders.filter((co: any) => co.status === 'completada').length
-              const progress = cutOrders.length > 0 
-                ? Math.round((completedCutOrders / cutOrders.length) * 100) 
-                : 0
 
               return (
                 <div
@@ -185,13 +174,13 @@ export default function DashboardOrdersList({ orders }: DashboardOrdersListProps
 
                     {/* Acciones */}
                     <div className="flex-shrink-0">
-                      {order.status === 'ingresado' && (
+                      {order.status === 'nuevo' && (
                         <button
                           onClick={(e) => handleGenerateCutOrders(e, order.id)}
                           disabled={loading === order.id}
                           className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                         >
-                          {loading === order.id ? 'Generando...' : '🚀 Generar'}
+                          {loading === order.id ? 'Aprobando...' : '✓ Aprobar'}
                         </button>
                       )}
                     </div>
