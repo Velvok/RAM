@@ -38,12 +38,6 @@ export default async function AdminLayout({
                 <a href="/admin/stock" className="text-slate-600 hover:text-slate-900 px-3 py-2 rounded-md text-sm font-medium">
                   Stock
                 </a>
-                <a href="/admin/cortes" className="text-slate-600 hover:text-slate-900 px-3 py-2 rounded-md text-sm font-medium">
-                  Cortes
-                </a>
-                <a href="/admin/recortes" className="text-slate-600 hover:text-slate-900 px-3 py-2 rounded-md text-sm font-medium">
-                  Recortes
-                </a>
               </nav>
             </div>
             <div className="flex items-center space-x-4">

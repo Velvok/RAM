@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import OrderDetailModal from './order-detail-modal'
 import { generateCutOrders } from '@/app/actions/orders'
 import { Package, Calendar, User, DollarSign, CheckCircle, Clock, AlertCircle, Loader2, Filter } from 'lucide-react'
 
@@ -11,7 +10,6 @@ interface OrdersGridWithFiltersProps {
 }
 
 export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersProps) {
-  const [selectedOrder, setSelectedOrder] = useState<any>(null)
   const [loading, setLoading] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>('todos')
   const router = useRouter()
@@ -113,25 +111,12 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
   }
 
   function handleOrderClick(order: any) {
-    setSelectedOrder(order)
-  }
-
-  function handleCloseModal() {
-    setSelectedOrder(null)
-  }
-
-  async function handleModalUpdate() {
-    router.refresh()
+    // Ir directamente al detalle del pedido
+    router.push(`/admin/pedidos/${order.id}`)
   }
 
   return (
     <>
-      <OrderDetailModal
-        order={selectedOrder}
-        isOpen={!!selectedOrder}
-        onClose={handleCloseModal}
-        onUpdate={handleModalUpdate}
-      />
 
       {/* Filtros */}
       <div className="bg-white rounded-lg shadow p-4 mb-6">
