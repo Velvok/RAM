@@ -34,10 +34,10 @@ export default function PlantaPedidoDetallePage() {
   async function loadPedido() {
     try {
       const supabase = createClient()
-      const query = '*,client:clients(*),cut_orders(*,product:products(*),assigned_operator:users(*))'
+      const { data: pedidoData, error: pedidoError } = await supabase
       const { data: pedidoData, error: pedidoError } = await supabase
         .from('orders')
-        .select(query)
+        .select("*, client:clients(*), cut_orders(*, product:products(*), assigned_operator:users(*))")
         .eq('id', pedidoId)
         .single()
 
