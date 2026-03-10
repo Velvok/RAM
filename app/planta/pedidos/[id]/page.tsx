@@ -4,7 +4,9 @@ import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { finishCutOrder } from '@/app/actions/cut-orders'
+import { useMaterial, type MaterialSuggestion as MaterialSuggestionType } from '@/app/actions/material-suggestions'
 import { CheckCircle2, ArrowLeft, X } from 'lucide-react'
+import MaterialSuggestion from '@/components/planta/material-suggestion'
 
 export default function PlantaPedidoDetallePage() {
   const router = useRouter()
@@ -16,6 +18,7 @@ export default function PlantaPedidoDetallePage() {
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedCutOrder, setSelectedCutOrder] = useState<any>(null)
+  const [selectedMaterial, setSelectedMaterial] = useState<MaterialSuggestionType | null>(null)
   const [formData, setFormData] = useState({
     quantityCut: '',
     materialUsedId: '',
@@ -72,6 +75,7 @@ export default function PlantaPedidoDetallePage() {
 
   function openFinishModal(cutOrder: any) {
     setSelectedCutOrder(cutOrder)
+    setSelectedMaterial(null)
     setFormData({
       quantityCut: cutOrder.quantity_requested.toString(),
       materialUsedId: '',
@@ -84,6 +88,7 @@ export default function PlantaPedidoDetallePage() {
   function closeModal() {
     setModalOpen(false)
     setSelectedCutOrder(null)
+    setSelectedMaterial(null)
     setFormData({
       quantityCut: '',
       materialUsedId: '',
@@ -92,11 +97,33 @@ export default function PlantaPedidoDetallePage() {
     })
   }
 
+  function handleMaterialSelected(material: MaterialSuggestionType) {
+    setSelectedMaterial(material)
+    // Auto-rellenar el formulario con el material seleccionado
+    setFormData(prev => ({
+      ...prev,
+      materialUsedId: material.id,
+      quantityUsed: material.length.toString()
+    }))
+  }
+
   async function handleFinishCut() {
-    if (!selectedCutOrder) return
+    if (!selectedCutOrder || !selectedMaterial) {
+      alert('Por favor selecciona un material')
+      return
+    }
     
     setProcessing(true)
     try {
+      // 1. Registrar uso del material
+      await useMaterial(
+        selectedMaterial.id,
+        selectedMaterial.type,
+        selectedCutOrder.id,
+        parseFloat(formData.quantityCut)
+      )
+
+      // 2. Finalizar orden de corte
       await finishCutOrder(
         selectedCutOrder.id,
         parseFloat(formData.quantityCut),
@@ -245,72 +272,32 @@ export default function PlantaPedidoDetallePage() {
 
         {/* Modal de Finalización */}
         {modalOpen && selectedCutOrder && (
-          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-            <div className="bg-slate-800 rounded-xl max-w-md w-full border-2 border-slate-700">
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 overflow-y-auto">
+            <div className="bg-slate-900 rounded-xl max-w-4xl w-full border-2 border-slate-700 my-8">
               {/* Header */}
-              <div className="p-6 border-b border-slate-700 flex justify-between items-center">
-                <h3 className="text-xl font-bold text-white">
+              <div className="p-6 border-b border-slate-700 flex justify-between items-center bg-slate-800">
+                <h3 className="text-2xl font-bold text-white">
                   Finalizar Corte
                 </h3>
                 <button
                   onClick={closeModal}
                   className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
                 >
-                  <X className="w-5 h-5 text-slate-400" />
+                  <X className="w-6 h-6 text-slate-400" />
                 </button>
               </div>
 
               {/* Content */}
-              <div className="p-6 space-y-4">
-                <div>
-                  <p className="text-sm text-slate-400 mb-1">Orden de Corte:</p>
-                  <p className="text-lg font-bold text-white">{selectedCutOrder.cut_number}</p>
-                </div>
+              <div className="p-6 space-y-6">
+                {/* Sugerencia de Material */}
+                <MaterialSuggestion 
+                  cutOrder={selectedCutOrder}
+                  onMaterialSelected={handleMaterialSelected}
+                />
 
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Cantidad Cortada (m) *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.quantityCut}
-                    onChange={(e) => setFormData({ ...formData, quantityCut: e.target.value })}
-                    className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
-                    placeholder="Ej: 250.5"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Material Usado *
-                  </label>
-                  <select
-                    value={formData.materialUsedId}
-                    onChange={(e) => setFormData({ ...formData, materialUsedId: e.target.value })}
-                    className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="">Seleccionar material...</option>
-                    {materials.map((material) => (
-                      <option key={material.id} value={material.id}>
-                        {material.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Cantidad de Material Usado (m) *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.quantityUsed}
-                    onChange={(e) => setFormData({ ...formData, quantityUsed: e.target.value })}
-                    className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
-                    placeholder="Ej: 300"
-                  />
+                {/* Separador */}
+                <div className="border-t-2 border-slate-700 pt-6">
+                  <h4 className="text-lg font-semibold text-white mb-4">Detalles del Corte</h4>
                 </div>
 
                 <div>
@@ -339,10 +326,10 @@ export default function PlantaPedidoDetallePage() {
                 </button>
                 <button
                   onClick={handleFinishCut}
-                  disabled={processing || !formData.quantityCut || !formData.materialUsedId || !formData.quantityUsed}
-                  className="flex-1 px-4 py-3 bg-green-600 hover:bg-green-500 disabled:bg-slate-600 text-white rounded-lg font-semibold transition-colors disabled:opacity-50"
+                  disabled={processing || !selectedMaterial}
+                  className="flex-1 px-4 py-3 bg-green-600 hover:bg-green-500 disabled:bg-slate-600 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 text-lg"
                 >
-                  {processing ? 'Procesando...' : 'Confirmar'}
+                  {processing ? 'Procesando...' : '✓ Confirmar Corte'}
                 </button>
               </div>
             </div>

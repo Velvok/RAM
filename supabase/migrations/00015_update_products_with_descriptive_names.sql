@@ -7,7 +7,7 @@ DELETE FROM products;
 
 -- Insertar productos con nombres descriptivos
 -- CHAPA ACANALADA
-INSERT INTO products (code, name, description, category, unit_of_measure) VALUES
+INSERT INTO products (code, name, description, category, unit) VALUES
   ('ACAN-6M', 'Chapa acanalada de 6m', 'Chapa acanalada de acero galvanizado, 6 metros de longitud', 'chapas', 'unidad'),
   ('ACAN-8M', 'Chapa acanalada de 8m', 'Chapa acanalada de acero galvanizado, 8 metros de longitud', 'chapas', 'unidad'),
   ('ACAN-10M', 'Chapa acanalada de 10m', 'Chapa acanalada de acero galvanizado, 10 metros de longitud', 'chapas', 'unidad'),
