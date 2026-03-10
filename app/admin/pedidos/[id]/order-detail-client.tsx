@@ -140,10 +140,10 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                     {line.product?.name}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                    {line.units && line.length_meters ? (
-                      <span className="font-semibold">{line.units} × {line.length_meters}m</span>
+                    {line.units ? (
+                      <span className="font-semibold">{line.units}</span>
                     ) : (
-                      <span>{line.quantity} m</span>
+                      <span>{line.quantity}</span>
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
