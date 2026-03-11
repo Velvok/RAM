@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useError } from '@/components/error-modal'
 import { useSuccess } from '@/components/success-modal'
-import { CheckCircle2, ArrowLeft, ChevronDown, ChevronUp } from 'lucide-react'
+import { CheckCircle2, ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, Package } from 'lucide-react'
 
 // Tipo para sugerencias (mock)
 interface MaterialSuggestion {
@@ -52,10 +52,11 @@ export default function PlantaPedidoDetallePage() {
         .from('orders')
         .select(`
           *,
-          cut_orders(
+          cut_orders:cut_orders!cut_orders_order_id_fkey(
             *,
             product:products!cut_orders_product_id_fkey(*),
-            assigned_operator:users!cut_orders_assigned_to_fkey(*)
+            assigned_operator:users!cut_orders_assigned_to_fkey(*),
+            reassigned_from_order:orders!cut_orders_reassigned_from_order_id_fkey(order_number)
           )
         `)
         .eq('id', pedidoId)
@@ -425,6 +426,7 @@ export default function PlantaPedidoDetallePage() {
             const isExpanded = expandedCutId === cutOrder.id
             const isPending = cutOrder.status === 'pendiente'
             const isCompleted = cutOrder.status === 'completada'
+            const isPendingConfirmation = cutOrder.status === 'pendiente_confirmacion'
             const cutSuggestions = suggestions[cutOrder.id]
             const selectedMaterial = selectedMaterials[cutOrder.id]
             const isProcessing = processing[cutOrder.id]
@@ -435,6 +437,8 @@ export default function PlantaPedidoDetallePage() {
                 className={`rounded-lg border-2 transition-all ${
                   isCompleted
                     ? 'bg-slate-800/50 border-green-500'
+                    : isPendingConfirmation
+                    ? 'bg-orange-900/30 border-orange-500'
                     : isExpanded
                     ? 'bg-slate-800 border-blue-500 shadow-lg shadow-blue-500/20'
                     : 'bg-slate-800/70 border-slate-600'
@@ -461,12 +465,19 @@ export default function PlantaPedidoDetallePage() {
                     <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-semibold ${
                       isCompleted
                         ? 'bg-green-500/20 text-green-400'
+                        : isPendingConfirmation
+                        ? 'bg-orange-500/20 text-orange-400'
                         : 'bg-yellow-500/20 text-yellow-400'
                     }`}>
                       {isCompleted ? (
                         <>
                           <CheckCircle2 className="w-4 h-4" />
                           Completada
+                        </>
+                      ) : isPendingConfirmation ? (
+                        <>
+                          <AlertTriangle className="w-4 h-4" />
+                          Confirmar Recogida
                         </>
                       ) : (
                         '🟡 Pendiente'
@@ -594,6 +605,51 @@ export default function PlantaPedidoDetallePage() {
                     >
                       {isProcessing ? 'Procesando...' : '✓ Confirmar Corte y Finalizar'}
                     </button>
+                  </div>
+                )}
+
+                {/* Contenido para pendiente de confirmación */}
+                {isPendingConfirmation && (
+                  <div className="px-4 pb-4 space-y-4 border-t border-orange-700 pt-4">
+                    <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Package className="w-6 h-6 text-orange-400" />
+                        <h4 className="font-bold text-white">RECOGER PIEZA REASIGNADA</h4>
+                      </div>
+                      
+                      <div className="bg-slate-900/50 rounded-lg p-4 space-y-3 mb-4">
+                        <p className="text-white">
+                          Esta pieza ha sido reasignada desde otro pedido. Debes recogerla de:
+                        </p>
+                        <div className="bg-orange-900/30 border border-orange-500/50 rounded-lg p-3">
+                          <p className="text-sm text-slate-400">Pedido Origen:</p>
+                          <p className="text-lg font-bold text-orange-400">
+                            {cutOrder.reassigned_from_order?.order_number || 'Cargando...'}
+                          </p>
+                        </div>
+                        <div className="text-sm text-slate-300">
+                          <p>📦 Material: <strong>{cutOrder.product?.code}</strong></p>
+                          <p>📏 Cantidad: <strong>{cutOrder.quantity_requested}m</strong></p>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={async () => {
+                          try {
+                            const { confirmReassignmentPickup } = await import('@/app/actions/confirm-reassignment')
+                            await confirmReassignmentPickup(cutOrder.id)
+                            showSuccess('✅ Recogida confirmada correctamente')
+                            // Recargar pedido completo
+                            await loadPedido()
+                          } catch (error: any) {
+                            showError(error.message || 'Error al confirmar recogida')
+                          }
+                        }}
+                        className="w-full px-6 py-4 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-bold text-lg transition-colors"
+                      >
+                        ✓ Confirmar que Recogí la Pieza
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

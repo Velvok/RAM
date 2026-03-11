@@ -17,6 +17,38 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
   const [activityLog, setActivityLog] = useState<any[]>([])
   const [loadingLog, setLoadingLog] = useState(false)
 
+  // Auto-refresh si hay órdenes pendientes de confirmación
+  useEffect(() => {
+    const hasPendingConfirmation = order.cut_orders?.some(
+      (co: any) => co.status === 'pendiente_confirmacion'
+    )
+    
+    if (hasPendingConfirmation) {
+      const interval = setInterval(async () => {
+        console.log('🔄 Auto-refresh: Verificando cambios...')
+        try {
+          const updated = await getOrderById(order.id)
+          // Solo actualizar si hay cambios en los estados
+          const hasChanges = updated.cut_orders?.some((newCo: any) => {
+            const oldCo = order.cut_orders?.find((co: any) => co.id === newCo.id)
+            return oldCo && oldCo.status !== newCo.status
+          })
+          
+          if (hasChanges) {
+            console.log('✅ Cambios detectados, actualizando...')
+            setOrder(updated)
+            setRefreshKey(prev => prev + 1)
+            await loadActivityLog()
+          }
+        } catch (error) {
+          console.error('Error en auto-refresh:', error)
+        }
+      }, 5000) // Cada 5 segundos
+      
+      return () => clearInterval(interval)
+    }
+  }, [order.cut_orders])
+
   // Función para recargar el pedido completo
   async function reloadOrder() {
     try {
@@ -30,11 +62,6 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
       console.error('Error reloading order:', error)
     }
   }
-
-  // Forzar recarga al montar el componente
-  useEffect(() => {
-    reloadOrder()
-  }, [])
 
   // Cargar log de actividades
   async function loadActivityLog() {
@@ -50,6 +77,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
         .order('created_at', { ascending: false })
       
       if (error) throw error
+      console.log('📋 Activity log loaded:', data)
       setActivityLog(data || [])
     } catch (error) {
       console.error('Error loading activity log:', error)
@@ -74,7 +102,14 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
       const result = await reassignStock(fromCutOrderId, selectedCutOrder.id)
       alert(`✅ Chapa reasignada correctamente\n\nDesde: ${result.fromOrder}\nA: ${result.toOrder}\nChapa: ${result.productCode}`)
       setReassignModalOpen(false)
+      
+      // Recargar pedido y log
       await reloadOrder()
+      
+      // Forzar recarga del log después de un delay
+      setTimeout(async () => {
+        await loadActivityLog()
+      }, 500)
     } catch (error: any) {
       console.error('Error reassigning:', error)
       alert('❌ Error al reasignar: ' + (error.message || 'Error desconocido'))
@@ -258,6 +293,11 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                           <Clock className="w-3 h-3 mr-1" />
                           Pendiente
                         </span>
+                      ) : cutOrder.status === 'pendiente_confirmacion' ? (
+                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-orange-100 text-orange-800">
+                          <Clock className="w-3 h-3 mr-1" />
+                          Pendiente Operario
+                        </span>
                       ) : (
                         <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
                           <CheckCircle2 className="w-3 h-3 mr-1" />
@@ -353,10 +393,26 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
               {activityLog.map((activity) => (
                 <div
                   key={activity.id}
-                  className="flex items-start gap-3 p-4 bg-slate-50 rounded-lg border border-slate-200"
+                  className={`flex items-start gap-3 p-4 rounded-lg border ${
+                    activity.activity_type === 'reassign_out' 
+                      ? 'bg-orange-50 border-orange-200' 
+                      : activity.activity_type === 'reassign_in'
+                      ? 'bg-green-50 border-green-200'
+                      : 'bg-slate-50 border-slate-200'
+                  }`}
                 >
-                  <div className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                    {activity.activity_type === 'reassign' ? (
+                  <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
+                    activity.activity_type === 'reassign_out'
+                      ? 'bg-orange-100'
+                      : activity.activity_type === 'reassign_in'
+                      ? 'bg-green-100'
+                      : 'bg-blue-100'
+                  }`}>
+                    {activity.activity_type === 'reassign_out' ? (
+                      <ArrowRightLeft className="w-5 h-5 text-orange-600" />
+                    ) : activity.activity_type === 'reassign_in' ? (
+                      <CheckCircle2 className="w-5 h-5 text-green-600" />
+                    ) : activity.activity_type === 'reassign' ? (
                       <ArrowRightLeft className="w-5 h-5 text-blue-600" />
                     ) : (
                       <Clock className="w-5 h-5 text-slate-600" />
@@ -366,6 +422,17 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                     <p className="text-sm font-medium text-slate-900">
                       {activity.description}
                     </p>
+                    {activity.metadata && (
+                      <div className="mt-2 text-xs text-slate-600 bg-white/50 rounded p-2 border border-slate-200">
+                        <p><strong>Acción:</strong> {activity.metadata.action}</p>
+                        {activity.metadata.product_code && (
+                          <p><strong>Chapa:</strong> {activity.metadata.product_code}</p>
+                        )}
+                        {activity.metadata.from_order_number && activity.metadata.to_order_number && (
+                          <p><strong>Transferencia:</strong> {activity.metadata.from_order_number} → {activity.metadata.to_order_number}</p>
+                        )}
+                      </div>
+                    )}
                     <p className="text-xs text-slate-500 mt-1">
                       {new Date(activity.created_at).toLocaleString('es-ES', {
                         day: '2-digit',
@@ -389,6 +456,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
           isOpen={reassignModalOpen}
           cutOrderId={selectedCutOrder.id}
           productSize={selectedCutOrder.quantity_requested}
+          currentOrderId={order.id}
           onClose={() => setReassignModalOpen(false)}
           onConfirm={handleReassign}
         />

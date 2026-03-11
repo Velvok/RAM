@@ -28,14 +28,8 @@ export default function GenerateTestOrderButton() {
         setErrorModal({ isOpen: true, message: errorMessage })
       } else {
         setIsOpen(false)
-        // Forzar refresh múltiple para evitar caché
-        router.refresh()
-        setTimeout(() => {
-          router.refresh()
-        }, 50)
-        setTimeout(() => {
-          router.refresh()
-        }, 200)
+        // Forzar recarga completa de la página
+        window.location.reload()
       }
     } catch (error: any) {
       console.error('Error generating test order:', error)

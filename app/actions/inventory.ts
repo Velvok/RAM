@@ -61,7 +61,11 @@ export async function updateStock(productId: string, quantity: number, type: 'ad
       user_id: user?.id,
     })
 
-  revalidatePath('/admin/stock')
+  // Revalidar todas las rutas relevantes
+  revalidatePath('/admin', 'page')
+  revalidatePath('/admin/stock', 'page')
+  revalidatePath('/admin/stock', 'layout')
+  revalidatePath('/admin/pedidos', 'page')
   return data
 }
 
@@ -126,7 +130,11 @@ export async function adjustStock(productId: string, newQuantity: number, notes:
         : `${notes} (añadido ${difference} unidades vírgenes)`,
     })
 
-  revalidatePath('/admin/stock')
+  // Revalidar todas las rutas relevantes
+  revalidatePath('/admin', 'page')
+  revalidatePath('/admin/stock', 'page')
+  revalidatePath('/admin/stock', 'layout')
+  revalidatePath('/admin/pedidos', 'page')
   return data
 }
 

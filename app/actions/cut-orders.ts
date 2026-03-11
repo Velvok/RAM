@@ -65,6 +65,10 @@ export async function assignCutOrder(cutOrderId: string, operatorId: string) {
 
   if (error) throw error
 
+  // Revalidar todas las rutas relevantes
+  revalidatePath('/admin', 'page')
+  revalidatePath('/admin/pedidos', 'page')
+  revalidatePath('/admin/stock', 'page')
   revalidatePath('/planta/ordenes', 'page')
   revalidatePath('/planta/ordenes', 'layout')
   revalidatePath(`/planta/ordenes/${cutOrderId}`, 'page')
@@ -97,6 +101,10 @@ export async function startCutOrder(cutOrderId: string, operatorId: string) {
   // Actualizar estado del pedido
   await updateOrderStatus(cutOrder.order_id)
 
+  // Revalidar todas las rutas relevantes
+  revalidatePath('/admin', 'page')
+  revalidatePath('/admin/pedidos', 'page')
+  revalidatePath('/admin/stock', 'page')
   revalidatePath('/planta/ordenes', 'page')
   revalidatePath('/planta/ordenes', 'layout')
   revalidatePath(`/planta/ordenes/${cutOrderId}`, 'page')
@@ -118,6 +126,10 @@ export async function pauseCutOrder(cutOrderId: string) {
 
   if (error) throw error
 
+  // Revalidar todas las rutas relevantes
+  revalidatePath('/admin', 'page')
+  revalidatePath('/admin/pedidos', 'page')
+  revalidatePath('/admin/stock', 'page')
   revalidatePath('/planta/ordenes', 'page')
   revalidatePath('/planta/ordenes', 'layout')
   revalidatePath(`/planta/ordenes/${cutOrderId}`, 'page')
@@ -221,11 +233,17 @@ export async function finishCutOrder(
   // Actualizar estado del pedido
   await updateOrderStatus(cutOrder.order_id)
 
+  // Revalidar todas las rutas relevantes
+  revalidatePath('/admin', 'page')
+  revalidatePath('/admin/pedidos', 'page')
+  revalidatePath('/admin/pedidos', 'layout')
+  revalidatePath(`/admin/pedidos/${cutOrder.order_id}`, 'page')
+  revalidatePath('/admin/stock', 'page')
+  revalidatePath('/admin/stock', 'layout')
+  revalidatePath('/admin/recortes', 'page')
   revalidatePath('/planta/ordenes', 'page')
   revalidatePath('/planta/ordenes', 'layout')
   revalidatePath(`/planta/ordenes/${cutOrderId}`, 'page')
-  revalidatePath('/admin/recortes', 'page')
-  revalidatePath('/admin/stock', 'page')
   
   return { success: true }
 }

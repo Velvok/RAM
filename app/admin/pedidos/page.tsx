@@ -22,19 +22,25 @@ export default async function PedidosPage() {
   try {
     const supabase = await createClient()
     
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('orders')
       .select(`
         *,
         client:clients(*),
         lines:order_lines(*, product:products(*)),
-        cut_orders(*)
+        cut_orders:cut_orders!cut_orders_order_id_fkey(*)
       `)
       .order('created_at', { ascending: false })
     
+    if (error) {
+      console.error('❌ Error loading orders:', error)
+      throw error
+    }
+    
+    console.log('✅ Pedidos cargados:', data?.length || 0)
     orders = data || []
   } catch (error) {
-    console.error('Error loading orders:', error)
+    console.error('❌ Error fatal loading orders:', error)
   }
 
   return (

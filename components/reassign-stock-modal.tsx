@@ -30,6 +30,7 @@ interface ReassignStockModalProps {
   isOpen: boolean
   cutOrderId: string
   productSize: number
+  currentOrderId: string
   onClose: () => void
   onConfirm: (fromCutOrderId: string) => Promise<void>
 }
@@ -38,6 +39,7 @@ export default function ReassignStockModal({
   isOpen,
   cutOrderId,
   productSize,
+  currentOrderId,
   onClose,
   onConfirm
 }: ReassignStockModalProps) {
@@ -73,7 +75,7 @@ export default function ReassignStockModal({
           material_base_id,
           product:products!cut_orders_product_id_fkey(code, name),
           material_base:products!cut_orders_material_base_id_fkey(code, name),
-          order:orders(id, order_number, client:clients(business_name))
+          order:orders!cut_orders_order_id_fkey(id, order_number, client:clients(business_name))
         `)
         .eq('status', 'completada')
         .not('material_base_id', 'is', null)
@@ -141,7 +143,9 @@ export default function ReassignStockModal({
         })
       })
 
-      setOrdersWithCutOrders(Object.values(grouped))
+      // Filtrar para excluir el pedido actual
+      const filteredOrders = Object.values(grouped).filter(order => order.id !== currentOrderId)
+      setOrdersWithCutOrders(filteredOrders)
     } catch (error) {
       console.error('Error loading available orders:', error)
     } finally {

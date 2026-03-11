@@ -25,21 +25,27 @@ export default function PlantaPedidosPage() {
     try {
       const supabase = createClient()
       
+      console.log('🔍 Buscando pedidos en estados: aprobado, en_corte')
+      
       // Obtener pedidos aprobados y en_corte con conteo de órdenes
       const { data, error } = await supabase
         .from('orders')
         .select(`
           *,
-          cut_orders(count)
+          cut_orders!cut_orders_order_id_fkey(id)
         `)
         .in('status', ['aprobado', 'en_corte'])
         .order('created_at', { ascending: false })
 
-      if (error) throw error
+      if (error) {
+        console.error('❌ Error en consulta:', error)
+        throw error
+      }
       
+      console.log('✅ Pedidos encontrados:', data?.length || 0, data)
       setPedidos(data || [])
     } catch (error) {
-      console.error('Error loading pedidos:', error)
+      console.error('❌ Error loading pedidos:', error)
     } finally {
       setLoading(false)
     }
@@ -89,7 +95,7 @@ export default function PlantaPedidosPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {pedidos.map((pedido) => {
-              const cutOrdersCount = pedido.cut_orders?.[0]?.count || 0
+              const cutOrdersCount = pedido.cut_orders?.length || 0
               
               return (
                 <div

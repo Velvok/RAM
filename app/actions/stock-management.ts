@@ -16,7 +16,9 @@ async function logOrderActivity(
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  await supabase.from('order_activity_log').insert({
+  console.log('📝 Logging activity:', { orderId, activityType, description })
+
+  const { data, error } = await supabase.from('order_activity_log').insert({
     order_id: orderId,
     cut_order_id: cutOrderId,
     activity_type: activityType,
@@ -24,6 +26,16 @@ async function logOrderActivity(
     metadata,
     user_id: user?.id,
   })
+
+  if (error) {
+    console.error('❌ Error logging activity:', error)
+    throw error
+  }
+
+  console.log('✅ Activity logged successfully')
+  
+  // Revalidar la página del pedido
+  revalidatePath(`/admin/pedidos/${orderId}`)
 }
 
 /**
@@ -186,8 +198,13 @@ export async function assignStockToCutOrder(
 
   if (error) throw error
   
-  revalidatePath('/admin/stock')
-  revalidatePath('/admin/pedidos')
+  // Revalidar todas las rutas relevantes
+  revalidatePath('/admin', 'page')
+  revalidatePath('/admin/stock', 'page')
+  revalidatePath('/admin/stock', 'layout')
+  revalidatePath('/admin/pedidos', 'page')
+  revalidatePath('/admin/pedidos', 'layout')
+  revalidatePath('/planta/ordenes', 'page')
   return data
 }
 
@@ -248,7 +265,11 @@ export async function reserveStock(inventoryId: string) {
     notes: `Reserva de ${current.product?.name || 'pieza'} (${current.stock_total}m)`,
   })
 
-  revalidatePath('/admin/stock')
+  // Revalidar todas las rutas relevantes
+  revalidatePath('/admin', 'page')
+  revalidatePath('/admin/stock', 'page')
+  revalidatePath('/admin/stock', 'layout')
+  revalidatePath('/admin/pedidos', 'page')
   return data
 }
 
@@ -297,7 +318,11 @@ export async function unreserveStock(inventoryId: string, quantity: number) {
     notes: `Reserva liberada de ${current.product?.name || 'pieza'}`,
   })
 
-  revalidatePath('/admin/stock')
+  // Revalidar todas las rutas relevantes
+  revalidatePath('/admin', 'page')
+  revalidatePath('/admin/stock', 'page')
+  revalidatePath('/admin/stock', 'layout')
+  revalidatePath('/admin/pedidos', 'page')
   return data
 }
 
@@ -345,7 +370,11 @@ export async function releaseToInProcess(inventoryId: string, quantity: number) 
     notes: `Stock movido a en proceso (${current.product?.name})`,
   })
 
-  revalidatePath('/admin/stock')
+  // Revalidar todas las rutas relevantes
+  revalidatePath('/admin', 'page')
+  revalidatePath('/admin/stock', 'page')
+  revalidatePath('/admin/stock', 'layout')
+  revalidatePath('/admin/pedidos', 'page')
   return data
 }
 
@@ -409,7 +438,11 @@ export async function consumeStock(inventoryId: string, quantity: number) {
     notes,
   })
 
-  revalidatePath('/admin/stock')
+  // Revalidar todas las rutas relevantes
+  revalidatePath('/admin', 'page')
+  revalidatePath('/admin/stock', 'page')
+  revalidatePath('/admin/stock', 'layout')
+  revalidatePath('/admin/pedidos', 'page')
   return data
 }
 
@@ -493,7 +526,12 @@ export async function generateRemnantStock(
 
     console.log(`✅ Stock generado: ${product.code} +1 unidad (total: ${newTotal})`)
     
-    revalidatePath('/admin/stock')
+    // Revalidar todas las rutas relevantes
+    revalidatePath('/admin', 'page')
+    revalidatePath('/admin/stock', 'page')
+    revalidatePath('/admin/stock', 'layout')
+    revalidatePath('/admin/pedidos', 'page')
+    revalidatePath('/admin/recortes', 'page')
     return data
   } else {
     // Crear nuevo registro de inventory
@@ -524,7 +562,12 @@ export async function generateRemnantStock(
 
     console.log(`✅ Inventory creado: ${product.code} con 1 unidad generada`)
     
-    revalidatePath('/admin/stock')
+    // Revalidar todas las rutas relevantes
+    revalidatePath('/admin', 'page')
+    revalidatePath('/admin/stock', 'page')
+    revalidatePath('/admin/stock', 'layout')
+    revalidatePath('/admin/pedidos', 'page')
+    revalidatePath('/admin/recortes', 'page')
     return data
   }
 }
@@ -589,7 +632,7 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
     .from('cut_orders')
     .select(`
       *,
-      order:orders(id, order_number),
+      order:orders!cut_orders_order_id_fkey(id, order_number),
       product:products!cut_orders_product_id_fkey(id, code, name),
       material_base:products!cut_orders_material_base_id_fkey(id, code, name)
     `)
@@ -614,7 +657,7 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
     .from('cut_orders')
     .select(`
       *,
-      order:orders(id, order_number),
+      order:orders!cut_orders_order_id_fkey(id, order_number),
       product:products!cut_orders_product_id_fkey(id, code, name)
     `)
     .eq('id', toCutOrderId)
@@ -627,6 +670,10 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
 
   const inventoryId = assignedInventory.id
   const productId = assignedInventory.product_id
+
+  // Extraer datos de las órdenes
+  const fromOrderData = Array.isArray(fromOrder.order) ? fromOrder.order[0] : fromOrder.order
+  const toOrderData = Array.isArray(toOrder.order) ? toOrder.order[0] : toOrder.order
 
   // 2. Liberar reserva de la orden origen
   console.log(`📤 Liberando reserva de orden origen...`)
@@ -643,18 +690,31 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
 
   if (updateFromError) throw updateFromError
 
-  // 4. Asignar a la orden destino
-  console.log(`📥 Asignando a orden destino...`)
+  // 4. Asignar a la orden destino Y marcarla como completada
+  console.log(`📥 Asignando a orden destino y marcando como completada...`)
   const assignedProduct = Array.isArray(assignedInventory.product) 
     ? assignedInventory.product[0] 
     : assignedInventory.product
   const assignedSize = extractSizeFromCode(assignedProduct.code)
   await assignStockToCutOrder(toCutOrderId, inventoryId, productId, assignedSize)
 
-  // 5. Reservar para la orden destino
+  // 5. Marcar orden destino como PENDIENTE DE CONFIRMACIÓN
+  // El operario debe confirmar que recogió la pieza del pedido origen
+  const { error: completeError } = await supabase
+    .from('cut_orders')
+    .update({
+      status: 'pendiente_confirmacion',
+      reassigned_from_order_id: fromOrderData.id,
+      reassigned_from_cut_order_id: fromCutOrderId,
+    })
+    .eq('id', toCutOrderId)
+
+  if (completeError) throw completeError
+
+  // 6. Reservar para la orden destino
   await reserveStock(inventoryId)
 
-  // 6. Buscar nueva chapa para la orden origen (permitir stock negativo)
+  // 7. Buscar nueva chapa para la orden origen (permitir stock negativo)
   console.log(`🔍 Buscando nueva chapa para orden origen...`)
   try {
     const sizeNeeded = extractSizeFromCode(fromOrder.product.code)
@@ -691,38 +751,66 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
     // Continuar aunque falle (la orden queda sin asignar)
   }
 
-  // 7. Actualizar estado del pedido origen si es necesario
-  const fromOrderData = Array.isArray(fromOrder.order) ? fromOrder.order[0] : fromOrder.order
-  const toOrderData = Array.isArray(toOrder.order) ? toOrder.order[0] : toOrder.order
+  // 8. Actualizar estados de ambos pedidos
+  // (fromOrderData y toOrderData ya declarados arriba)
   
-  const { data: orderOrders } = await supabase
+  // Actualizar estado del pedido origen
+  const { data: fromOrderOrders } = await supabase
     .from('cut_orders')
     .select('status')
     .eq('order_id', fromOrderData.id)
 
-  const allCompleted = orderOrders?.every(o => o.status === 'completada')
-  const anyInProgress = orderOrders?.some(o => o.status === 'en_proceso')
+  const fromAllCompleted = fromOrderOrders?.every(o => o.status === 'completada')
+  const fromAnyInProgress = fromOrderOrders?.some(o => o.status === 'en_proceso')
+  const fromAnyCompleted = fromOrderOrders?.some(o => o.status === 'completada')
 
-  let newOrderStatus = fromOrderData.status
-  if (allCompleted) {
-    newOrderStatus = 'finalizado'
-  } else if (anyInProgress) {
-    newOrderStatus = 'en_corte'
+  let fromNewStatus = fromOrderData.status
+  if (fromAllCompleted) {
+    fromNewStatus = 'finalizado'
+  } else if (fromAnyInProgress || fromAnyCompleted) {
+    // Si hay alguna en proceso O completada, está en corte
+    fromNewStatus = 'en_corte'
   } else {
-    newOrderStatus = 'aprobado'
+    fromNewStatus = 'aprobado'
   }
 
   await supabase
     .from('orders')
-    .update({ status: newOrderStatus })
+    .update({ status: fromNewStatus })
     .eq('id', fromOrderData.id)
 
-  // 8. Registrar en el log de actividades
+  // Actualizar estado del pedido destino
+  const { data: toOrderOrders } = await supabase
+    .from('cut_orders')
+    .select('status')
+    .eq('order_id', toOrderData.id)
+
+  const toAllCompleted = toOrderOrders?.every(o => o.status === 'completada')
+  const toAnyInProgress = toOrderOrders?.some(o => o.status === 'en_proceso')
+  const toAnyCompleted = toOrderOrders?.some(o => o.status === 'completada')
+
+  let toNewStatus = toOrderData.status
+  if (toAllCompleted) {
+    toNewStatus = 'finalizado'
+  } else if (toAnyInProgress || toAnyCompleted) {
+    // Si hay alguna en proceso O completada, está en corte
+    toNewStatus = 'en_corte'
+  } else {
+    toNewStatus = 'aprobado'
+  }
+
+  await supabase
+    .from('orders')
+    .update({ status: toNewStatus })
+    .eq('id', toOrderData.id)
+
+  // 9. Registrar en el log de actividades de AMBOS pedidos
   
+  // Log en pedido ORIGEN (de donde sale la chapa)
   await logOrderActivity(
     fromOrderData.id,
-    'reassign',
-    `Chapa ${assignedProduct.code} reasignada desde orden ${fromOrder.cut_number} a orden ${toOrder.cut_number}`,
+    'reassign_out',
+    `Chapa cortada ${assignedProduct.code} reasignada desde orden ${fromOrder.cut_number} hacia pedido ${toOrderData.order_number} (orden ${toOrder.cut_number})`,
     {
       from_cut_order_id: fromCutOrderId,
       to_cut_order_id: toCutOrderId,
@@ -730,14 +818,16 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
       to_order_number: toOrderData.order_number,
       inventory_id: inventoryId,
       product_code: assignedProduct.code,
+      action: 'Chapa cortada transferida a otro pedido'
     },
     fromCutOrderId
   )
 
+  // Log en pedido DESTINO (a donde llega la chapa)
   await logOrderActivity(
     toOrderData.id,
-    'reassign',
-    `Chapa ${assignedProduct.code} recibida desde orden ${fromOrder.cut_number}`,
+    'reassign_in',
+    `Chapa cortada ${assignedProduct.code} recibida desde pedido ${fromOrderData.order_number} (orden ${fromOrder.cut_number}). Pendiente de confirmación por operario.`,
     {
       from_cut_order_id: fromCutOrderId,
       to_cut_order_id: toCutOrderId,
@@ -745,15 +835,20 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
       to_order_number: toOrderData.order_number,
       inventory_id: inventoryId,
       product_code: assignedProduct.code,
+      action: 'Chapa cortada recibida de otro pedido - pendiente de confirmación'
     },
     toCutOrderId
   )
 
-  // Revalidar rutas
-  revalidatePath('/admin/pedidos')
-  revalidatePath(`/admin/pedidos/${fromOrderData.id}`)
-  revalidatePath(`/admin/pedidos/${toOrderData.id}`)
-  revalidatePath('/admin/stock')
+  // Revalidar todas las rutas relevantes
+  revalidatePath('/admin', 'page')
+  revalidatePath('/admin/pedidos', 'page')
+  revalidatePath('/admin/pedidos', 'layout')
+  revalidatePath(`/admin/pedidos/${fromOrderData.id}`, 'page')
+  revalidatePath(`/admin/pedidos/${toOrderData.id}`, 'page')
+  revalidatePath('/admin/stock', 'page')
+  revalidatePath('/admin/stock', 'layout')
+  revalidatePath('/planta/ordenes', 'page')
 
   console.log(`✅ Reasignación completada`)
 

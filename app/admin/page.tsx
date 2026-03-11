@@ -29,7 +29,7 @@ export default async function AdminDashboard() {
         *,
         client:clients(*),
         lines:order_lines(*, product:products(*)),
-        cut_orders(*)
+        cut_orders:cut_orders!cut_orders_order_id_fkey(*)
       `)
       .order('created_at', { ascending: false })
       .limit(10)

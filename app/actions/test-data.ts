@@ -5,18 +5,27 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidateAll } from '@/lib/revalidate'
 
 export async function generateTestOrder(status: string = 'nuevo', numLines: number = 1) {
+  console.log('🎲 Generando pedido de prueba...', { status, numLines })
   const supabase = await createClient()
 
   // Obtener un cliente aleatorio
-  const { data: clients } = await supabase
+  const { data: clients, error: clientError } = await supabase
     .from('clients')
     .select('id')
     .limit(1)
     .single()
 
+  if (clientError) {
+    console.error('❌ Error obteniendo cliente:', clientError)
+    return { error: 'Error obteniendo cliente: ' + clientError.message }
+  }
+
   if (!clients) {
+    console.error('❌ No hay clientes disponibles')
     return { error: 'No hay clientes disponibles' }
   }
+
+  console.log('✅ Cliente encontrado:', clients.id)
 
   // Obtener productos que tengan stock disponible
   const { data: inventoryItems } = await supabase
@@ -105,9 +114,11 @@ export async function generateTestOrder(status: string = 'nuevo', numLines: numb
     .single()
 
   if (orderError) {
-    console.error('Error creating order:', orderError)
+    console.error('❌ Error creating order:', orderError)
     return { error: orderError.message }
   }
+
+  console.log('✅ Pedido creado:', order.id, order.order_number)
 
   // Crear líneas de pedido
   const linesToInsert = orderLines.map(line => ({
@@ -125,15 +136,19 @@ export async function generateTestOrder(status: string = 'nuevo', numLines: numb
     .insert(linesToInsert)
 
   if (lineError) {
-    console.error('Error creating order lines:', lineError)
+    console.error('❌ Error creating order lines:', lineError)
     return { error: lineError.message }
   }
+
+  console.log('✅ Líneas de pedido creadas:', linesToInsert.length)
 
   // NO crear órdenes de corte automáticamente
   // Las órdenes de corte se crean solo cuando el admin aprueba el pedido
 
   // Revalidar TODO el sistema
   revalidateAll()
+  
+  console.log('✅ Pedido de prueba generado exitosamente:', order.order_number)
   
   return { success: true, order }
 }

@@ -29,7 +29,7 @@ export async function getOrderById(id: string) {
       *,
       client:clients(*),
       lines:order_lines(*, product:products(*)),
-      cut_orders(
+      cut_orders:cut_orders!cut_orders_order_id_fkey(
         *,
         product:products!cut_orders_product_id_fkey(*),
         material_base:products!cut_orders_material_base_id_fkey(*),
@@ -70,7 +70,13 @@ export async function cancelOrder(orderId: string) {
 
   // Revalidar todas las rutas de pedidos
   revalidateOrders(orderId)
+  revalidatePath('/admin', 'page')
+  revalidatePath('/admin/pedidos', 'page')
+  revalidatePath('/admin/pedidos', 'layout')
+  revalidatePath(`/admin/pedidos/${orderId}`, 'page')
+  revalidatePath('/admin/stock', 'page')
   revalidatePath('/planta/ordenes', 'page')
+  revalidatePath('/planta/ordenes', 'layout')
   return data
 }
 
@@ -180,7 +186,14 @@ export async function approveOrder(orderId: string) {
 
   // Revalidar todas las rutas de pedidos
   revalidateOrders(orderId)
+  revalidatePath('/admin', 'page')
+  revalidatePath('/admin/pedidos', 'page')
+  revalidatePath('/admin/pedidos', 'layout')
+  revalidatePath(`/admin/pedidos/${orderId}`, 'page')
+  revalidatePath('/admin/stock', 'page')
+  revalidatePath('/admin/stock', 'layout')
   revalidatePath('/planta/ordenes', 'page')
+  revalidatePath('/planta/ordenes', 'layout')
   
   return { 
     success: true,
@@ -212,15 +225,15 @@ export async function updateOrderStatus(orderId: string) {
 
   const totalOrders = cutOrders.length
   const completedOrders = cutOrders.filter(co => co.status === 'completada').length
-  const pendingOrders = cutOrders.filter(co => co.status === 'pendiente').length
+  const inProgressOrders = cutOrders.filter(co => co.status === 'en_proceso').length
 
   let newStatus = 'aprobado'
 
   if (completedOrders === totalOrders) {
     // Todas las órdenes completadas
     newStatus = 'finalizado'
-  } else if (completedOrders > 0 && pendingOrders > 0) {
-    // Algunas completadas, otras pendientes
+  } else if (completedOrders > 0 || inProgressOrders > 0) {
+    // Si hay alguna completada O en proceso, está en corte
     newStatus = 'en_corte'
   }
 
@@ -230,9 +243,14 @@ export async function updateOrderStatus(orderId: string) {
     .update({ status: newStatus })
     .eq('id', orderId)
 
+  // Revalidar todas las rutas relevantes
+  revalidatePath('/admin', 'page')
   revalidatePath('/admin/pedidos', 'page')
+  revalidatePath('/admin/pedidos', 'layout')
   revalidatePath(`/admin/pedidos/${orderId}`, 'page')
+  revalidatePath('/admin/stock', 'page')
   revalidatePath('/planta/ordenes', 'page')
+  revalidatePath('/planta/ordenes', 'layout')
 }
 
 /**
@@ -296,9 +314,15 @@ export async function markOrderAsDelivered(orderId: string) {
     })
   }
 
-  revalidatePath('/admin/pedidos')
-  revalidatePath(`/admin/pedidos/${orderId}`)
-  revalidatePath('/admin/stock')
+  // Revalidar todas las rutas relevantes
+  revalidatePath('/admin', 'page')
+  revalidatePath('/admin/pedidos', 'page')
+  revalidatePath('/admin/pedidos', 'layout')
+  revalidatePath(`/admin/pedidos/${orderId}`, 'page')
+  revalidatePath('/admin/stock', 'page')
+  revalidatePath('/admin/stock', 'layout')
+  revalidatePath('/planta/ordenes', 'page')
+  revalidatePath('/planta/ordenes', 'layout')
 
   return { success: true }
 }
