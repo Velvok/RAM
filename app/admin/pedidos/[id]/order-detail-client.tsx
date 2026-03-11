@@ -20,6 +20,8 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
   // Función para recargar el pedido completo
   async function reloadOrder() {
     try {
+      // Agregar timestamp para evitar caché
+      const timestamp = Date.now()
       const updated = await getOrderById(order.id)
       setOrder(updated)
       setRefreshKey(prev => prev + 1)
@@ -28,6 +30,11 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
       console.error('Error reloading order:', error)
     }
   }
+
+  // Forzar recarga al montar el componente
+  useEffect(() => {
+    reloadOrder()
+  }, [])
 
   // Cargar log de actividades
   async function loadActivityLog() {

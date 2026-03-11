@@ -4,6 +4,15 @@ import { QuickAdjustModal } from '@/components/stock/quick-adjust-modal'
 // Deshabilitar caché para esta página
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
+export const fetchCache = 'force-no-store'
+
+export async function generateMetadata() {
+  return {
+    other: {
+      'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+    }
+  }
+}
 
 export default async function StockPage() {
   const inventory = await getInventory()

@@ -591,7 +591,7 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
       *,
       order:orders(id, order_number),
       product:products!cut_orders_product_id_fkey(id, code, name),
-      assigned_inventory:inventory!cut_orders_material_base_id_fkey(id, product_id, product:products(code, name))
+      material_base:products!cut_orders_material_base_id_fkey(id, code, name)
     `)
     .eq('id', fromCutOrderId)
     .single()
@@ -600,6 +600,15 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
   if (!fromOrder.material_base_id) {
     throw new Error('La orden origen no tiene stock asignado')
   }
+
+  // Obtener el inventory que tiene este producto asignado
+  const { data: assignedInventory, error: invError } = await supabase
+    .from('inventory')
+    .select('id, product_id, product:products(code, name)')
+    .eq('product_id', fromOrder.material_base_id)
+    .single()
+
+  if (invError) throw invError
 
   const { data: toOrder, error: toError } = await supabase
     .from('cut_orders')
@@ -616,8 +625,8 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
     throw new Error('No se puede reasignar a una orden ya completada')
   }
 
-  const inventoryId = fromOrder.material_base_id
-  const productId = fromOrder.assigned_inventory.product_id
+  const inventoryId = assignedInventory.id
+  const productId = assignedInventory.product_id
 
   // 2. Liberar reserva de la orden origen
   console.log(`📤 Liberando reserva de orden origen...`)
@@ -636,7 +645,11 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
 
   // 4. Asignar a la orden destino
   console.log(`📥 Asignando a orden destino...`)
-  await assignStockToCutOrder(toCutOrderId, inventoryId, productId, fromOrder.assigned_inventory.product.code)
+  const assignedProduct = Array.isArray(assignedInventory.product) 
+    ? assignedInventory.product[0] 
+    : assignedInventory.product
+  const assignedSize = extractSizeFromCode(assignedProduct.code)
+  await assignStockToCutOrder(toCutOrderId, inventoryId, productId, assignedSize)
 
   // 5. Reservar para la orden destino
   await reserveStock(inventoryId)
@@ -649,7 +662,8 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
 
     if (bestMatch) {
       // Asignar y reservar
-      await assignStockToCutOrder(fromCutOrderId, bestMatch.inventory_id, bestMatch.product_id, bestMatch.product_code)
+      const matchSize = extractSizeFromCode(bestMatch.product_code)
+      await assignStockToCutOrder(fromCutOrderId, bestMatch.inventory_id, bestMatch.product_id, matchSize)
       await reserveStock(bestMatch.inventory_id)
       console.log(`✅ Nueva chapa asignada: ${bestMatch.product_code}`)
     } else {
@@ -665,7 +679,9 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
 
       if (existingInventory) {
         // Asignar el inventory existente (aunque tenga stock negativo)
-        await assignStockToCutOrder(fromCutOrderId, existingInventory.id, fromOrder.product_id, fromOrder.product.code)
+        const fromProduct = Array.isArray(fromOrder.product) ? fromOrder.product[0] : fromOrder.product
+        const fromSize = extractSizeFromCode(fromProduct.code)
+        await assignStockToCutOrder(fromCutOrderId, existingInventory.id, fromOrder.product_id, fromSize)
         await reserveStock(existingInventory.id) // Esto hará que stock_disponible sea negativo
         console.log(`⚠️ Asignado con stock negativo: ${existingInventory.stock_disponible - 1}`)
       }
@@ -676,15 +692,18 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
   }
 
   // 7. Actualizar estado del pedido origen si es necesario
+  const fromOrderData = Array.isArray(fromOrder.order) ? fromOrder.order[0] : fromOrder.order
+  const toOrderData = Array.isArray(toOrder.order) ? toOrder.order[0] : toOrder.order
+  
   const { data: orderOrders } = await supabase
     .from('cut_orders')
     .select('status')
-    .eq('order_id', fromOrder.order.id)
+    .eq('order_id', fromOrderData.id)
 
   const allCompleted = orderOrders?.every(o => o.status === 'completada')
   const anyInProgress = orderOrders?.some(o => o.status === 'en_proceso')
 
-  let newOrderStatus = fromOrder.order.status
+  let newOrderStatus = fromOrderData.status
   if (allCompleted) {
     newOrderStatus = 'finalizado'
   } else if (anyInProgress) {
@@ -696,52 +715,53 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
   await supabase
     .from('orders')
     .update({ status: newOrderStatus })
-    .eq('id', fromOrder.order.id)
+    .eq('id', fromOrderData.id)
 
   // 8. Registrar en el log de actividades
+  
   await logOrderActivity(
-    fromOrder.order.id,
+    fromOrderData.id,
     'reassign',
-    `Chapa ${fromOrder.assigned_inventory.product.code} reasignada desde orden ${fromOrder.order_number} a orden ${toOrder.order_number}`,
+    `Chapa ${assignedProduct.code} reasignada desde orden ${fromOrder.cut_number} a orden ${toOrder.cut_number}`,
     {
       from_cut_order_id: fromCutOrderId,
       to_cut_order_id: toCutOrderId,
-      from_order_number: fromOrder.order_number,
-      to_order_number: toOrder.order_number,
+      from_order_number: fromOrderData.order_number,
+      to_order_number: toOrderData.order_number,
       inventory_id: inventoryId,
-      product_code: fromOrder.assigned_inventory.product.code,
+      product_code: assignedProduct.code,
     },
     fromCutOrderId
   )
 
   await logOrderActivity(
-    toOrder.order.id,
+    toOrderData.id,
     'reassign',
-    `Chapa ${fromOrder.assigned_inventory.product.code} recibida desde orden ${fromOrder.order_number}`,
+    `Chapa ${assignedProduct.code} recibida desde orden ${fromOrder.cut_number}`,
     {
       from_cut_order_id: fromCutOrderId,
       to_cut_order_id: toCutOrderId,
-      from_order_number: fromOrder.order_number,
-      to_order_number: toOrder.order_number,
+      from_order_number: fromOrderData.order_number,
+      to_order_number: toOrderData.order_number,
       inventory_id: inventoryId,
-      product_code: fromOrder.assigned_inventory.product.code,
+      product_code: assignedProduct.code,
     },
     toCutOrderId
   )
 
   // Revalidar rutas
   revalidatePath('/admin/pedidos')
-  revalidatePath(`/admin/pedidos/${fromOrder.order.id}`)
-  revalidatePath(`/admin/pedidos/${toOrder.order.id}`)
+  revalidatePath(`/admin/pedidos/${fromOrderData.id}`)
+  revalidatePath(`/admin/pedidos/${toOrderData.id}`)
   revalidatePath('/admin/stock')
 
   console.log(`✅ Reasignación completada`)
 
   return {
     success: true,
-    fromOrder: fromOrder.order_number,
-    toOrder: toOrder.order_number,
-    productCode: fromOrder.assigned_inventory.product.code,
+    fromOrder: fromOrderData.order_number,
+    toOrder: toOrderData.order_number,
+    productCode: assignedProduct.code,
   }
 }
 

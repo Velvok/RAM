@@ -8,6 +8,14 @@ export const revalidate = 0
 export const fetchCache = 'force-no-store'
 export const runtime = 'nodejs'
 
+export async function generateMetadata() {
+  return {
+    other: {
+      'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+    }
+  }
+}
+
 export default async function PedidosPage() {
   let orders = []
 
