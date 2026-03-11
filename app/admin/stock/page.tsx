@@ -1,7 +1,5 @@
 import { getInventory } from '@/app/actions/inventory'
-import { Button } from '@/components/ui/button'
-import { Plus } from 'lucide-react'
-import Link from 'next/link'
+import { QuickAdjustModal } from '@/components/stock/quick-adjust-modal'
 
 // Deshabilitar caché para esta página
 export const dynamic = 'force-dynamic'
@@ -12,17 +10,9 @@ export default async function StockPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">Inventario</h2>
-          <p className="text-slate-600">Gestión de stock y disponibilidad</p>
-        </div>
-        <Link href="/admin/stock/ajustes">
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            Ajustar Stock
-          </Button>
-        </Link>
+      <div>
+        <h2 className="text-2xl font-bold text-slate-900">Inventario</h2>
+        <p className="text-slate-600">Gestión de stock y disponibilidad</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
@@ -61,13 +51,16 @@ export default async function StockPage() {
                 Reservado
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                En Proceso
+                Generado
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
                 Disponible
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
                 Estado
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                Acciones
               </th>
             </tr>
           </thead>
@@ -81,16 +74,16 @@ export default async function StockPage() {
                   {item.product?.name}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
-                  {item.stock_total?.toFixed(2)} m
+                  {item.stock_total?.toFixed(0)} unidades
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-yellow-600">
-                  {item.stock_reservado?.toFixed(2)} m
+                  {item.stock_reservado?.toFixed(0)} unidades
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-blue-600">
-                  {item.stock_en_proceso?.toFixed(2)} m
+                  {item.stock_generado?.toFixed(0) || 0} unidades
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-slate-900">
-                  {item.stock_disponible?.toFixed(2)} m
+                  {item.stock_disponible?.toFixed(0)} unidades
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   {item.stock_disponible <= 0 ? (
@@ -106,6 +99,9 @@ export default async function StockPage() {
                       Disponible
                     </span>
                   )}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                  <QuickAdjustModal inventoryItem={item} />
                 </td>
               </tr>
             ))}

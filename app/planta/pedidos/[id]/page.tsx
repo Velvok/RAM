@@ -1,16 +1,29 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { finishCutOrder } from '@/app/actions/cut-orders'
-import { getMaterialSuggestions, type MaterialSuggestion } from '@/app/actions/material-suggestions'
+import { useError } from '@/components/error-modal'
+import { useSuccess } from '@/components/success-modal'
 import { CheckCircle2, ArrowLeft, ChevronDown, ChevronUp } from 'lucide-react'
+
+// Tipo para sugerencias (mock)
+interface MaterialSuggestion {
+  type: 'remnant' | 'virgin'
+  id: string
+  name: string
+  length: number
+  waste: number
+  location: string
+  priority: number
+}
 
 export default function PlantaPedidoDetallePage() {
   const router = useRouter()
   const params = useParams()
   const pedidoId = params.id as string
+  const { showError, ErrorDialog } = useError()
+  const { showSuccess, SuccessDialog } = useSuccess()
 
   const [operator, setOperator] = useState<any>(null)
   const [pedido, setPedido] = useState<any>(null)
@@ -65,12 +78,113 @@ export default function PlantaPedidoDetallePage() {
 
     setExpandedCutId(cutOrderId)
 
-    // Cargar sugerencias si no las tenemos
+    // Cargar sugerencias reales de stock
     if (!suggestions[cutOrderId]) {
-      const result = await getMaterialSuggestions(productId, lengthNeeded)
-      setSuggestions(prev => ({ ...prev, [cutOrderId]: result }))
-      if (result.best) {
-        setSelectedMaterials(prev => ({ ...prev, [cutOrderId]: result.best! }))
+      try {
+        const supabase = createClient()
+        
+        // Obtener la orden de corte
+        const { data: cutOrder } = await supabase
+          .from('cut_orders')
+          .select(`
+            *,
+            product:products!cut_orders_product_id_fkey(*),
+            assigned_product:products!cut_orders_material_base_id_fkey(*)
+          `)
+          .eq('id', cutOrderId)
+          .single()
+
+        let bestSuggestion: MaterialSuggestion | null = null
+        let alternatives: MaterialSuggestion[] = []
+
+        // Si hay stock asignado, usarlo como sugerencia principal
+        if (cutOrder?.material_base_id && cutOrder?.material_base_quantity) {
+          // Buscar el inventory item del producto asignado
+          const { data: assignedInventory } = await supabase
+            .from('inventory')
+            .select('*, product:products(*)')
+            .eq('product_id', cutOrder.material_base_id)
+            .gt('stock_disponible', 0)
+            .single()
+
+          bestSuggestion = {
+            type: 'virgin' as const,
+            id: assignedInventory?.id || cutOrder.material_base_id,
+            name: `${cutOrder.assigned_product?.code || 'Stock'} (${cutOrder.material_base_quantity}m)`,
+            length: cutOrder.material_base_quantity,
+            waste: Math.max(0, cutOrder.material_base_quantity - lengthNeeded),
+            location: '✓ Asignado automáticamente',
+            priority: 1,
+          }
+        }
+
+        // Buscar alternativas disponibles del mismo tipo de producto (código base)
+        // Primero obtener el código base del producto solicitado
+        const baseCode = cutOrder?.product?.code?.match(/^([A-Z0-9]+)\./i)?.[1]
+        
+        if (baseCode) {
+          // Buscar todos los productos con el mismo código base
+          const { data: relatedProducts } = await supabase
+            .from('products')
+            .select('id, code, name')
+            .ilike('code', `${baseCode}.%`)
+
+          if (relatedProducts && relatedProducts.length > 0) {
+            const productIds = relatedProducts.map(p => p.id)
+            
+            // Buscar stock disponible de estos productos
+            const { data: availableStock } = await supabase
+              .from('inventory')
+              .select('*, product:products(*)')
+              .in('product_id', productIds)
+              .gt('stock_disponible', 0)
+              .limit(10)
+
+            if (availableStock) {
+              // Extraer tamaño del código para cada pieza
+              alternatives = availableStock
+                .map(item => {
+                  const sizeMatch = item.product?.code?.match(/\.(\d+),(\d+)$/)
+                  const size = sizeMatch ? parseFloat(`${sizeMatch[1]}.${sizeMatch[2]}`) : item.stock_total
+                  return {
+                    type: 'virgin' as const,
+                    id: item.id,
+                    name: `${item.product?.code} (${size}m)`,
+                    length: size,
+                    waste: Math.max(0, size - lengthNeeded),
+                    location: `${item.stock_disponible} disponibles`,
+                    priority: 2,
+                  }
+                })
+                .filter(item => item.length >= lengthNeeded) // Solo mostrar piezas suficientemente grandes
+                .sort((a, b) => a.waste - b.waste) // Ordenar por menor desperdicio
+            }
+          }
+        }
+
+        // Combinar sugerencia principal y alternativas para el dropdown
+        // Evitar duplicados: si bestSuggestion ya está en alternatives, no agregarlo de nuevo
+        const allOptions = bestSuggestion 
+          ? [bestSuggestion, ...alternatives.filter(alt => alt.id !== bestSuggestion.id)]
+          : alternatives
+
+        const suggestion = {
+          best: bestSuggestion || {
+            type: 'virgin' as const,
+            id: 'no-stock',
+            name: 'Sin stock asignado',
+            length: 0,
+            waste: 0,
+            location: 'No disponible',
+            priority: 99,
+          },
+          alternatives,
+          all: allOptions
+        }
+        setSuggestions(prev => ({ ...prev, [cutOrderId]: suggestion }))
+        setSelectedMaterials(prev => ({ ...prev, [cutOrderId]: suggestion.best }))
+      } catch (error) {
+        console.error('Error loading stock suggestions:', error)
       }
     }
   }
@@ -78,29 +192,167 @@ export default function PlantaPedidoDetallePage() {
   async function handleConfirmCut(cutOrder: any) {
     const cutId = cutOrder.id
     const selectedMaterial = selectedMaterials[cutId]
-    const remnantLength = remnantInputs[cutId] || '0'
+    
+    // Calcular recorte automáticamente
+    const materialLength = selectedMaterial.length // Tamaño del material usado (ej: 3m)
+    const quantityNeeded = cutOrder.quantity_requested // Cantidad solicitada (ej: 0.5m)
+    const calculatedRemnant = Math.max(0, materialLength - quantityNeeded)
+    
+    // Permitir override manual si el operario ingresó un valor
+    const remnantLength = remnantInputs[cutId] 
+      ? parseFloat(remnantInputs[cutId]) 
+      : calculatedRemnant
 
     if (!selectedMaterial) {
       alert('Por favor selecciona un material')
       return
     }
+    
+    console.log(`📏 Cálculo de recorte:`)
+    console.log(`   Material usado: ${materialLength}m`)
+    console.log(`   Cantidad cortada: ${quantityNeeded}m`)
+    console.log(`   Recorte calculado: ${calculatedRemnant}m`)
+    console.log(`   Recorte final: ${remnantLength}m`)
 
     setProcessing(prev => ({ ...prev, [cutId]: true }))
     
     try {
+      const supabase = createClient()
+      
+      // Importar funciones necesarias
+      const { finishCutOrder } = await import('@/app/actions/cut-orders')
+      const { consumeStock, releaseToInProcess } = await import('@/app/actions/stock-management')
+      
+      // Obtener el product_id del inventory seleccionado
+      const { data: inventoryItem } = await supabase
+        .from('inventory')
+        .select('product_id')
+        .eq('id', selectedMaterial.id)
+        .single()
+      
+      if (!inventoryItem) {
+        throw new Error('No se encontró el producto en el inventario')
+      }
+      
+      // Verificar si el material seleccionado es diferente al asignado originalmente
+      const originalAssignedId = cutOrder.material_base_id
+      const selectedProductId = inventoryItem.product_id
+      
+      // 1a. Si se seleccionó un material diferente, liberar la reserva original
+      if (originalAssignedId && originalAssignedId !== selectedProductId) {
+        console.log(`⚠️ Material cambiado: ${originalAssignedId} → ${selectedProductId}`)
+        
+        // Liberar reserva del material asignado originalmente
+        const { data: originalInventory } = await supabase
+          .from('inventory')
+          .select('id')
+          .eq('product_id', originalAssignedId)
+          .gt('stock_reservado', 0)
+          .single()
+        
+        if (originalInventory) {
+          const { unreserveStock } = await import('@/app/actions/stock-management')
+          await unreserveStock(originalInventory.id, 1)
+          console.log(`✅ Reserva liberada del material original`)
+        }
+        
+        // Reservar el nuevo material seleccionado
+        const { reserveStock } = await import('@/app/actions/stock-management')
+        await reserveStock(selectedMaterial.id)
+        console.log(`✅ Nuevo material reservado`)
+      }
+      
+      // 1b. Si se cambió el material, actualizar la asignación en cut_orders
+      if (originalAssignedId && originalAssignedId !== selectedProductId) {
+        const { assignStockToCutOrder } = await import('@/app/actions/stock-management')
+        await assignStockToCutOrder(
+          cutId,
+          selectedMaterial.id,
+          selectedProductId,
+          selectedMaterial.length
+        )
+        console.log(`✅ Stock asignado actualizado en la orden de corte`)
+      }
+      
+      // 1c. Mover stock de reservado a en_proceso
+      await releaseToInProcess(selectedMaterial.id, 1)
+      
+      // 2. Finalizar la orden de corte
       await finishCutOrder(
         cutId,
-        cutOrder.quantity_requested,
-        selectedMaterial.id,
-        selectedMaterial.length,
-        parseFloat(remnantLength)
+        cutOrder.quantity_requested, // cantidad cortada
+        inventoryItem.product_id, // material usado (product_id, no inventory_id)
+        selectedMaterial.length, // cantidad usada (tamaño de la pieza)
+        remnantLength // recorte generado
       )
       
-      setExpandedCutId(null)
+      // 3. Si hay recorte, validar que existe el producto ANTES de consumir stock
+      if (remnantLength > 0) {
+        const { generateRemnantStock } = await import('@/app/actions/stock-management')
+        
+        // Obtener el código del producto usado
+        const { data: usedProduct } = await supabase
+          .from('products')
+          .select('code')
+          .eq('id', inventoryItem.product_id)
+          .single()
+        
+        if (usedProduct) {
+          // IMPORTANTE: Esto lanzará error si no existe el producto
+          // y bloqueará el corte ANTES de consumir stock
+          await generateRemnantStock(usedProduct.code, remnantLength)
+          console.log(`✅ Recorte de ${remnantLength}m generado en stock`)
+        }
+      }
+      
+      // 4. Consumir el stock (solo si todo lo anterior fue exitoso)
+      await consumeStock(selectedMaterial.id, 1)
+      
+      // Mostrar confirmación con modal personalizado
+      const successLines = [
+        `📦 Material usado:`,
+        `   ${selectedMaterial.name}`,
+        ``,
+        `📏 Recorte generado:`,
+        `   ${remnantLength.toFixed(1)}m`,
+      ]
+      
+      if (remnantLength > 0) {
+        successLines.push(``)
+        successLines.push(`✅ Stock de recorte actualizado`)
+      }
+      
+      showSuccess(successLines.join('\n'), '✓ Corte confirmado')
+      
+      // Recargar pedido
       await loadPedido()
-    } catch (error) {
+      setExpandedCutId(null)
+      
+    } catch (error: any) {
       console.error('Error finishing cut:', error)
-      alert('Error al finalizar corte')
+      
+      // Extraer mensaje de error más amigable
+      let errorMessage = 'Error desconocido'
+      let errorTitle = 'Error al finalizar corte'
+      
+      if (error.message) {
+        errorMessage = error.message
+        
+        // Detectar tipo de error para personalizar título
+        if (error.message.includes('No existe el producto')) {
+          errorTitle = 'Producto de recorte no encontrado'
+        } else if (error.message.includes('foreign key')) {
+          errorTitle = 'Error de base de datos'
+        }
+      } else if (typeof error === 'string') {
+        errorMessage = error
+      } else if (error.code) {
+        errorMessage = `Error de base de datos: ${error.code}`
+        errorTitle = 'Error de base de datos'
+      }
+      
+      // Mostrar modal de error personalizado
+      showError(errorMessage, errorTitle)
     } finally {
       setProcessing(prev => ({ ...prev, [cutId]: false }))
     }
@@ -298,16 +550,24 @@ export default function PlantaPedidoDetallePage() {
                     {/* Recorte Generado */}
                     <div>
                       <label className="block font-semibold text-white mb-2">
-                        Recorte generado (opcional):
+                        Recorte generado:
                       </label>
+                      {selectedMaterial && (
+                        <div className="mb-2 text-sm text-slate-300">
+                          Calculado: {Math.max(0, selectedMaterial.length - cutOrder.quantity_requested).toFixed(1)}m
+                        </div>
+                      )}
                       <input
                         type="number"
                         step="0.1"
-                        placeholder="0.0 m"
+                        placeholder={selectedMaterial ? `${Math.max(0, selectedMaterial.length - cutOrder.quantity_requested).toFixed(1)} m (auto)` : "0.0 m"}
                         value={remnantInputs[cutOrder.id] || ''}
                         onChange={(e) => setRemnantInputs(prev => ({ ...prev, [cutOrder.id]: e.target.value }))}
                         className="w-full p-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400"
                       />
+                      <p className="text-xs text-slate-400 mt-1">
+                        Deja vacío para usar el cálculo automático
+                      </p>
                     </div>
 
                     {/* Botón Confirmar */}
@@ -331,6 +591,10 @@ export default function PlantaPedidoDetallePage() {
           </div>
         )}
       </div>
+      
+      {/* Modales */}
+      <ErrorDialog />
+      <SuccessDialog />
     </div>
   )
 }

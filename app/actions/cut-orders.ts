@@ -65,9 +65,9 @@ export async function assignCutOrder(cutOrderId: string, operatorId: string) {
 
   if (error) throw error
 
-  revalidatePath('/admin/cortes', 'page')
-  revalidatePath('/admin/cortes', 'layout')
-  revalidatePath(`/admin/cortes/${cutOrderId}`, 'page')
+  revalidatePath('/planta/ordenes', 'page')
+  revalidatePath('/planta/ordenes', 'layout')
+  revalidatePath(`/planta/ordenes/${cutOrderId}`, 'page')
   return data
 }
 
@@ -100,8 +100,6 @@ export async function startCutOrder(cutOrderId: string, operatorId: string) {
   revalidatePath('/planta/ordenes', 'page')
   revalidatePath('/planta/ordenes', 'layout')
   revalidatePath(`/planta/ordenes/${cutOrderId}`, 'page')
-  revalidatePath('/admin/cortes', 'page')
-  revalidatePath(`/admin/cortes/${cutOrderId}`, 'page')
   return data
 }
 
@@ -123,8 +121,6 @@ export async function pauseCutOrder(cutOrderId: string) {
   revalidatePath('/planta/ordenes', 'page')
   revalidatePath('/planta/ordenes', 'layout')
   revalidatePath(`/planta/ordenes/${cutOrderId}`, 'page')
-  revalidatePath('/admin/cortes', 'page')
-  revalidatePath(`/admin/cortes/${cutOrderId}`, 'page')
   return data
 }
 
@@ -155,7 +151,7 @@ export async function finishCutOrder(
     .update({
       status: 'completada',
       quantity_cut: quantityCut,
-      completed_at: new Date().toISOString(),
+      finished_at: new Date().toISOString(),
     })
     .eq('id', cutOrderId)
 
@@ -174,32 +170,36 @@ export async function finishCutOrder(
 
   if (cutLineError) throw cutLineError
 
-  const { data: stockBefore } = await supabase
-    .from('inventory')
-    .select('stock_total, stock_en_proceso')
-    .eq('product_id', materialUsedId)
-    .single()
+  // NOTA: El consumo de stock ahora se maneja en stock-management.ts
+  // con las funciones releaseToInProcess() y consumeStock()
+  // Esta sección se mantiene comentada para evitar duplicación
+  
+  // const { data: stockBefore } = await supabase
+  //   .from('inventory')
+  //   .select('stock_total, stock_en_proceso')
+  //   .eq('product_id', materialUsedId)
+  //   .single()
 
-  await supabase
-    .from('inventory')
-    .update({ 
-      stock_total: (stockBefore?.stock_total || 0) - quantityUsed,
-      stock_en_proceso: Math.max(0, (stockBefore?.stock_en_proceso || 0) - cutOrder.quantity_requested)
-    })
-    .eq('product_id', materialUsedId)
+  // await supabase
+  //   .from('inventory')
+  //   .update({ 
+  //     stock_total: (stockBefore?.stock_total || 0) - quantityUsed,
+  //     stock_en_proceso: Math.max(0, (stockBefore?.stock_en_proceso || 0) - cutOrder.quantity_requested)
+  //   })
+  //   .eq('product_id', materialUsedId)
 
-  await supabase
-    .from('stock_movements')
-    .insert({
-      product_id: materialUsedId,
-      movement_type: 'corte',
-      quantity: -quantityUsed,
-      stock_before: stockBefore?.stock_total || 0,
-      stock_after: (stockBefore?.stock_total || 0) - quantityUsed,
-      reference_id: cutOrderId,
-      reference_type: 'cut_order',
-      user_id: user?.id,
-    })
+  // await supabase
+  //   .from('stock_movements')
+  //   .insert({
+  //     product_id: materialUsedId,
+  //     movement_type: 'corte',
+  //     quantity: -quantityUsed,
+  //     stock_before: stockBefore?.stock_total || 0,
+  //     stock_after: (stockBefore?.stock_total || 0) - quantityUsed,
+  //     reference_id: cutOrderId,
+  //     reference_type: 'cut_order',
+  //     user_id: user?.id,
+  //   })
 
   if (remnantGenerated >= (cutOrder.product.min_remnant_threshold || 500)) {
     await supabase
@@ -224,9 +224,6 @@ export async function finishCutOrder(
   revalidatePath('/planta/ordenes', 'page')
   revalidatePath('/planta/ordenes', 'layout')
   revalidatePath(`/planta/ordenes/${cutOrderId}`, 'page')
-  revalidatePath('/admin/cortes', 'page')
-  revalidatePath('/admin/cortes', 'layout')
-  revalidatePath(`/admin/cortes/${cutOrderId}`, 'page')
   revalidatePath('/admin/recortes', 'page')
   revalidatePath('/admin/stock', 'page')
   

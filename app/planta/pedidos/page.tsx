@@ -25,14 +25,14 @@ export default function PlantaPedidosPage() {
     try {
       const supabase = createClient()
       
-      // Obtener pedidos aprobados con conteo de órdenes
+      // Obtener pedidos aprobados y en_corte con conteo de órdenes
       const { data, error } = await supabase
         .from('orders')
         .select(`
           *,
           cut_orders(count)
         `)
-        .eq('status', 'aprobado')
+        .in('status', ['aprobado', 'en_corte'])
         .order('created_at', { ascending: false })
 
       if (error) throw error

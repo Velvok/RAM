@@ -2,6 +2,7 @@
 
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { revalidateAll } from '@/lib/revalidate'
 
 export async function generateTestOrder(status: string = 'nuevo', numLines: number = 1) {
   const supabase = await createClient()
@@ -100,11 +101,8 @@ export async function generateTestOrder(status: string = 'nuevo', numLines: numb
   // NO crear órdenes de corte automáticamente
   // Las órdenes de corte se crean solo cuando el admin aprueba el pedido
 
-  // Revalidar múltiples rutas
-  revalidatePath('/admin/pedidos', 'page')
-  revalidatePath('/admin/pedidos', 'layout')
-  revalidatePath('/admin', 'page')
-  revalidatePath('/admin', 'layout')
+  // Revalidar TODO el sistema
+  revalidateAll()
   
   return { success: true, order }
 }

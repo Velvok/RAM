@@ -71,15 +71,41 @@ export async function adjustStock(productId: string, newQuantity: number, notes:
 
   const { data: current } = await supabase
     .from('inventory')
-    .select('stock_total')
+    .select('stock_total, stock_generado')
     .eq('product_id', productId)
     .single()
 
   const stockBefore = current?.stock_total || 0
+  const generadoBefore = current?.stock_generado || 0
+  const difference = newQuantity - stockBefore
+
+  // Calcular nuevo stock_generado usando lógica FIFO
+  let newGenerado = generadoBefore
+  
+  if (difference < 0) {
+    // Si estamos REDUCIENDO stock, reducir primero del generado
+    const quantityToReduce = Math.abs(difference)
+    const reduceFromGenerated = Math.min(quantityToReduce, generadoBefore)
+    newGenerado = generadoBefore - reduceFromGenerated
+    
+    console.log(`📊 Ajuste de stock (reducción):`)
+    console.log(`   Stock total: ${stockBefore} → ${newQuantity}`)
+    console.log(`   Stock generado: ${generadoBefore} → ${newGenerado}`)
+    console.log(`   Reducido de generado: ${reduceFromGenerated}`)
+  } else if (difference > 0) {
+    // Si estamos AUMENTANDO stock, no tocar generado (es stock virgen)
+    console.log(`📊 Ajuste de stock (aumento):`)
+    console.log(`   Stock total: ${stockBefore} → ${newQuantity}`)
+    console.log(`   Stock generado: ${generadoBefore} (sin cambios)`)
+    console.log(`   Stock virgen añadido: ${difference}`)
+  }
 
   const { data, error } = await supabase
     .from('inventory')
-    .update({ stock_total: newQuantity })
+    .update({ 
+      stock_total: newQuantity,
+      stock_generado: newGenerado
+    })
     .eq('product_id', productId)
     .select()
     .single()
@@ -91,11 +117,13 @@ export async function adjustStock(productId: string, newQuantity: number, notes:
     .insert({
       product_id: productId,
       movement_type: 'ajuste',
-      quantity: newQuantity - stockBefore,
+      quantity: difference,
       stock_before: stockBefore,
       stock_after: newQuantity,
       user_id: user?.id,
-      notes,
+      notes: difference < 0 
+        ? `${notes} (reducido ${Math.abs(difference)} unidades, ${Math.min(Math.abs(difference), generadoBefore)} de generado)`
+        : `${notes} (añadido ${difference} unidades vírgenes)`,
     })
 
   revalidatePath('/admin/stock')

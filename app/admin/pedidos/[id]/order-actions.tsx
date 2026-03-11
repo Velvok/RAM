@@ -43,23 +43,32 @@ export default function OrderActions({
 
   async function handleGenerateCutOrders() {
     const confirmed = await confirm(
-      'Generar y Lanzar Órdenes de Corte',
-      '¿Generar órdenes de corte para este pedido? Se creará una orden por cada línea y estarán disponibles inmediatamente en las tablets de los operarios.',
-      { variant: 'success', confirmText: 'Sí, generar y lanzar' }
+      'Aprobar Pedido y Asignar Stock',
+      '¿Aprobar este pedido? Se crearán órdenes de corte y se asignará stock automáticamente.',
+      { variant: 'success', confirmText: 'Sí, aprobar' }
     )
     
     if (!confirmed) return
     
     setLoading(true)
     try {
-      await generateCutOrders(order.id)
+      const result = await generateCutOrders(order.id)
       await reloadOrder()
-      showSuccess(
-        'Órdenes de corte generadas y lanzadas correctamente. Ya están disponibles en las tablets.',
-        'Órdenes Lanzadas'
-      )
+      
+      if (result.warnings && result.warnings.length > 0) {
+        // Mostrar advertencias si hay problemas de stock
+        showError(
+          `Pedido aprobado con advertencias:\n\n${result.warnings.join('\n')}`,
+          'Advertencias de Stock'
+        )
+      } else {
+        showSuccess(
+          'Pedido aprobado. Órdenes de corte creadas y stock asignado correctamente.',
+          'Pedido Aprobado'
+        )
+      }
     } catch (error: any) {
-      showError(error?.message || 'No se pudieron generar las órdenes de corte', 'Error al Generar')
+      showError(error?.message || 'No se pudo aprobar el pedido', 'Error al Aprobar')
     } finally {
       setLoading(false)
     }
@@ -76,20 +85,20 @@ export default function OrderActions({
         </h3>
       
         <div className="space-y-3">
-          {/* Generar y Lanzar Órdenes de Corte */}
-          {order.status === 'ingresado' && (
+          {/* Aprobar Pedido */}
+          {order.status === 'nuevo' && (
             <button
               onClick={handleGenerateCutOrders}
               disabled={loading}
               className="w-full px-4 py-3 bg-green-600 hover:bg-green-500 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              🚀 Generar y Lanzar Órdenes de Corte
+              ✅ Aprobar Pedido y Asignar Stock
             </button>
           )}
 
-          {order.status === 'lanzado' && (
+          {order.status === 'aprobado' && (
             <div className="px-4 py-3 bg-green-100 text-green-800 rounded-lg font-semibold text-center">
-              ✓ Pedido Lanzado - Órdenes disponibles en tablets
+              ✓ Pedido Aprobado - Stock asignado
             </div>
           )}
         </div>

@@ -140,11 +140,9 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                     {line.product?.name}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                    {line.units && line.length_meters ? (
-                      <span className="font-semibold">{line.units} × {line.length_meters}m</span>
-                    ) : (
-                      <span>{line.quantity} m</span>
-                    )}
+                    <span className="font-semibold">
+                      {line.units || Math.ceil(line.quantity) || 1} unidades
+                    </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
                     {formatCurrency(line.unit_price)}
@@ -181,6 +179,9 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                     Cantidad
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                    Stock Asignado
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
                     Estado
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
@@ -198,7 +199,18 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                       {cutOrder.product?.name}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                      1 unidad
+                      {cutOrder.quantity_requested}m
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                      {cutOrder.material_base_id ? (
+                        <span className="text-green-600 font-medium">
+                          ✓ {cutOrder.material_base_quantity}m
+                        </span>
+                      ) : (
+                        <span className="text-yellow-600">
+                          Sin asignar
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {cutOrder.status === 'pendiente' ? (

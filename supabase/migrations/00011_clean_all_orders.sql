@@ -1,4 +1,5 @@
 -- Limpiar todos los pedidos y datos relacionados para empezar con modelo de unidades
+-- NOTA: Esta migración solo limpia pedidos, NO toca el stock
 
 -- 1. Eliminar stock_items (depende de cut_orders)
 DELETE FROM stock_items;
@@ -24,9 +25,7 @@ DELETE FROM order_lines;
 -- 8. Eliminar orders
 DELETE FROM orders;
 
--- 9. Resetear inventory a 0
+-- 9. Resetear solo stock_reservado y stock_en_proceso (NO stock_total)
 UPDATE inventory SET 
-  stock_total = 0,
   stock_reservado = 0,
-  stock_en_proceso = 0,
-  last_sync_at = NULL;
+  stock_en_proceso = 0;

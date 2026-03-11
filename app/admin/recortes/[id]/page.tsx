@@ -142,7 +142,7 @@ export default async function RemnantDetallePage({
               </dt>
               <dd className="mt-1 text-sm text-slate-900">
                 <Link
-                  href={`/admin/cortes/${remnant.cut_order.id}`}
+                  href={`/planta/ordenes/${remnant.cut_order.id}`}
                   className="text-blue-600 hover:text-blue-900"
                 >
                   {remnant.cut_order.cut_number}
