@@ -74,6 +74,32 @@ export default function OrderActions({
     }
   }
 
+  async function handleMarkAsDelivered() {
+    const confirmed = await confirm(
+      'Marcar como Entregado',
+      '¿Marcar este pedido como entregado? Se consumirá el stock reservado de todas las órdenes completadas.',
+      { variant: 'success', confirmText: 'Sí, marcar como entregado' }
+    )
+    
+    if (!confirmed) return
+    
+    setLoading(true)
+    try {
+      const { markOrderAsDelivered } = await import('@/app/actions/orders')
+      await markOrderAsDelivered(order.id)
+      await reloadOrder()
+      
+      showSuccess(
+        'Pedido marcado como entregado. El stock reservado ha sido consumido.',
+        '✓ Pedido Entregado'
+      )
+    } catch (error: any) {
+      showError(error?.message || 'No se pudo marcar como entregado', 'Error al Entregar')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <>
       <ConfirmDialog />
@@ -99,6 +125,23 @@ export default function OrderActions({
           {order.status === 'aprobado' && (
             <div className="px-4 py-3 bg-green-100 text-green-800 rounded-lg font-semibold text-center">
               ✓ Pedido Aprobado - Stock asignado
+            </div>
+          )}
+
+          {/* Marcar como Entregado */}
+          {order.status === 'finalizado' && (
+            <button
+              onClick={handleMarkAsDelivered}
+              disabled={loading}
+              className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              📦 Marcar como Entregado
+            </button>
+          )}
+
+          {order.status === 'entregado' && (
+            <div className="px-4 py-3 bg-blue-100 text-blue-800 rounded-lg font-semibold text-center">
+              ✓ Pedido Entregado
             </div>
           )}
         </div>

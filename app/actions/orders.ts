@@ -234,3 +234,71 @@ export async function updateOrderStatus(orderId: string) {
   revalidatePath(`/admin/pedidos/${orderId}`, 'page')
   revalidatePath('/planta/ordenes', 'page')
 }
+
+/**
+ * Marcar pedido como entregado
+ * Consume el stock reservado de todas las órdenes completadas
+ */
+export async function markOrderAsDelivered(orderId: string) {
+  const supabase = await createClient()
+
+  // Verificar que todas las órdenes estén completadas
+  const { data: cutOrders, error: cutOrdersError } = await supabase
+    .from('cut_orders')
+    .select('id, status, material_base_id')
+    .eq('order_id', orderId)
+
+  if (cutOrdersError) throw cutOrdersError
+
+  const allCompleted = cutOrders?.every(co => co.status === 'completada')
+  if (!allCompleted) {
+    throw new Error('No se puede marcar como entregado: hay órdenes pendientes')
+  }
+
+  // Consumir stock reservado de cada orden
+  for (const cutOrder of cutOrders || []) {
+    if (cutOrder.material_base_id) {
+      // Consumir stock: stock_reservado -1, stock_total -1
+      const { error: stockError } = await supabase.rpc('consume_reserved_stock', {
+        p_inventory_id: cutOrder.material_base_id
+      })
+
+      if (stockError) {
+        console.error('Error consuming reserved stock:', stockError)
+        // Continuar con las demás órdenes
+      }
+    }
+  }
+
+  // Actualizar estado del pedido
+  const { error: updateError } = await supabase
+    .from('orders')
+    .update({ status: 'entregado' })
+    .eq('id', orderId)
+
+  if (updateError) throw updateError
+
+  // Registrar en el log
+  const { data: order } = await supabase
+    .from('orders')
+    .select('order_number')
+    .eq('id', orderId)
+    .single()
+
+  if (order) {
+    await supabase.from('order_activity_log').insert({
+      order_id: orderId,
+      activity_type: 'delivered',
+      description: `Pedido ${order.order_number} marcado como entregado`,
+      metadata: {
+        cut_orders_count: cutOrders?.length || 0
+      }
+    })
+  }
+
+  revalidatePath('/admin/pedidos')
+  revalidatePath(`/admin/pedidos/${orderId}`)
+  revalidatePath('/admin/stock')
+
+  return { success: true }
+}

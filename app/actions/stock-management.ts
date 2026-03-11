@@ -4,6 +4,29 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
 /**
+ * Registrar actividad en el log de pedidos
+ */
+async function logOrderActivity(
+  orderId: string,
+  activityType: string,
+  description: string,
+  metadata?: any,
+  cutOrderId?: string
+) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  await supabase.from('order_activity_log').insert({
+    order_id: orderId,
+    cut_order_id: cutOrderId,
+    activity_type: activityType,
+    description,
+    metadata,
+    user_id: user?.id,
+  })
+}
+
+/**
  * Extraer código base del producto (sin el tamaño)
  * Ejemplo: AC25110.0,5 → AC25110
  * Ejemplo: AC25110.9,5 → AC25110
@@ -539,4 +562,208 @@ export async function getAssignedStock(cutOrderId: string) {
 
   if (error) throw error
   return cutOrder
+}
+
+/**
+ * Reasignar stock de una orden completada a una orden pendiente
+ * Permite stock negativo si no hay disponibilidad
+ */
+export async function reassignStock(fromCutOrderId: string, toCutOrderId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  console.log(`🔄 Iniciando reasignación: ${fromCutOrderId} → ${toCutOrderId}`)
+
+  // 1. Obtener información de ambas órdenes
+  const { data: fromOrder, error: fromError } = await supabase
+    .from('cut_orders')
+    .select(`
+      *,
+      order:orders(id, order_number),
+      product:products!cut_orders_product_id_fkey(id, code, name),
+      assigned_inventory:inventory!cut_orders_material_base_id_fkey(id, product_id, product:products(code, name))
+    `)
+    .eq('id', fromCutOrderId)
+    .single()
+
+  if (fromError) throw fromError
+  if (!fromOrder.material_base_id) {
+    throw new Error('La orden origen no tiene stock asignado')
+  }
+
+  const { data: toOrder, error: toError } = await supabase
+    .from('cut_orders')
+    .select(`
+      *,
+      order:orders(id, order_number),
+      product:products!cut_orders_product_id_fkey(id, code, name)
+    `)
+    .eq('id', toCutOrderId)
+    .single()
+
+  if (toError) throw toError
+  if (toOrder.status === 'completada') {
+    throw new Error('No se puede reasignar a una orden ya completada')
+  }
+
+  const inventoryId = fromOrder.material_base_id
+  const productId = fromOrder.assigned_inventory.product_id
+
+  // 2. Liberar reserva de la orden origen
+  console.log(`📤 Liberando reserva de orden origen...`)
+  await unreserveStock(inventoryId, 1)
+
+  // 3. Quitar asignación de la orden origen
+  const { error: updateFromError } = await supabase
+    .from('cut_orders')
+    .update({
+      material_base_id: null,
+      status: 'pendiente'
+    })
+    .eq('id', fromCutOrderId)
+
+  if (updateFromError) throw updateFromError
+
+  // 4. Asignar a la orden destino
+  console.log(`📥 Asignando a orden destino...`)
+  await assignStockToCutOrder(toCutOrderId, inventoryId, productId, fromOrder.assigned_inventory.product.code)
+
+  // 5. Reservar para la orden destino
+  await reserveStock(inventoryId)
+
+  // 6. Buscar nueva chapa para la orden origen (permitir stock negativo)
+  console.log(`🔍 Buscando nueva chapa para orden origen...`)
+  try {
+    const sizeNeeded = extractSizeFromCode(fromOrder.product.code)
+    const bestMatch = await findBestStockMatch(fromOrder.product_id, sizeNeeded)
+
+    if (bestMatch) {
+      // Asignar y reservar
+      await assignStockToCutOrder(fromCutOrderId, bestMatch.inventory_id, bestMatch.product_id, bestMatch.product_code)
+      await reserveStock(bestMatch.inventory_id)
+      console.log(`✅ Nueva chapa asignada: ${bestMatch.product_code}`)
+    } else {
+      // NO HAY STOCK: Crear asignación virtual con stock negativo
+      console.log(`⚠️ No hay stock disponible, creando asignación virtual...`)
+      
+      // Buscar o crear inventory con stock negativo
+      const { data: existingInventory } = await supabase
+        .from('inventory')
+        .select('id, stock_disponible')
+        .eq('product_id', fromOrder.product_id)
+        .single()
+
+      if (existingInventory) {
+        // Asignar el inventory existente (aunque tenga stock negativo)
+        await assignStockToCutOrder(fromCutOrderId, existingInventory.id, fromOrder.product_id, fromOrder.product.code)
+        await reserveStock(existingInventory.id) // Esto hará que stock_disponible sea negativo
+        console.log(`⚠️ Asignado con stock negativo: ${existingInventory.stock_disponible - 1}`)
+      }
+    }
+  } catch (error) {
+    console.error('Error buscando nueva chapa:', error)
+    // Continuar aunque falle (la orden queda sin asignar)
+  }
+
+  // 7. Actualizar estado del pedido origen si es necesario
+  const { data: orderOrders } = await supabase
+    .from('cut_orders')
+    .select('status')
+    .eq('order_id', fromOrder.order.id)
+
+  const allCompleted = orderOrders?.every(o => o.status === 'completada')
+  const anyInProgress = orderOrders?.some(o => o.status === 'en_proceso')
+
+  let newOrderStatus = fromOrder.order.status
+  if (allCompleted) {
+    newOrderStatus = 'finalizado'
+  } else if (anyInProgress) {
+    newOrderStatus = 'en_corte'
+  } else {
+    newOrderStatus = 'aprobado'
+  }
+
+  await supabase
+    .from('orders')
+    .update({ status: newOrderStatus })
+    .eq('id', fromOrder.order.id)
+
+  // 8. Registrar en el log de actividades
+  await logOrderActivity(
+    fromOrder.order.id,
+    'reassign',
+    `Chapa ${fromOrder.assigned_inventory.product.code} reasignada desde orden ${fromOrder.order_number} a orden ${toOrder.order_number}`,
+    {
+      from_cut_order_id: fromCutOrderId,
+      to_cut_order_id: toCutOrderId,
+      from_order_number: fromOrder.order_number,
+      to_order_number: toOrder.order_number,
+      inventory_id: inventoryId,
+      product_code: fromOrder.assigned_inventory.product.code,
+    },
+    fromCutOrderId
+  )
+
+  await logOrderActivity(
+    toOrder.order.id,
+    'reassign',
+    `Chapa ${fromOrder.assigned_inventory.product.code} recibida desde orden ${fromOrder.order_number}`,
+    {
+      from_cut_order_id: fromCutOrderId,
+      to_cut_order_id: toCutOrderId,
+      from_order_number: fromOrder.order_number,
+      to_order_number: toOrder.order_number,
+      inventory_id: inventoryId,
+      product_code: fromOrder.assigned_inventory.product.code,
+    },
+    toCutOrderId
+  )
+
+  // Revalidar rutas
+  revalidatePath('/admin/pedidos')
+  revalidatePath(`/admin/pedidos/${fromOrder.order.id}`)
+  revalidatePath(`/admin/pedidos/${toOrder.order.id}`)
+  revalidatePath('/admin/stock')
+
+  console.log(`✅ Reasignación completada`)
+
+  return {
+    success: true,
+    fromOrder: fromOrder.order_number,
+    toOrder: toOrder.order_number,
+    productCode: fromOrder.assigned_inventory.product.code,
+  }
+}
+
+/**
+ * Obtener órdenes de corte completadas disponibles para reasignación
+ * Filtra por tamaño del producto
+ */
+export async function getCompletedOrdersForReassignment(productSize: number) {
+  const supabase = await createClient()
+
+  // Obtener todas las órdenes completadas con stock asignado
+  const { data, error } = await supabase
+    .from('cut_orders')
+    .select(`
+      *,
+      order:orders(id, order_number, customer_name),
+      product:products!cut_orders_product_id_fkey(id, code, name),
+      assigned_inventory:inventory!cut_orders_material_base_id_fkey(
+        id,
+        product:products(code, name)
+      )
+    `)
+    .eq('status', 'completada')
+    .not('material_base_id', 'is', null)
+
+  if (error) throw error
+
+  // Filtrar por tamaño
+  const filtered = data?.filter(order => {
+    const size = extractSizeFromCode(order.product.code)
+    return size === productSize
+  })
+
+  return filtered || []
 }

@@ -192,6 +192,27 @@ export default function PlantaPedidoDetallePage() {
   async function handleConfirmCut(cutOrder: any) {
     const cutId = cutOrder.id
     const selectedMaterial = selectedMaterials[cutId]
+
+    if (!selectedMaterial) {
+      showError('Por favor selecciona un material', 'Material no seleccionado')
+      return
+    }
+
+    // Verificar si hay stock físico disponible
+    const supabase = createClient()
+    const { data: stockCheck } = await supabase
+      .from('inventory')
+      .select('stock_disponible, stock_total')
+      .eq('id', selectedMaterial.id)
+      .single()
+
+    if (stockCheck && stockCheck.stock_disponible < 0) {
+      showError(
+        `No hay stock físico disponible para esta chapa.\n\nStock disponible: ${stockCheck.stock_disponible} unidades\n\nContacta con el administrador para resolver el problema de stock.`,
+        '⚠️ Stock no disponible'
+      )
+      return
+    }
     
     // Calcular recorte automáticamente
     const materialLength = selectedMaterial.length // Tamaño del material usado (ej: 3m)
@@ -202,11 +223,6 @@ export default function PlantaPedidoDetallePage() {
     const remnantLength = remnantInputs[cutId] 
       ? parseFloat(remnantInputs[cutId]) 
       : calculatedRemnant
-
-    if (!selectedMaterial) {
-      alert('Por favor selecciona un material')
-      return
-    }
     
     console.log(`📏 Cálculo de recorte:`)
     console.log(`   Material usado: ${materialLength}m`)
@@ -221,7 +237,7 @@ export default function PlantaPedidoDetallePage() {
       
       // Importar funciones necesarias
       const { finishCutOrder } = await import('@/app/actions/cut-orders')
-      const { consumeStock, releaseToInProcess } = await import('@/app/actions/stock-management')
+      const { releaseToInProcess } = await import('@/app/actions/stock-management')
       
       // Obtener el product_id del inventory seleccionado
       const { data: inventoryItem } = await supabase
@@ -305,8 +321,9 @@ export default function PlantaPedidoDetallePage() {
         }
       }
       
-      // 4. Consumir el stock (solo si todo lo anterior fue exitoso)
-      await consumeStock(selectedMaterial.id, 1)
+      // 4. El stock permanece reservado hasta que se marque el pedido como entregado
+      // NO se consume aquí, solo se mantiene la reserva
+      console.log(`📌 Stock permanece reservado hasta la entrega del pedido`)
       
       // Mostrar confirmación con modal personalizado
       const successLines = [
