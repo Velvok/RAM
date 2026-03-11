@@ -237,7 +237,6 @@ export default function PlantaPedidoDetallePage() {
       
       // Importar funciones necesarias
       const { finishCutOrder } = await import('@/app/actions/cut-orders')
-      const { releaseToInProcess } = await import('@/app/actions/stock-management')
       
       // Obtener el product_id del inventory seleccionado
       const { data: inventoryItem } = await supabase
@@ -290,8 +289,8 @@ export default function PlantaPedidoDetallePage() {
         console.log(`✅ Stock asignado actualizado en la orden de corte`)
       }
       
-      // 1c. Mover stock de reservado a en_proceso
-      await releaseToInProcess(selectedMaterial.id, 1)
+      // NOTA: El stock permanece RESERVADO hasta que se entregue el pedido
+      // NO se mueve a "en_proceso" ni se consume al cortar
       
       // 2. Finalizar la orden de corte
       await finishCutOrder(
