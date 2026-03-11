@@ -7,9 +7,12 @@ const nextConfig = {
     // Deshabilitar todos los cachés de Next.js
     staleTimes: {
       dynamic: 0,
-      static: 30, // Mínimo permitido por Next.js
+      static: 0,
     },
   },
+  // Desactivar completamente el caché
+  cacheMaxMemorySize: 0,
+  cacheHandler: undefined,
   images: {
     remotePatterns: [
       {

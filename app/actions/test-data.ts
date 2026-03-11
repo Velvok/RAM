@@ -18,15 +18,46 @@ export async function generateTestOrder(status: string = 'nuevo', numLines: numb
     return { error: 'No hay clientes disponibles' }
   }
 
-  // Obtener múltiples productos aleatorios
-  const { data: products } = await supabase
-    .from('products')
-    .select('id, name, code')
-    .limit(numLines)
+  // Obtener productos que tengan stock disponible
+  const { data: inventoryItems } = await supabase
+    .from('inventory')
+    .select(`
+      id,
+      stock_disponible,
+      product:products(id, name, code)
+    `)
+    .gt('stock_disponible', 0)
+    .order('stock_disponible', { ascending: false })
 
-  if (!products || products.length === 0) {
+  if (!inventoryItems || inventoryItems.length === 0) {
+    return { error: 'No hay productos con stock disponible' }
+  }
+
+  // Extraer productos únicos (puede haber varios inventory del mismo producto)
+  const uniqueProducts = Array.from(
+    new Map(
+      inventoryItems
+        .map(item => Array.isArray(item.product) ? item.product[0] : item.product)
+        .filter(p => p != null)
+        .map(p => [p.id, p])
+    ).values()
+  )
+
+  if (uniqueProducts.length === 0) {
     return { error: 'No hay productos disponibles' }
   }
+
+  // Seleccionar productos aleatorios (sin repetir)
+  const selectedProducts = []
+  const availableProducts = [...uniqueProducts]
+  
+  for (let i = 0; i < Math.min(numLines, availableProducts.length); i++) {
+    const randomIndex = Math.floor(Math.random() * availableProducts.length)
+    selectedProducts.push(availableProducts[randomIndex])
+    availableProducts.splice(randomIndex, 1) // Eliminar para no repetir
+  }
+
+  const products = selectedProducts
 
   // Generar número de pedido único
   const orderNumber = `PED-TEST-${Date.now()}`
