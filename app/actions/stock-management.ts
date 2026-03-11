@@ -214,21 +214,26 @@ export async function reserveStock(inventoryId: string) {
 
   console.log(`🔒 Reservando stock:`)
   console.log(`   Producto: ${current.product?.code}`)
+  console.log(`   Stock total: ${current.stock_total} (sin cambios)`)
   console.log(`   Stock reservado: ${stockBefore} → ${stockAfter}`)
   console.log(`   Stock disponible: ${current.stock_disponible} → ${current.stock_disponible - 1}`)
 
-  // Actualizar stock reservado
-  const { data, error } = await supabase
-    .from('inventory')
-    .update({ stock_reservado: stockAfter })
-    .eq('id', inventoryId)
-    .select()
-    .single()
+  // Usar RPC para reservar (NO disminuye stock_total)
+  const { error } = await supabase.rpc('reserve_stock', {
+    p_inventory_id: inventoryId
+  })
 
   if (error) {
     console.error(`❌ Error reservando stock:`, error)
     throw error
   }
+
+  // Obtener datos actualizados
+  const { data } = await supabase
+    .from('inventory')
+    .select()
+    .eq('id', inventoryId)
+    .single()
 
   console.log(`✅ Stock reservado correctamente`)
 
@@ -266,15 +271,20 @@ export async function unreserveStock(inventoryId: string, quantity: number) {
 
   const newReservado = Math.max(0, (current.stock_reservado || 0) - quantity)
 
-  // Actualizar stock reservado
-  const { data, error } = await supabase
-    .from('inventory')
-    .update({ stock_reservado: newReservado })
-    .eq('id', inventoryId)
-    .select()
-    .single()
+  // Usar RPC para liberar reserva (NO aumenta stock_total)
+  const { error } = await supabase.rpc('unreserve_stock', {
+    p_inventory_id: inventoryId,
+    p_quantity: quantity
+  })
 
   if (error) throw error
+
+  // Obtener datos actualizados
+  const { data } = await supabase
+    .from('inventory')
+    .select()
+    .eq('id', inventoryId)
+    .single()
 
   // Registrar movimiento
   await supabase.from('stock_movements').insert({
