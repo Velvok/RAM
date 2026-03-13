@@ -675,11 +675,7 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
   const fromOrderData = Array.isArray(fromOrder.order) ? fromOrder.order[0] : fromOrder.order
   const toOrderData = Array.isArray(toOrder.order) ? toOrder.order[0] : toOrder.order
 
-  // 2. Liberar reserva de la orden origen
-  console.log(`📤 Liberando reserva de orden origen...`)
-  await unreserveStock(inventoryId, 1)
-
-  // 3. Quitar asignación de la orden origen
+  // 2. Quitar asignación de la orden origen (pero mantener reserva por ahora)
   const { error: updateFromError } = await supabase
     .from('cut_orders')
     .update({
@@ -690,15 +686,15 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
 
   if (updateFromError) throw updateFromError
 
-  // 4. Asignar a la orden destino Y marcarla como completada
-  console.log(`📥 Asignando a orden destino y marcando como completada...`)
+  // 3. Asignar a la orden destino (el stock sigue reservado, solo cambia de orden)
+  console.log(`📥 Asignando a orden destino...`)
   const assignedProduct = Array.isArray(assignedInventory.product) 
     ? assignedInventory.product[0] 
     : assignedInventory.product
   const assignedSize = extractSizeFromCode(assignedProduct.code)
   await assignStockToCutOrder(toCutOrderId, inventoryId, productId, assignedSize)
 
-  // 5. Marcar orden destino como PENDIENTE DE CONFIRMACIÓN
+  // 4. Marcar orden destino como PENDIENTE DE CONFIRMACIÓN
   // El operario debe confirmar que recogió la pieza del pedido origen
   const { error: completeError } = await supabase
     .from('cut_orders')
@@ -711,8 +707,8 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
 
   if (completeError) throw completeError
 
-  // 6. Reservar para la orden destino
-  await reserveStock(inventoryId)
+  // 5. El stock sigue reservado (1 unidad) pero ahora para el pedido destino
+  // No liberamos ni reservamos de nuevo - solo movemos la asignación
 
   // 7. Buscar nueva chapa para la orden origen (permitir stock negativo)
   console.log(`🔍 Buscando nueva chapa para orden origen...`)

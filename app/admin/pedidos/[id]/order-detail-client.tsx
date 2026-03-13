@@ -8,6 +8,8 @@ import { ArrowLeft, CheckCircle2, Clock, ArrowRightLeft, AlertTriangle } from 'l
 import Link from 'next/link'
 import OrderActions from './order-actions'
 import ReassignStockModal from '@/components/reassign-stock-modal'
+import { useSuccess } from '@/components/success-modal'
+import { useError } from '@/components/error-modal'
 
 export default function OrderDetailClient({ initialOrder }: { initialOrder: any }) {
   const [order, setOrder] = useState(initialOrder)
@@ -16,6 +18,8 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
   const [selectedCutOrder, setSelectedCutOrder] = useState<any>(null)
   const [activityLog, setActivityLog] = useState<any[]>([])
   const [loadingLog, setLoadingLog] = useState(false)
+  const { showSuccess, SuccessDialog } = useSuccess()
+  const { showError, ErrorDialog } = useError()
 
   // Auto-refresh si hay órdenes pendientes de confirmación
   useEffect(() => {
@@ -100,7 +104,12 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
     try {
       const { reassignStock } = await import('@/app/actions/stock-management')
       const result = await reassignStock(fromCutOrderId, selectedCutOrder.id)
-      alert(`✅ Chapa reasignada correctamente\n\nDesde: ${result.fromOrder}\nA: ${result.toOrder}\nChapa: ${result.productCode}`)
+      
+      showSuccess(
+        `Desde: ${result.fromOrder}\nA: ${result.toOrder}\nChapa: ${result.productCode}`,
+        '✅ Chapa Reasignada'
+      )
+      
       setReassignModalOpen(false)
       
       // Recargar pedido y log
@@ -112,7 +121,10 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
       }, 500)
     } catch (error: any) {
       console.error('Error reassigning:', error)
-      alert('❌ Error al reasignar: ' + (error.message || 'Error desconocido'))
+      showError(
+        error.message || 'Error desconocido al reasignar stock',
+        '❌ Error al Reasignar'
+      )
       throw error
     }
   }
@@ -461,6 +473,10 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
           onConfirm={handleReassign}
         />
       )}
+
+      {/* Diálogos de notificación */}
+      <SuccessDialog />
+      <ErrorDialog />
     </div>
   )
 }
