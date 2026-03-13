@@ -50,6 +50,14 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
         text: 'Finalizado',
         icon: CheckCircle
       },
+      entregado: {
+        color: 'bg-purple-600',
+        textColor: 'text-purple-700',
+        bgColor: 'bg-purple-50',
+        borderColor: 'border-purple-300',
+        text: 'Entregado',
+        icon: CheckCircle
+      },
       cancelado: {
         color: 'bg-red-500',
         textColor: 'text-red-700',
@@ -73,7 +81,8 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
     nuevo: orders.filter(o => o.status === 'nuevo').length,
     aprobado: orders.filter(o => o.status === 'aprobado').length,
     en_corte: orders.filter(o => o.status === 'en_corte').length,
-    finalizado: orders.filter(o => o.status === 'finalizado').length
+    finalizado: orders.filter(o => o.status === 'finalizado').length,
+    entregado: orders.filter(o => o.status === 'entregado').length
   }
 
   const filters = [
@@ -81,7 +90,8 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
     { id: 'nuevo', label: 'Nuevos', count: statusCounts.nuevo, color: 'bg-slate-500' },
     { id: 'aprobado', label: 'Aprobados', count: statusCounts.aprobado, color: 'bg-yellow-500' },
     { id: 'en_corte', label: 'En Corte', count: statusCounts.en_corte, color: 'bg-blue-500' },
-    { id: 'finalizado', label: 'Finalizados', count: statusCounts.finalizado, color: 'bg-green-500' }
+    { id: 'finalizado', label: 'Finalizados', count: statusCounts.finalizado, color: 'bg-green-500' },
+    { id: 'entregado', label: 'Entregados', count: statusCounts.entregado, color: 'bg-purple-500' }
   ]
 
   async function handleGenerateCutOrders(e: React.MouseEvent, orderId: string) {

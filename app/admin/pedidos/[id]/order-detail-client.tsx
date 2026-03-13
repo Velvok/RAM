@@ -15,6 +15,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
   const [order, setOrder] = useState(initialOrder)
   const [refreshKey, setRefreshKey] = useState(0)
   const [reassignModalOpen, setReassignModalOpen] = useState(false)
+  const [changeStockModalOpen, setChangeStockModalOpen] = useState(false)
   const [selectedCutOrder, setSelectedCutOrder] = useState<any>(null)
   const [activityLog, setActivityLog] = useState<any[]>([])
   const [loadingLog, setLoadingLog] = useState(false)
@@ -100,10 +101,10 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
     setReassignModalOpen(true)
   }
 
-  async function handleReassign(fromCutOrderId: string) {
+  async function handleReassign(fromCutOrderId: string, quantity: number) {
     try {
       const { reassignStock } = await import('@/app/actions/stock-management')
-      const result = await reassignStock(fromCutOrderId, selectedCutOrder.id)
+      const result = await reassignStock(fromCutOrderId, selectedCutOrder.id, quantity)
       
       showSuccess(
         `Desde: ${result.fromOrder}\nA: ${result.toOrder}\nChapa: ${result.productCode}`,
@@ -261,6 +262,9 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                     Producto
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                    Cantidad
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
                     Stock Asignado
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
@@ -280,24 +284,48 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
                       {cutOrder.product?.name}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                      {cutOrder.material_base_id ? (
-                        <div className="flex items-center gap-2">
-                          <span className="text-green-600 font-medium">
-                            ✓ {cutOrder.material_base_quantity}m
-                          </span>
-                          {cutOrder.stock_disponible < 0 && (
-                            <span className="inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">
-                              <AlertTriangle className="w-3 h-3 mr-1" />
-                              Sin stock
-                            </span>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-yellow-600">
-                          Sin asignar
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <span className={cutOrder.quantity_cut >= cutOrder.quantity_requested ? 'text-green-600' : 'text-slate-900'}>
+                        {cutOrder.quantity_cut || 0}/{cutOrder.quantity_requested}
+                      </span>
+                      {cutOrder.quantity_cut > 0 && cutOrder.quantity_cut < cutOrder.quantity_requested && (
+                        <span className="ml-2 text-xs text-yellow-600">
+                          ({cutOrder.quantity_requested - cutOrder.quantity_cut} pendientes)
                         </span>
                       )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                      <div className="flex items-center gap-2">
+                        {cutOrder.material_base_id ? (
+                          <>
+                            <span className="text-green-600 font-medium">
+                              ✓ {cutOrder.material_base_quantity}m
+                            </span>
+                            {cutOrder.stock_disponible < 0 && (
+                              <span className="inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">
+                                <AlertTriangle className="w-3 h-3 mr-1" />
+                                Sin stock
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-yellow-600">
+                            Sin asignar
+                          </span>
+                        )}
+                        {cutOrder.status === 'pendiente' && (cutOrder.quantity_cut || 0) < cutOrder.quantity_requested && (
+                          <button
+                            onClick={() => {
+                              setSelectedCutOrder(cutOrder)
+                              setChangeStockModalOpen(true)
+                            }}
+                            className="ml-2 text-xs text-blue-600 hover:text-blue-800 underline"
+                          >
+                            {cutOrder.material_base_id ? 'Cambiar' : 'Asignar'}
+                            {(cutOrder.quantity_cut || 0) > 0 && ` (${cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)} restantes)`}
+                          </button>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {cutOrder.status === 'pendiente' ? (
@@ -474,9 +502,264 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
         />
       )}
 
+      {/* Modal de Cambio de Stock */}
+      {changeStockModalOpen && selectedCutOrder && (
+        <ChangeStockModal
+          cutOrder={selectedCutOrder}
+          onClose={() => {
+            setChangeStockModalOpen(false)
+            setSelectedCutOrder(null)
+          }}
+          onSuccess={async () => {
+            setChangeStockModalOpen(false)
+            setSelectedCutOrder(null)
+            await reloadOrder()
+            showSuccess('Stock actualizado correctamente', '✅ Stock Cambiado')
+          }}
+        />
+      )}
+
       {/* Diálogos de notificación */}
       <SuccessDialog />
       <ErrorDialog />
+    </div>
+  )
+}
+
+// Modal completo para cambiar stock (tipo grid como /stock)
+function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
+  const [availableStock, setAvailableStock] = useState<any[]>([])
+  const [selectedStock, setSelectedStock] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    loadAvailableStock()
+  }, [])
+
+  async function loadAvailableStock() {
+    try {
+      const { createClient } = await import('@/lib/supabase/client')
+      const supabase = createClient()
+
+      // Obtener el tamaño del producto solicitado
+      const productSize = cutOrder.product?.length_meters || cutOrder.quantity_requested
+      
+      // Extraer el código base del producto (sin el tamaño)
+      // Ejemplo: "AC25110.3,0" -> "AC25110"
+      const productCode = cutOrder.product?.code || ''
+      const baseCode = productCode.split('.')[0] // Obtener solo "AC25110"
+      
+      console.log('Buscando stock para:', { productCode, baseCode, productSize })
+
+      // Buscar TODO el stock disponible
+      const { data, error } = await supabase
+        .from('inventory')
+        .select('id, product_id, stock_disponible, stock_reservado, stock_total, product:products!inventory_product_id_fkey(id, code, name, length_meters)')
+        .gt('stock_disponible', 0)
+
+      if (error) {
+        console.error('Error en consulta:', error)
+        throw error
+      }
+      
+      console.log('Stock total encontrado:', data?.length)
+      
+      // Filtrar por:
+      // 1. Mismo tipo de producto (mismo código base)
+      // 2. Tamaño >= solicitado
+      // Y ordenar por tamaño
+      const filtered = (data || [])
+        .filter(item => {
+          const product = Array.isArray(item.product) ? item.product[0] : item.product
+          if (!product) return false
+          
+          // Verificar que sea el mismo tipo de producto
+          const itemBaseCode = product.code?.split('.')[0]
+          const isSameProduct = itemBaseCode === baseCode
+          
+          // Verificar que sea de tamaño suficiente
+          const isSufficientSize = product.length_meters >= productSize
+          
+          return isSameProduct && isSufficientSize
+        })
+        .sort((a, b) => {
+          const prodA = Array.isArray(a.product) ? a.product[0] : a.product
+          const prodB = Array.isArray(b.product) ? b.product[0] : b.product
+          return (prodA?.length_meters || 0) - (prodB?.length_meters || 0)
+        })
+      
+      console.log('Stock filtrado (mismo producto, tamaño suficiente):', filtered.length, filtered)
+      setAvailableStock(filtered)
+    } catch (error) {
+      console.error('Error loading stock:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleChangeStock() {
+    if (!selectedStock) return
+
+    try {
+      setLoading(true)
+      const { createClient } = await import('@/lib/supabase/client')
+      const supabase = createClient()
+
+      const product = Array.isArray(selectedStock.product) ? selectedStock.product[0] : selectedStock.product
+      if (!product) {
+        alert('Error: producto no encontrado')
+        return
+      }
+
+      // Calcular cuántas unidades quedan pendientes (no cortadas)
+      const quantityPending = cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)
+      console.log(`📊 Pendientes de cortar: ${quantityPending} de ${cutOrder.quantity_requested}`)
+
+      // 1. Si había stock anterior asignado, liberar las reservas PENDIENTES
+      if (cutOrder.material_base_id) {
+        console.log('Liberando reservas del stock anterior...')
+        
+        // Obtener inventory_id del stock anterior
+        const { data: oldInventory } = await supabase
+          .from('inventory')
+          .select('id')
+          .eq('product_id', cutOrder.material_base_id)
+          .single()
+
+        if (oldInventory) {
+          // Liberar solo las unidades PENDIENTES (no las ya cortadas)
+          const { unreserveStock } = await import('@/app/actions/stock-management')
+          await unreserveStock(oldInventory.id, quantityPending)
+          console.log(`✅ Liberadas ${quantityPending} reservas del stock anterior (${cutOrder.quantity_cut || 0} ya cortadas se mantienen)`)
+        }
+      }
+
+      // 2. Reservar en el nuevo stock solo las PENDIENTES
+      console.log('Reservando en el nuevo stock...')
+      const { reserveStock } = await import('@/app/actions/stock-management')
+      
+      for (let i = 0; i < quantityPending; i++) {
+        await reserveStock(selectedStock.id)
+      }
+      console.log(`✅ Reservadas ${quantityPending} unidades en el nuevo stock`)
+
+      // 3. Actualizar la asignación en cut_orders
+      const { error } = await supabase
+        .from('cut_orders')
+        .update({
+          material_base_id: product.id,
+          material_base_quantity: product.length_meters
+        })
+        .eq('id', cutOrder.id)
+
+      if (error) throw error
+
+      onSuccess()
+    } catch (error) {
+      console.error('Error changing stock:', error)
+      alert('Error al cambiar stock: ' + (error as any).message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="p-6 border-b">
+          <h3 className="text-xl font-bold mb-2">Seleccionar Stock</h3>
+          <p className="text-sm text-slate-600">
+            Orden: <strong>{cutOrder.cut_number}</strong> - {cutOrder.product?.name}
+          </p>
+          <p className="text-xs text-slate-500 mt-1">
+            Mostrando chapas de {cutOrder.product?.length_meters || cutOrder.quantity_requested}m o superiores
+          </p>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {loading ? (
+            <div className="text-center py-12">
+              <p className="text-slate-500">Cargando stock disponible...</p>
+            </div>
+          ) : availableStock.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-red-600 font-medium">No hay stock disponible</p>
+              <p className="text-sm text-slate-500 mt-2">
+                No hay chapas de tamaño suficiente en stock
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {availableStock.map((item) => {
+                const product = Array.isArray(item.product) ? item.product[0] : item.product
+                const isSelected = selectedStock?.id === item.id
+                
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setSelectedStock(item)}
+                    className={`p-4 border-2 rounded-lg text-left transition-all ${
+                      isSelected
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-slate-200 hover:border-blue-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <h4 className="font-bold text-slate-900">{product?.name}</h4>
+                        <p className="text-sm text-slate-600">{product?.code}</p>
+                      </div>
+                      <span className="text-2xl font-bold text-blue-600">
+                        {product?.length_meters}m
+                      </span>
+                    </div>
+                    
+                    <div className="grid grid-cols-3 gap-2 mt-3 text-xs">
+                      <div>
+                        <p className="text-slate-500">Disponible</p>
+                        <p className="font-bold text-green-600">{item.stock_disponible}</p>
+                      </div>
+                      <div>
+                        <p className="text-slate-500">Reservado</p>
+                        <p className="font-bold text-yellow-600">{item.stock_reservado}</p>
+                      </div>
+                      <div>
+                        <p className="text-slate-500">Total</p>
+                        <p className="font-bold text-slate-700">{item.stock_total}</p>
+                      </div>
+                    </div>
+                    
+                    {isSelected && (
+                      <div className="mt-3 pt-3 border-t border-blue-200">
+                        <p className="text-xs text-blue-600 font-medium">✓ Seleccionado</p>
+                      </div>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="p-6 border-t bg-slate-50 flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-2 border border-slate-300 rounded-lg hover:bg-white transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleChangeStock}
+            disabled={!selectedStock || loading}
+            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors font-medium"
+          >
+            {loading ? 'Cambiando...' : selectedStock ? `Asignar ${(Array.isArray(selectedStock.product) ? selectedStock.product[0] : selectedStock.product)?.length_meters}m` : 'Seleccionar Stock'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

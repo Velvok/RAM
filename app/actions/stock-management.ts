@@ -618,10 +618,11 @@ export async function getAssignedStock(cutOrderId: string) {
 }
 
 /**
- * Reasignar stock de una orden completada a una orden pendiente
+ * Reasignar stock de una orden completada/parcial a una orden pendiente
+ * NUEVO: Adaptado al modelo agrupado - reasigna N unidades de una orden
  * Permite stock negativo si no hay disponibilidad
  */
-export async function reassignStock(fromCutOrderId: string, toCutOrderId: string) {
+export async function reassignStock(fromCutOrderId: string, toCutOrderId: string, quantityToReassign: number = 1) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -642,6 +643,15 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
   if (fromError) throw fromError
   if (!fromOrder.material_base_id) {
     throw new Error('La orden origen no tiene stock asignado')
+  }
+  
+  // NUEVO: Verificar que tenga suficientes unidades cortadas para reasignar
+  if ((fromOrder.quantity_cut || 0) === 0) {
+    throw new Error('La orden origen no tiene unidades cortadas para reasignar')
+  }
+  
+  if ((fromOrder.quantity_cut || 0) < quantityToReassign) {
+    throw new Error(`La orden origen solo tiene ${fromOrder.quantity_cut} unidades cortadas, no se pueden reasignar ${quantityToReassign}`)
   }
 
   // Obtener el inventory que tiene este producto asignado
@@ -675,16 +685,26 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
   const fromOrderData = Array.isArray(fromOrder.order) ? fromOrder.order[0] : fromOrder.order
   const toOrderData = Array.isArray(toOrder.order) ? toOrder.order[0] : toOrder.order
 
-  // 2. Quitar asignación de la orden origen (pero mantener reserva por ahora)
+  // 2. NUEVO: Decrementar quantity_cut de la orden origen (reasignamos N unidades)
+  const newQuantityCut = (fromOrder.quantity_cut || 0) - quantityToReassign
+  const isNowPending = newQuantityCut < fromOrder.quantity_requested
+  
+  console.log(`📊 Orden origen: ${fromOrder.quantity_cut}/${fromOrder.quantity_requested} → ${newQuantityCut}/${fromOrder.quantity_requested} (reasignando ${quantityToReassign})`)
+  
   const { error: updateFromError } = await supabase
     .from('cut_orders')
     .update({
-      material_base_id: null,
-      status: 'pendiente'
+      quantity_cut: newQuantityCut,
+      // Si ya no está completada, vuelve a pendiente
+      status: newQuantityCut >= fromOrder.quantity_requested ? 'completada' : 'pendiente',
+      // Si vuelve a pendiente, quitar finished_at
+      finished_at: newQuantityCut >= fromOrder.quantity_requested ? fromOrder.finished_at : null
     })
     .eq('id', fromCutOrderId)
 
   if (updateFromError) throw updateFromError
+  
+  console.log(`✅ Orden origen actualizada: estado = ${newQuantityCut >= fromOrder.quantity_requested ? 'completada' : 'pendiente'}`)
 
   // 3. Asignar a la orden destino (el stock sigue reservado, solo cambia de orden)
   console.log(`📥 Asignando a orden destino...`)
@@ -694,58 +714,30 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
   const assignedSize = extractSizeFromCode(assignedProduct.code)
   await assignStockToCutOrder(toCutOrderId, inventoryId, productId, assignedSize)
 
-  // 4. Marcar orden destino como PENDIENTE DE CONFIRMACIÓN
-  // El operario debe confirmar que recogió la pieza del pedido origen
+  // 4. NUEVO: Incrementar quantity_cut de la orden destino y marcar como PENDIENTE DE CONFIRMACIÓN
+  // El operario debe confirmar que recogió las piezas del pedido origen
+  const toOrderNewQuantityCut = (toOrder.quantity_cut || 0) + quantityToReassign
+  const toOrderIsCompleted = toOrderNewQuantityCut >= toOrder.quantity_requested
+  
+  console.log(`📊 Orden destino: ${toOrder.quantity_cut || 0}/${toOrder.quantity_requested} → ${toOrderNewQuantityCut}/${toOrder.quantity_requested} (+${quantityToReassign})`)
+  
   const { error: completeError } = await supabase
     .from('cut_orders')
     .update({
+      quantity_cut: toOrderNewQuantityCut,
       status: 'pendiente_confirmacion',
       reassigned_from_order_id: fromOrderData.id,
       reassigned_from_cut_order_id: fromCutOrderId,
+      reassigned_quantity: quantityToReassign, // Guardar cuántas se reasignaron
     })
     .eq('id', toCutOrderId)
 
   if (completeError) throw completeError
 
-  // 5. El stock sigue reservado (1 unidad) pero ahora para el pedido destino
-  // No liberamos ni reservamos de nuevo - solo movemos la asignación
-
-  // 7. Buscar nueva chapa para la orden origen (permitir stock negativo)
-  console.log(`🔍 Buscando nueva chapa para orden origen...`)
-  try {
-    const sizeNeeded = extractSizeFromCode(fromOrder.product.code)
-    const bestMatch = await findBestStockMatch(fromOrder.product_id, sizeNeeded)
-
-    if (bestMatch) {
-      // Asignar y reservar
-      const matchSize = extractSizeFromCode(bestMatch.product_code)
-      await assignStockToCutOrder(fromCutOrderId, bestMatch.inventory_id, bestMatch.product_id, matchSize)
-      await reserveStock(bestMatch.inventory_id)
-      console.log(`✅ Nueva chapa asignada: ${bestMatch.product_code}`)
-    } else {
-      // NO HAY STOCK: Crear asignación virtual con stock negativo
-      console.log(`⚠️ No hay stock disponible, creando asignación virtual...`)
-      
-      // Buscar o crear inventory con stock negativo
-      const { data: existingInventory } = await supabase
-        .from('inventory')
-        .select('id, stock_disponible')
-        .eq('product_id', fromOrder.product_id)
-        .single()
-
-      if (existingInventory) {
-        // Asignar el inventory existente (aunque tenga stock negativo)
-        const fromProduct = Array.isArray(fromOrder.product) ? fromOrder.product[0] : fromOrder.product
-        const fromSize = extractSizeFromCode(fromProduct.code)
-        await assignStockToCutOrder(fromCutOrderId, existingInventory.id, fromOrder.product_id, fromSize)
-        await reserveStock(existingInventory.id) // Esto hará que stock_disponible sea negativo
-        console.log(`⚠️ Asignado con stock negativo: ${existingInventory.stock_disponible - 1}`)
-      }
-    }
-  } catch (error) {
-    console.error('Error buscando nueva chapa:', error)
-    // Continuar aunque falle (la orden queda sin asignar)
-  }
+  // 5. NUEVO: La orden origen mantiene su asignación (solo decrementamos quantity_cut)
+  // El stock sigue reservado para las unidades restantes
+  // Solo movemos la reserva de 1 unidad al pedido destino
+  console.log(`📌 Orden origen mantiene su stock asignado para las ${fromOrder.quantity_requested - newQuantityCut} unidades restantes`)
 
   // 8. Actualizar estados de ambos pedidos
   // (fromOrderData y toOrderData ya declarados arriba)

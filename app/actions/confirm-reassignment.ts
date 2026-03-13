@@ -27,17 +27,60 @@ export async function confirmReassignmentPickup(cutOrderId: string) {
     throw new Error('Esta orden no está pendiente de confirmación')
   }
 
-  // Marcar como completada
+  // Obtener información del producto y material asignado
+  const { data: materialInfo, error: materialError } = await supabase
+    .from('products')
+    .select('id, code, name, length_meters')
+    .eq('id', cutOrder.material_base_id)
+    .single()
+
+  if (materialError) throw materialError
+
+  const chapaSize = materialInfo.length_meters
+  const productSize = cutOrder.quantity_requested
+  const remnantSize = chapaSize - productSize
+
+  console.log(`📏 Confirmando reasignación: Chapa ${chapaSize}m → Corte ${productSize}m → Recorte ${remnantSize}m`)
+
+  // NUEVO: Marcar como completada solo si quantity_cut >= quantity_requested
+  // NO sobrescribir quantity_cut, ya fue actualizado en la reasignación
+  const isCompleted = (cutOrder.quantity_cut || 0) >= cutOrder.quantity_requested
+  
   const { error: updateError } = await supabase
     .from('cut_orders')
     .update({
-      status: 'completada',
-      quantity_cut: cutOrder.quantity_requested,
-      finished_at: new Date().toISOString(),
+      status: isCompleted ? 'completada' : 'pendiente',
+      finished_at: isCompleted ? new Date().toISOString() : null,
+      // Limpiar campos de reasignación
+      reassigned_from_order_id: null,
+      reassigned_from_cut_order_id: null,
+      reassigned_quantity: null,
     })
     .eq('id', cutOrderId)
 
   if (updateError) throw updateError
+  
+  console.log(`✅ Orden confirmada: ${cutOrder.quantity_cut}/${cutOrder.quantity_requested} → estado: ${isCompleted ? 'completada' : 'pendiente'}`)
+
+  // NUEVO: Si la chapa es mayor, generar recorte
+  if (remnantSize > 0) {
+    console.log(`✂️ Generando recorte de ${remnantSize}m...`)
+    
+    const { generateRemnantStock } = await import('./stock-management')
+    
+    try {
+      // generateRemnantStock espera el código completo del producto (ej: AC25110.5,0)
+      // y calcula el código del recorte automáticamente
+      await generateRemnantStock(
+        materialInfo.code,
+        remnantSize
+      )
+      console.log(`✅ Recorte de ${remnantSize}m agregado al stock`)
+    } catch (error) {
+      console.error('Error generando recorte:', error)
+      // No fallar la confirmación si falla el recorte
+    }
+  }
 
   // Registrar en el log
   const orderData = Array.isArray(cutOrder.order) ? cutOrder.order[0] : cutOrder.order
@@ -59,11 +102,23 @@ export async function confirmReassignmentPickup(cutOrderId: string) {
     user_id: user?.id,
   })
 
+  // NUEVO: Actualizar estado del pedido destino (puede pasar a finalizado)
+  const { updateOrderStatus } = await import('./orders')
+  await updateOrderStatus(orderData.id)
+  
+  // También actualizar el pedido origen si existe
+  if (cutOrder.reassigned_from_order_id) {
+    await updateOrderStatus(cutOrder.reassigned_from_order_id)
+  }
+
   // Revalidar rutas
   revalidatePath('/planta/pedidos')
   revalidatePath(`/planta/pedidos/${orderData.id}`)
   revalidatePath('/admin/pedidos')
   revalidatePath(`/admin/pedidos/${orderData.id}`)
+  if (cutOrder.reassigned_from_order_id) {
+    revalidatePath(`/admin/pedidos/${cutOrder.reassigned_from_order_id}`)
+  }
 
   return { success: true }
 }

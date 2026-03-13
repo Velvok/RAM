@@ -7,6 +7,7 @@ interface CompletedCutOrder {
   id: string
   cut_number: string
   quantity_requested: number
+  quantity_cut: number
   product: {
     code: string
     name: string
@@ -32,7 +33,7 @@ interface ReassignStockModalProps {
   productSize: number
   currentOrderId: string
   onClose: () => void
-  onConfirm: (fromCutOrderId: string) => Promise<void>
+  onConfirm: (fromCutOrderId: string, quantity: number) => Promise<void>
 }
 
 export default function ReassignStockModal({
@@ -45,6 +46,7 @@ export default function ReassignStockModal({
 }: ReassignStockModalProps) {
   const [ordersWithCutOrders, setOrdersWithCutOrders] = useState<OrderWithCutOrders[]>([])
   const [selectedCutOrderId, setSelectedCutOrderId] = useState<string>('')
+  const [selectedQuantity, setSelectedQuantity] = useState<number>(1)
   const [expandedOrderId, setExpandedOrderId] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -63,21 +65,22 @@ export default function ReassignStockModal({
       const { createClient } = await import('@/lib/supabase/client')
       const supabase = createClient()
       
-      // Obtener todas las órdenes de corte completadas con stock asignado
-      // Incluimos material_base para obtener el producto de la chapa asignada
+      // NUEVO: Obtener órdenes con al menos 1 unidad cortada (quantity_cut > 0)
+      // Ya no solo completadas, sino también parcialmente completadas
       const { data: cutOrders, error } = await supabase
         .from('cut_orders')
         .select(`
           id,
           cut_number,
           quantity_requested,
+          quantity_cut,
           order_id,
           material_base_id,
           product:products!cut_orders_product_id_fkey(code, name),
           material_base:products!cut_orders_material_base_id_fkey(code, name),
           order:orders!cut_orders_order_id_fkey(id, order_number, client:clients(business_name))
         `)
-        .eq('status', 'completada')
+        .gt('quantity_cut', 0)
         .not('material_base_id', 'is', null)
 
       if (error) throw error
@@ -136,6 +139,7 @@ export default function ReassignStockModal({
           id: co.id,
           cut_number: co.cut_number,
           quantity_requested: co.quantity_requested,
+          quantity_cut: co.quantity_cut || 0,
           product: product,
           assigned_inventory: {
             product: materialBase
@@ -163,10 +167,14 @@ export default function ReassignStockModal({
 
   async function handleConfirm() {
     if (!selectedCutOrderId) return
+    if (selectedQuantity <= 0) {
+      alert('Debe seleccionar al menos 1 unidad')
+      return
+    }
 
     setSubmitting(true)
     try {
-      await onConfirm(selectedCutOrderId)
+      await onConfirm(selectedCutOrderId, selectedQuantity)
       onClose()
     } catch (error) {
       console.error('Error reassigning stock:', error)
@@ -266,6 +274,7 @@ export default function ReassignStockModal({
                               <th className="w-12 px-4 py-2"></th>
                               <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Orden</th>
                               <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Producto</th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Disponibles</th>
                               <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Chapa Asignada</th>
                               <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Tamaño</th>
                               <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Tipo</th>
@@ -301,6 +310,9 @@ export default function ReassignStockModal({
                                   </td>
                                   <td className="px-4 py-3 text-sm text-slate-600">
                                     {cutOrder.product.name}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm font-semibold text-green-600">
+                                    {cutOrder.quantity_cut || 0} unidad{(cutOrder.quantity_cut || 0) !== 1 ? 'es' : ''}
                                   </td>
                                   <td className="px-4 py-3 text-sm text-slate-600 font-mono">
                                     {cutOrder.assigned_inventory.product.code}
@@ -343,6 +355,27 @@ export default function ReassignStockModal({
             </div>
           )}
           
+          {selectedCutOrder && (
+            <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <label className="block text-sm font-semibold text-slate-700 mb-2">
+                ¿Cuántas unidades reasignar?
+              </label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="number"
+                  min="1"
+                  max={selectedCutOrder.quantity_cut}
+                  value={selectedQuantity}
+                  onChange={(e) => setSelectedQuantity(Math.min(parseInt(e.target.value) || 1, selectedCutOrder.quantity_cut))}
+                  className="w-24 px-3 py-2 border border-slate-300 rounded-lg text-center font-bold text-lg"
+                />
+                <span className="text-sm text-slate-600">
+                  de {selectedCutOrder.quantity_cut} disponibles
+                </span>
+              </div>
+            </div>
+          )}
+          
           <div className="flex gap-3">
             <button
               onClick={onClose}
@@ -356,7 +389,7 @@ export default function ReassignStockModal({
               disabled={!selectedCutOrderId || submitting}
               className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg font-semibold transition-colors"
             >
-              {submitting ? 'Reasignando...' : 'Confirmar reasignación'}
+              {submitting ? 'Reasignando...' : `Reasignar ${selectedQuantity} unidad${selectedQuantity !== 1 ? 'es' : ''}`}
             </button>
           </div>
         </div>

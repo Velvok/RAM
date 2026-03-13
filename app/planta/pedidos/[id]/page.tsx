@@ -32,6 +32,7 @@ export default function PlantaPedidoDetallePage() {
   const [suggestions, setSuggestions] = useState<Record<string, any>>({})
   const [selectedMaterials, setSelectedMaterials] = useState<Record<string, MaterialSuggestion>>({})
   const [remnantInputs, setRemnantInputs] = useState<Record<string, string>>({})
+  const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({}) // Nueva: cantidad a cortar
   const [processing, setProcessing] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
@@ -293,14 +294,26 @@ export default function PlantaPedidoDetallePage() {
       // NOTA: El stock permanece RESERVADO hasta que se entregue el pedido
       // NO se mueve a "en_proceso" ni se consume al cortar
       
-      // 2. Finalizar la orden de corte
-      await finishCutOrder(
-        cutId,
-        cutOrder.quantity_requested, // cantidad cortada
-        inventoryItem.product_id, // material usado (product_id, no inventory_id)
-        selectedMaterial.length, // cantidad usada (tamaño de la pieza)
-        remnantLength // recorte generado
-      )
+      // 2. Obtener cantidad a cortar (puede ser parcial)
+      const quantityToCut = parseInt(quantityInputs[cutId] || '0')
+      const newQuantityCut = (cutOrder.quantity_cut || 0) + quantityToCut
+      const isFullyCompleted = newQuantityCut >= cutOrder.quantity_requested
+      
+      // Actualizar quantity_cut en la orden
+      await supabase
+        .from('cut_orders')
+        .update({
+          quantity_cut: newQuantityCut,
+          status: isFullyCompleted ? 'completada' : 'pendiente',
+          finished_at: isFullyCompleted ? new Date().toISOString() : null
+        })
+        .eq('id', cutId)
+      
+      console.log(`✅ Cortadas ${quantityToCut} unidades (${newQuantityCut}/${cutOrder.quantity_requested})`)
+      
+      // 2b. Actualizar estado del pedido (puede pasar a 'en_corte' si hay cortes parciales)
+      const { updateOrderStatus } = await import('@/app/actions/orders')
+      await updateOrderStatus(cutOrder.order_id)
       
       // 3. Si hay recorte, validar que existe el producto ANTES de consumir stock
       if (remnantLength > 0) {
@@ -327,6 +340,9 @@ export default function PlantaPedidoDetallePage() {
       
       // Mostrar confirmación con modal personalizado
       const successLines = [
+        `✂️ Cortadas: ${quantityToCut} unidades`,
+        `📊 Progreso: ${newQuantityCut}/${cutOrder.quantity_requested}`,
+        ``,
         `📦 Material usado:`,
         `   ${selectedMaterial.name}`,
         ``,
@@ -339,11 +355,20 @@ export default function PlantaPedidoDetallePage() {
         successLines.push(`✅ Stock de recorte actualizado`)
       }
       
-      showSuccess(successLines.join('\n'), '✓ Corte confirmado')
+      if (!isFullyCompleted) {
+        successLines.push(``)
+        successLines.push(`⚠️ Pendientes: ${cutOrder.quantity_requested - newQuantityCut} unidades`)
+      }
       
-      // Recargar pedido
+      showSuccess(
+        successLines.join('\n'), 
+        isFullyCompleted ? '✓ Orden Completada' : '✓ Corte Parcial Confirmado'
+      )
+      
+      // Recargar pedido y limpiar inputs
       await loadPedido()
       setExpandedCutId(null)
+      setQuantityInputs(prev => ({ ...prev, [cutId]: '' }))
       
     } catch (error: any) {
       console.error('Error finishing cut:', error)
@@ -461,7 +486,18 @@ export default function PlantaPedidoDetallePage() {
                         isExpanded ? <ChevronUp className="w-5 h-5 text-blue-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />
                       )}
                     </div>
-                    <p className="text-sm text-slate-400 mb-2">{cutOrder.cut_number}</p>
+                    <div className="flex items-center gap-3 mb-2">
+                      <p className="text-sm text-slate-400">{cutOrder.cut_number}</p>
+                      <span className={`px-2 py-1 rounded text-xs font-bold ${
+                        (cutOrder.quantity_cut || 0) >= cutOrder.quantity_requested
+                          ? 'bg-green-500/20 text-green-400'
+                          : (cutOrder.quantity_cut || 0) > 0
+                          ? 'bg-yellow-500/20 text-yellow-400'
+                          : 'bg-slate-500/20 text-slate-400'
+                      }`}>
+                        {cutOrder.quantity_cut || 0}/{cutOrder.quantity_requested} cortadas
+                      </span>
+                    </div>
                     <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-semibold ${
                       isCompleted
                         ? 'bg-green-500/20 text-green-400'
@@ -574,6 +610,28 @@ export default function PlantaPedidoDetallePage() {
                       </select>
                     </div>
 
+                    {/* Cantidad a Cortar */}
+                    <div>
+                      <label className="block font-semibold text-white mb-2">
+                        Cantidad a cortar:
+                      </label>
+                      <div className="mb-2 text-sm text-slate-300">
+                        Pendientes: {cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)} unidades
+                      </div>
+                      <input
+                        type="number"
+                        min="1"
+                        max={cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)}
+                        placeholder={`Máximo ${cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)}`}
+                        value={quantityInputs[cutOrder.id] || ''}
+                        onChange={(e) => setQuantityInputs(prev => ({ ...prev, [cutOrder.id]: e.target.value }))}
+                        className="w-full p-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400"
+                      />
+                      <p className="text-xs text-slate-400 mt-1">
+                        Puedes cortar parcialmente (ej: 8 de 10)
+                      </p>
+                    </div>
+
                     {/* Recorte Generado */}
                     <div>
                       <label className="block font-semibold text-white mb-2">
@@ -600,10 +658,10 @@ export default function PlantaPedidoDetallePage() {
                     {/* Botón Confirmar */}
                     <button
                       onClick={() => handleConfirmCut(cutOrder)}
-                      disabled={!selectedMaterial || isProcessing}
+                      disabled={!selectedMaterial || isProcessing || !quantityInputs[cutOrder.id] || parseInt(quantityInputs[cutOrder.id]) <= 0}
                       className="w-full px-6 py-4 bg-green-600 hover:bg-green-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded-lg font-bold text-lg transition-colors"
                     >
-                      {isProcessing ? 'Procesando...' : '✓ Confirmar Corte y Finalizar'}
+                      {isProcessing ? 'Procesando...' : `✓ Confirmar Corte (${quantityInputs[cutOrder.id] || 0} unidades)`}
                     </button>
                   </div>
                 )}
