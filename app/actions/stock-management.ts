@@ -714,21 +714,17 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
   const assignedSize = extractSizeFromCode(assignedProduct.code)
   await assignStockToCutOrder(toCutOrderId, inventoryId, productId, assignedSize)
 
-  // 4. NUEVO: Incrementar quantity_cut de la orden destino y marcar como PENDIENTE DE CONFIRMACIÓN
-  // El operario debe confirmar que recogió las piezas del pedido origen
-  const toOrderNewQuantityCut = (toOrder.quantity_cut || 0) + quantityToReassign
-  const toOrderIsCompleted = toOrderNewQuantityCut >= toOrder.quantity_requested
-  
-  console.log(`📊 Orden destino: ${toOrder.quantity_cut || 0}/${toOrder.quantity_requested} → ${toOrderNewQuantityCut}/${toOrder.quantity_requested} (+${quantityToReassign})`)
+  // 4. NUEVO: Marcar orden destino como PENDIENTE DE CONFIRMACIÓN
+  // NO incrementar quantity_cut aquí - eso se hace cuando el operario confirme el corte
+  console.log(`� Orden destino preparada para corte: ${toOrder.quantity_cut || 0}/${toOrder.quantity_requested} (pendiente confirmación)`)
   
   const { error: completeError } = await supabase
     .from('cut_orders')
     .update({
-      quantity_cut: toOrderNewQuantityCut,
       status: 'pendiente_confirmacion',
       reassigned_from_order_id: fromOrderData.id,
       reassigned_from_cut_order_id: fromCutOrderId,
-      reassigned_quantity: quantityToReassign, // Guardar cuántas se reasignaron
+      reassigned_quantity: quantityToReassign,
     })
     .eq('id', toCutOrderId)
 

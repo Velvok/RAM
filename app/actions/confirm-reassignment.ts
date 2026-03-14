@@ -42,13 +42,17 @@ export async function confirmReassignmentPickup(cutOrderId: string) {
 
   console.log(`📏 Confirmando reasignación: Chapa ${chapaSize}m → Corte ${productSize}m → Recorte ${remnantSize}m`)
 
-  // NUEVO: Marcar como completada solo si quantity_cut >= quantity_requested
-  // NO sobrescribir quantity_cut, ya fue actualizado en la reasignación
-  const isCompleted = (cutOrder.quantity_cut || 0) >= cutOrder.quantity_requested
+  // NUEVO: Incrementar quantity_cut según la cantidad reasignada
+  const quantityToAdd = cutOrder.reassigned_quantity || 1
+  const newQuantityCut = (cutOrder.quantity_cut || 0) + quantityToAdd
+  const isCompleted = newQuantityCut >= cutOrder.quantity_requested
+  
+  console.log(`📊 Incrementando quantity_cut: ${cutOrder.quantity_cut || 0} + ${quantityToAdd} = ${newQuantityCut}/${cutOrder.quantity_requested}`)
   
   const { error: updateError } = await supabase
     .from('cut_orders')
     .update({
+      quantity_cut: newQuantityCut,
       status: isCompleted ? 'completada' : 'pendiente',
       finished_at: isCompleted ? new Date().toISOString() : null,
       // Limpiar campos de reasignación
@@ -60,7 +64,7 @@ export async function confirmReassignmentPickup(cutOrderId: string) {
 
   if (updateError) throw updateError
   
-  console.log(`✅ Orden confirmada: ${cutOrder.quantity_cut}/${cutOrder.quantity_requested} → estado: ${isCompleted ? 'completada' : 'pendiente'}`)
+  console.log(`✅ Orden confirmada: ${newQuantityCut}/${cutOrder.quantity_requested} → estado: ${isCompleted ? 'completada' : 'pendiente'}`)
 
   // NUEVO: Si la chapa es mayor, generar recorte
   if (remnantSize > 0) {

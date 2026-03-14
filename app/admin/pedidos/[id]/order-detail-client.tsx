@@ -495,7 +495,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
         <ReassignStockModal
           isOpen={reassignModalOpen}
           cutOrderId={selectedCutOrder.id}
-          productSize={selectedCutOrder.quantity_requested}
+          productSize={selectedCutOrder.product?.length_meters || selectedCutOrder.quantity_requested}
           currentOrderId={order.id}
           onClose={() => setReassignModalOpen(false)}
           onConfirm={handleReassign}
