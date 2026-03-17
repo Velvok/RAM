@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { getCutOrderById, startCutOrder, pauseCutOrder } from '@/app/actions/cut-orders'
-import FinishCutModal from './finish-cut-modal'
 import { useSuccess } from '@/components/success-modal'
 import { useError } from '@/components/error-modal'
 
@@ -14,7 +13,6 @@ export default function OrdenDetallePage() {
   const [operator, setOperator] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
-  const [showFinishModal, setShowFinishModal] = useState(false)
   const { showSuccess, SuccessDialog } = useSuccess()
   const { showError, ErrorDialog } = useError()
 
@@ -76,20 +74,6 @@ export default function OrdenDetallePage() {
     }
   }
 
-  function handleFinish() {
-    setShowFinishModal(true)
-  }
-
-  function handleFinishSuccess() {
-    setShowFinishModal(false)
-    showSuccess(
-      'El corte ha sido finalizado exitosamente. Los datos han sido registrados correctamente.',
-      '¡Corte Finalizado!'
-    )
-    setTimeout(() => {
-      router.push('/planta/ordenes')
-    }, 2000)
-  }
 
   if (loading) {
     return (
@@ -186,22 +170,13 @@ export default function OrdenDetallePage() {
             )}
 
             {order.status === 'en_proceso' && (
-              <>
-                <button
-                  onClick={handlePause}
-                  disabled={processing}
-                  className="py-4 bg-yellow-600 hover:bg-yellow-500 text-white rounded-lg font-bold text-lg transition-colors disabled:opacity-50"
-                >
-                  {processing ? 'Procesando...' : 'Pausar'}
-                </button>
-                <button
-                  onClick={handleFinish}
-                  disabled={processing}
-                  className="py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold text-lg transition-colors disabled:opacity-50 md:col-span-2"
-                >
-                  {processing ? 'Procesando...' : 'Finalizar Corte'}
-                </button>
-              </>
+              <button
+                onClick={handlePause}
+                disabled={processing}
+                className="py-4 bg-yellow-600 hover:bg-yellow-500 text-white rounded-lg font-bold text-lg transition-colors disabled:opacity-50 md:col-span-3"
+              >
+                {processing ? 'Procesando...' : 'Pausar'}
+              </button>
             )}
 
             {order.status === 'pausada' && (
@@ -215,14 +190,6 @@ export default function OrdenDetallePage() {
             )}
           </div>
         </div>
-
-        {showFinishModal && (
-          <FinishCutModal
-            order={order}
-            onClose={() => setShowFinishModal(false)}
-            onSuccess={handleFinishSuccess}
-          />
-        )}
       </div>
     </div>
     </>
