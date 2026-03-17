@@ -209,7 +209,7 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
                     </div>
                     <div className="flex items-center gap-1 text-xs text-slate-600">
                       <Package className="w-3.5 h-3.5" />
-                      {order.total_weight} kg
+                      {order.lines?.reduce((sum: number, line: any) => sum + (line.units || 0), 0) || 0} unidades
                     </div>
                   </div>
 

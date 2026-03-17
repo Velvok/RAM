@@ -167,15 +167,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
       </div>
 
       {/* Información General */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="text-sm font-medium text-slate-600 mb-1">
-            Total
-          </div>
-          <div className="text-2xl font-bold text-slate-900">
-            {order.total_weight} m
-          </div>
-        </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-white rounded-lg shadow p-6">
           <div className="text-sm font-medium text-slate-600 mb-1">
             Monto Total
@@ -259,6 +251,9 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                     Número
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                    Código Producto
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
                     Producto
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
@@ -280,6 +275,9 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                   <tr key={cutOrder.id}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">
                       {cutOrder.cut_number}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 font-mono">
+                      {cutOrder.product?.code}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
                       {cutOrder.product?.name}
@@ -695,6 +693,7 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
               {availableStock.map((item) => {
                 const product = Array.isArray(item.product) ? item.product[0] : item.product
                 const isSelected = selectedStock?.id === item.id
+                const isCurrentlyAssigned = item.product_id === cutOrder.material_base_id
                 
                 return (
                   <button
@@ -703,6 +702,8 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
                     className={`p-4 border-2 rounded-lg text-left transition-all ${
                       isSelected
                         ? 'border-blue-500 bg-blue-50'
+                        : isCurrentlyAssigned
+                        ? 'border-green-500 bg-green-50'
                         : 'border-slate-200 hover:border-blue-300 hover:bg-slate-50'
                     }`}
                   >
@@ -731,7 +732,13 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
                       </div>
                     </div>
                     
-                    {isSelected && (
+                    {isCurrentlyAssigned && (
+                      <div className="mt-3 pt-3 border-t border-green-200">
+                        <p className="text-xs text-green-600 font-medium">✓ Asignado actualmente</p>
+                      </div>
+                    )}
+                    
+                    {isSelected && !isCurrentlyAssigned && (
                       <div className="mt-3 pt-3 border-t border-blue-200">
                         <p className="text-xs text-blue-600 font-medium">✓ Seleccionado</p>
                       </div>

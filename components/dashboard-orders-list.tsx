@@ -166,7 +166,7 @@ export default function DashboardOrdersList({ orders }: DashboardOrdersListProps
 
                         <div className="flex items-center gap-2 text-slate-600">
                           <Package className="w-4 h-4" />
-                          <span>{order.total_weight} kg</span>
+                          <span>{order.lines?.reduce((sum: number, line: any) => sum + (line.units || 0), 0) || 0} unidades</span>
                         </div>
                       </div>
 

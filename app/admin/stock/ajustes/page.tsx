@@ -106,17 +106,17 @@ export default function AjustesStockPage() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="quantity">Cantidad (kg)</Label>
+            <Label htmlFor="quantity">Cantidad (unidades)</Label>
             <Input
               id="quantity"
               type="number"
-              step="0.01"
+              step="1"
               required
               value={formData.quantity}
               onChange={(e) =>
                 setFormData({ ...formData, quantity: e.target.value })
               }
-              placeholder="0.00"
+              placeholder="0"
             />
           </div>
 

@@ -114,8 +114,10 @@ export default function OrderDetailModal({ order, isOpen, onClose, onUpdate }: O
             <div className="flex items-start gap-3 p-4 bg-slate-50 rounded-lg">
               <Package className="w-5 h-5 text-slate-600 mt-0.5" />
               <div>
-                <p className="text-xs text-slate-500 mb-1">Peso Total</p>
-                <p className="font-semibold text-slate-900">{order.total_weight} kg</p>
+                <p className="text-xs text-slate-500 mb-1">Total Unidades</p>
+                <p className="font-semibold text-slate-900">
+                  {order.lines?.reduce((sum: number, line: any) => sum + (line.units || 0), 0) || 0} unidades
+                </p>
               </div>
             </div>
 
@@ -171,12 +173,12 @@ export default function OrderDetailModal({ order, isOpen, onClose, onUpdate }: O
                     <p className="text-xs text-slate-500">{line.product?.sku}</p>
                   </div>
                   <div className="text-right">
-                    <p className="font-semibold text-slate-900">{line.quantity} kg</p>
+                    <p className="font-semibold text-slate-900">{line.units || 0} unidades</p>
                     <p className="text-xs text-slate-500">
                       {line.unit_price?.toLocaleString('es-ES', {
                         style: 'currency',
                         currency: 'EUR'
-                      })}/kg
+                      })}/ud
                     </p>
                   </div>
                 </div>
