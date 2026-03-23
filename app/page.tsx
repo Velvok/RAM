@@ -56,7 +56,7 @@ export default function HomePage() {
               <div className="text-slate-400">
                 <div className="text-white font-semibold mb-2">✅ Base de Datos</div>
                 <div>18 tablas creadas</div>
-                <div>RLS configurado</div>
+                <div>SLS configurado</div>
               </div>
               <div className="text-slate-400">
                 <div className="text-white font-semibold mb-2">✅ Integración</div>
