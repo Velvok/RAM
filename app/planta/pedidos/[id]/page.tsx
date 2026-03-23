@@ -79,6 +79,13 @@ export default function PlantaPedidoDetallePage() {
     }
 
     setExpandedCutId(cutOrderId)
+    
+    // Establecer cantidad máxima por defecto
+    const cutOrder = pedido?.cut_orders?.find((co: any) => co.id === cutOrderId)
+    if (cutOrder) {
+      const maxQuantity = cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)
+      setQuantityInputs(prev => ({ ...prev, [cutOrderId]: maxQuantity.toString() }))
+    }
 
     // Cargar sugerencias reales de stock
     if (!suggestions[cutOrderId]) {

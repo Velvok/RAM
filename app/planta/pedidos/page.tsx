@@ -93,45 +93,63 @@ export default function PlantaPedidosPage() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {pedidos.map((pedido) => {
-              const cutOrdersCount = pedido.cut_orders?.length || 0
-              
-              return (
-                <div
-                  key={pedido.id}
-                  onClick={() => router.push(`/planta/pedidos/${pedido.id}`)}
-                  className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700 hover:border-blue-500 cursor-pointer transition-all p-6"
-                >
-                  {/* Header */}
-                  <div className="mb-4">
-                    <h3 className="text-xl font-bold text-white">
-                      {pedido.order_number}
-                    </h3>
-                    <p className="text-sm text-slate-400 mt-1">
-                      {new Date(pedido.created_at).toLocaleDateString('es-ES', {
-                        day: '2-digit',
-                        month: 'short',
-                        year: 'numeric'
-                      })}
-                    </p>
-                  </div>
-
-                  {/* Info */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-3 bg-slate-700/30 rounded-lg">
-                      <span className="text-slate-400 text-sm">Órdenes de Corte:</span>
-                      <span className="text-white font-bold text-lg">{cutOrdersCount}</span>
-                    </div>
-                    
-                    <div className="flex items-center justify-between p-3 bg-slate-700/30 rounded-lg">
-                      <span className="text-slate-400 text-sm">Unidades:</span>
-                      <span className="text-white font-bold">{cutOrdersCount}</span>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
+          <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700 overflow-hidden">
+            <table className="min-w-full divide-y divide-slate-700">
+              <thead className="bg-slate-900/50">
+                <tr>
+                  <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+                    Pedido
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+                    Fecha
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+                    Órdenes de Corte
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+                    Estado
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-700">
+                {pedidos.map((pedido) => {
+                  const cutOrdersCount = pedido.cut_orders?.length || 0
+                  
+                  return (
+                    <tr
+                      key={pedido.id}
+                      onClick={() => router.push(`/planta/pedidos/${pedido.id}`)}
+                      className="hover:bg-slate-700/30 cursor-pointer transition-colors"
+                    >
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-bold text-white">{pedido.order_number}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-slate-300">
+                          {new Date(pedido.created_at).toLocaleDateString('es-ES', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric'
+                          })}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-bold text-white">{cutOrdersCount}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                          pedido.status === 'aprobado' 
+                            ? 'bg-yellow-900/50 text-yellow-300' 
+                            : 'bg-blue-900/50 text-blue-300'
+                        }`}>
+                          {pedido.status === 'aprobado' ? 'Aprobado' : 'En Corte'}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
