@@ -22,7 +22,6 @@ interface EvoWebhookPayload {
     unit_price: number
     subtotal: number
   }>
-  total_weight?: number
   total_amount: number
   notes?: string
 }
@@ -109,7 +108,6 @@ export async function POST(request: NextRequest) {
         order_number: payload.order_number,
         client_id: clientId,
         status: 'ingresado',
-        total_weight: payload.total_weight,
         total_amount: payload.total_amount,
         notes: payload.notes,
         evo_data: payload as any,

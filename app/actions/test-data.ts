@@ -72,7 +72,6 @@ export async function generateTestOrder(status: string = 'nuevo', numLines: numb
   const orderNumber = `PED-TEST-${Date.now()}`
   
   // Calcular totales del pedido
-  let totalWeight = 0
   let totalAmount = 0
   const orderLines = []
   
@@ -87,7 +86,6 @@ export async function generateTestOrder(status: string = 'nuevo', numLines: numb
     const quantity = units * lengthPerUnit // Total en metros (para cálculos de precio)
     
     const unitPrice = Math.floor(Math.random() * 2000) + 1000 // Entre 1000 y 3000 por metro
-    totalWeight += quantity
     totalAmount += quantity * unitPrice
     orderLines.push({
       product_id: product.id,
@@ -106,7 +104,6 @@ export async function generateTestOrder(status: string = 'nuevo', numLines: numb
       order_number: orderNumber,
       client_id: clients.id,
       status: 'nuevo', // Siempre nuevo, independiente del parámetro
-      total_weight: totalWeight,
       total_amount: totalAmount,
       notes: `Pedido de prueba con ${numLines} línea(s)`,
     })
