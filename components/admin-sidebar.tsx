@@ -2,13 +2,15 @@
 
 import { useState } from 'react'
 import { usePathname } from 'next/navigation'
+import Image from 'next/image'
 
 interface AdminSidebarProps {
   displayEmail: string
+  isCollapsed: boolean
+  setIsCollapsed: (value: boolean) => void
 }
 
-export function AdminSidebar({ displayEmail }: AdminSidebarProps) {
-  const [isCollapsed, setIsCollapsed] = useState(false)
+export function AdminSidebar({ displayEmail, isCollapsed, setIsCollapsed }: AdminSidebarProps) {
   const pathname = usePathname()
 
   const isActive = (path: string) => {
@@ -19,26 +21,30 @@ export function AdminSidebar({ displayEmail }: AdminSidebarProps) {
   }
 
   return (
-    <aside className={`${isCollapsed ? 'w-20' : 'w-64'} bg-white border-r border-slate-200 flex flex-col transition-all duration-300`}>
-      <div className="p-6 border-b border-slate-200 flex items-center justify-between">
-        {!isCollapsed && (
-          <h1 className="text-2xl font-bold text-slate-900">
-            RAM <span className="text-blue-600">Velvok</span>
-          </h1>
+    <aside className={`${isCollapsed ? 'w-20' : 'w-64'} h-screen bg-white border-r border-slate-200 flex flex-col transition-all duration-300 fixed left-0 top-0`}>
+      <div className={`${isCollapsed ? 'p-4' : 'p-6'} border-b border-slate-200 flex items-center justify-center`}>
+        {!isCollapsed ? (
+          <div className="relative h-10 w-48">
+            <Image 
+              src="/logo-horizontal.png" 
+              alt="Comercial RAM" 
+              fill
+              className="object-contain"
+              priority
+            />
+          </div>
+        ) : (
+          <div className="relative w-12 h-12">
+            <Image 
+              src="/logo-square.png" 
+              alt="RAM" 
+              width={48}
+              height={48}
+              className="object-contain"
+              priority
+            />
+          </div>
         )}
-        <button
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          className="p-2 hover:bg-blue-50 rounded-lg transition-colors ml-auto"
-          title={isCollapsed ? 'Expandir menú' : 'Colapsar menú'}
-        >
-          <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            {isCollapsed ? (
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-            ) : (
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-            )}
-          </svg>
-        </button>
       </div>
       
       <nav className="flex-1 p-4">
@@ -88,10 +94,10 @@ export function AdminSidebar({ displayEmail }: AdminSidebarProps) {
         </div>
       </nav>
 
-      <div className="p-4 border-t border-slate-200">
+      <div className="p-4 border-t border-slate-200 space-y-3">
         {!isCollapsed ? (
           <>
-            <div className="mb-3 px-4">
+            <div className="px-4">
               <p className="text-xs text-slate-500 mb-1">Usuario</p>
               <p className="text-sm text-slate-700 truncate">{displayEmail}</p>
             </div>
@@ -104,17 +110,38 @@ export function AdminSidebar({ displayEmail }: AdminSidebarProps) {
               </svg>
               Volver
             </a>
+            <button
+              onClick={() => setIsCollapsed(!isCollapsed)}
+              className="flex items-center justify-center w-full px-4 py-2 hover:bg-blue-50 rounded-lg transition-colors text-sm font-medium text-slate-700"
+              title="Colapsar menú"
+            >
+              <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+              </svg>
+              Colapsar
+            </button>
           </>
         ) : (
-          <a
-            href="/"
-            className="flex items-center justify-center w-full px-2 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 transition-colors"
-            title="Volver al inicio"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-          </a>
+          <>
+            <a
+              href="/"
+              className="flex items-center justify-center w-full px-2 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 transition-colors"
+              title="Volver al inicio"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+            </a>
+            <button
+              onClick={() => setIsCollapsed(!isCollapsed)}
+              className="flex items-center justify-center w-full px-2 py-2 hover:bg-blue-50 rounded-lg transition-colors"
+              title="Expandir menú"
+            >
+              <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+              </svg>
+            </button>
+          </>
         )}
       </div>
     </aside>

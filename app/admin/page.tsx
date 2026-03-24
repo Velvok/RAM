@@ -1,4 +1,4 @@
-import { DashboardRAM } from '@/components/dashboard-ram'
+import { DashboardServer } from '@/components/dashboard-server'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -13,7 +13,7 @@ export default async function AdminDashboard() {
         <p className="text-slate-600 mt-1">Vista general del sistema RAM - Velvok</p>
       </div>
 
-      <DashboardRAM />
+      <DashboardServer />
     </div>
   )
 }

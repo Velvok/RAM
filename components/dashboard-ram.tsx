@@ -134,30 +134,30 @@ export function DashboardRAM() {
   ]
 
   const getStatusBadge = (status: string) => {
-    const styles = {
-      'En Corte': 'bg-blue-100 text-blue-700',
-      'Finalizado': 'bg-emerald-100 text-emerald-700',
-      'Ingresado': 'bg-slate-100 text-slate-700',
-      'Generado': 'bg-indigo-100 text-indigo-700',
-      'Lanzado': 'bg-amber-100 text-amber-700',
-      'Preparado': 'bg-green-100 text-green-700',
-      'Despachado': 'bg-teal-100 text-teal-700',
-      'Entregado': 'bg-emerald-100 text-emerald-700'
+    const statusConfig: Record<string, { label: string; className: string }> = {
+      'nuevo': { label: 'Nuevo', className: 'bg-slate-100 text-slate-700' },
+      'aprobado': { label: 'Aprobado', className: 'bg-yellow-100 text-yellow-700' },
+      'en_corte': { label: 'En Corte', className: 'bg-blue-100 text-blue-700' },
+      'finalizado': { label: 'Finalizado', className: 'bg-green-100 text-green-700' },
+      'entregado': { label: 'Entregado', className: 'bg-purple-100 text-purple-700' },
+      'cancelado': { label: 'Cancelado', className: 'bg-red-100 text-red-700' }
     }
+    const config = statusConfig[status] || { label: status, className: 'bg-slate-100 text-slate-700' }
     return (
-      <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${styles[status as keyof typeof styles] || 'bg-slate-100 text-slate-700'}`}>
-        {status}
+      <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${config.className}`}>
+        {config.label}
       </span>
     )
   }
 
   // Datos mockeados para Últimos Pedidos (con campo producto para relación cruzada)
+  // Estados reales de la DB: nuevo, aprobado, en_corte, finalizado, entregado, cancelado
   const pedidosData = [
-    { pedido: 'PED-2024-1847', cliente: 'Metalúrgica San Martín S.A.', metraje: '450 m', fecha: '15/03/2026', estado: 'En Corte', producto: 'ZINC-ACAN-050' },
-    { pedido: 'PED-2024-1846', cliente: 'Industrias del Norte', metraje: '1,200 m', fecha: '14/03/2026', estado: 'Finalizado', producto: 'TRAPEZ-C-100' },
-    { pedido: 'PED-2024-1845', cliente: 'Construcciones del Sur', metraje: '680 m', fecha: '13/03/2026', estado: 'Lanzado', producto: 'CHAPA-LISA-060' },
-    { pedido: 'PED-2024-1844', cliente: 'Aceros y Metales Ltda.', metraje: '920 m', fecha: '12/03/2026', estado: 'En Corte', producto: 'ZINC-ACAN-050' },
-    { pedido: 'PED-2024-1843', cliente: 'Fabricaciones Industriales', metraje: '1,500 m', fecha: '11/03/2026', estado: 'Preparado', producto: 'PERFIL-U-080' },
+    { pedido: 'PED-2024-1847', cliente: 'Metalúrgica San Martín S.A.', metraje: '450 m', fecha: '15/03/2026', estado: 'en_corte', producto: 'ZINC-ACAN-050' },
+    { pedido: 'PED-2024-1846', cliente: 'Industrias del Norte', metraje: '1,200 m', fecha: '14/03/2026', estado: 'finalizado', producto: 'TRAPEZ-C-100' },
+    { pedido: 'PED-2024-1845', cliente: 'Construcciones del Sur', metraje: '680 m', fecha: '13/03/2026', estado: 'aprobado', producto: 'CHAPA-LISA-060' },
+    { pedido: 'PED-2024-1844', cliente: 'Aceros y Metales Ltda.', metraje: '920 m', fecha: '12/03/2026', estado: 'en_corte', producto: 'ZINC-ACAN-050' },
+    { pedido: 'PED-2024-1843', cliente: 'Fabricaciones Industriales', metraje: '1,500 m', fecha: '11/03/2026', estado: 'entregado', producto: 'PERFIL-U-080' },
   ]
 
   // Datos mockeados para Stock por Producto (con campo clientes para relación cruzada)
@@ -252,7 +252,7 @@ export function DashboardRAM() {
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 hover:shadow-md transition-shadow">
           <div className="flex items-start justify-between">
             <div className="flex-1">
-              <p className="text-sm font-medium text-slate-500 mb-2">Dólar del Día</p>
+              <p className="text-sm font-medium text-slate-500 mb-2">Cotización dólar</p>
               {loadingDolar ? (
                 <p className="text-sm text-slate-400">Cargando...</p>
               ) : dolarData ? (
