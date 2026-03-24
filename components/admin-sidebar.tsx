@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { usePathname } from 'next/navigation'
 
 interface AdminSidebarProps {
   displayEmail: string
@@ -8,6 +9,14 @@ interface AdminSidebarProps {
 
 export function AdminSidebar({ displayEmail }: AdminSidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const pathname = usePathname()
+
+  const isActive = (path: string) => {
+    if (path === '/admin') {
+      return pathname === '/admin'
+    }
+    return pathname.startsWith(path)
+  }
 
   return (
     <aside className={`${isCollapsed ? 'w-20' : 'w-64'} bg-white border-r border-slate-200 flex flex-col transition-all duration-300`}>
@@ -19,10 +28,10 @@ export function AdminSidebar({ displayEmail }: AdminSidebarProps) {
         )}
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="p-2 hover:bg-slate-100 rounded-lg transition-colors ml-auto"
+          className="p-2 hover:bg-blue-50 rounded-lg transition-colors ml-auto"
           title={isCollapsed ? 'Expandir menú' : 'Colapsar menú'}
         >
-          <svg className="w-5 h-5 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             {isCollapsed ? (
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
             ) : (
@@ -36,30 +45,42 @@ export function AdminSidebar({ displayEmail }: AdminSidebarProps) {
         <div className="space-y-1">
           <a 
             href="/admin" 
-            className={`flex items-center ${isCollapsed ? 'justify-center px-2' : 'px-4'} py-3 text-slate-700 hover:bg-slate-100 rounded-lg transition-colors font-medium`}
+            className={`flex items-center ${isCollapsed ? 'justify-center px-2' : 'px-4'} py-3 rounded-lg transition-colors font-medium ${
+              isActive('/admin')
+                ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600'
+                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+            }`}
             title={isCollapsed ? 'Dashboard' : ''}
           >
-            <svg className={`w-5 h-5 ${!isCollapsed && 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className={`w-5 h-5 ${!isCollapsed && 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
             </svg>
             {!isCollapsed && 'Dashboard'}
           </a>
           <a 
             href="/admin/pedidos" 
-            className={`flex items-center ${isCollapsed ? 'justify-center px-2' : 'px-4'} py-3 text-slate-700 hover:bg-slate-100 rounded-lg transition-colors font-medium`}
+            className={`flex items-center ${isCollapsed ? 'justify-center px-2' : 'px-4'} py-3 rounded-lg transition-colors font-medium ${
+              isActive('/admin/pedidos')
+                ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600'
+                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+            }`}
             title={isCollapsed ? 'Pedidos' : ''}
           >
-            <svg className={`w-5 h-5 ${!isCollapsed && 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className={`w-5 h-5 ${!isCollapsed && 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
             {!isCollapsed && 'Pedidos'}
           </a>
           <a 
             href="/admin/stock" 
-            className={`flex items-center ${isCollapsed ? 'justify-center px-2' : 'px-4'} py-3 text-slate-700 hover:bg-slate-100 rounded-lg transition-colors font-medium`}
+            className={`flex items-center ${isCollapsed ? 'justify-center px-2' : 'px-4'} py-3 rounded-lg transition-colors font-medium ${
+              isActive('/admin/stock')
+                ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600'
+                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+            }`}
             title={isCollapsed ? 'Stock' : ''}
           >
-            <svg className={`w-5 h-5 ${!isCollapsed && 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className={`w-5 h-5 ${!isCollapsed && 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
             </svg>
             {!isCollapsed && 'Stock'}

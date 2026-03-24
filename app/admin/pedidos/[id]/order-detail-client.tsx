@@ -332,7 +332,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                           Pendiente
                         </span>
                       ) : cutOrder.status === 'pendiente_confirmacion' ? (
-                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-orange-100 text-orange-800">
+                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-amber-100 text-amber-800">
                           <Clock className="w-3 h-3 mr-1" />
                           Pendiente Operario
                         </span>
@@ -433,7 +433,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                   key={activity.id}
                   className={`flex items-start gap-3 p-4 rounded-lg border ${
                     activity.activity_type === 'reassign_out' 
-                      ? 'bg-orange-50 border-orange-200' 
+                      ? 'bg-blue-50 border-blue-200' 
                       : activity.activity_type === 'reassign_in'
                       ? 'bg-green-50 border-green-200'
                       : 'bg-slate-50 border-slate-200'
@@ -441,13 +441,13 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                 >
                   <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
                     activity.activity_type === 'reassign_out'
-                      ? 'bg-orange-100'
+                      ? 'bg-blue-100'
                       : activity.activity_type === 'reassign_in'
                       ? 'bg-green-100'
                       : 'bg-blue-100'
                   }`}>
                     {activity.activity_type === 'reassign_out' ? (
-                      <ArrowRightLeft className="w-5 h-5 text-orange-600" />
+                      <ArrowRightLeft className="w-5 h-5 text-blue-600" />
                     ) : activity.activity_type === 'reassign_in' ? (
                       <CheckCircle2 className="w-5 h-5 text-green-600" />
                     ) : activity.activity_type === 'reassign' ? (
