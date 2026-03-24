@@ -295,32 +295,22 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
           </div>
         ))}
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 hover:shadow-md transition-shadow">
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <p className="text-sm font-medium text-slate-500 mb-2">Cotización dólar</p>
-              {loadingDolar ? (
-                <p className="text-sm text-slate-400">Cargando...</p>
-              ) : dolarData ? (
-                <>
-                  <div className="space-y-1">
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-xs text-slate-500">Compra:</span>
-                      <span className="text-xl font-bold text-slate-900">${dolarData.compra}</span>
-                    </div>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-xs text-slate-500">Venta:</span>
-                      <span className="text-xl font-bold text-slate-900">${dolarData.venta}</span>
-                    </div>
-                  </div>
-                  <p className="text-xs text-slate-400 mt-2">Dólar oficial</p>
-                </>
-              ) : (
-                <p className="text-sm text-slate-400">No disponible</p>
-              )}
-            </div>
-            <DollarSign className="w-5 h-5 text-slate-400" strokeWidth={1.5} />
-          </div>
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+          <p className="text-sm font-medium text-slate-500 mb-2">Dólar hoy</p>
+          {loadingDolar ? (
+            <p className="text-sm text-slate-400">Cargando...</p>
+          ) : dolarData ? (
+            <>
+              <p className="text-3xl font-bold text-slate-900 mb-1">
+                {dolarData.compra} / {dolarData.venta}
+              </p>
+              <p className="text-xs text-slate-400">
+                Actualizado: {new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-slate-400">No disponible</p>
+          )}
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 hover:shadow-md transition-shadow">
