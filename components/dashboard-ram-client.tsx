@@ -14,12 +14,24 @@ import {
   Line, 
   BarChart, 
   Bar, 
+  PieChart,
+  Pie,
+  Cell,
   XAxis, 
   YAxis, 
   CartesianGrid, 
   Tooltip, 
-  ResponsiveContainer 
+  ResponsiveContainer,
+  Legend
 } from 'recharts'
+import {
+  mockOperators,
+  generateMockCutData,
+  getTodayCuts,
+  getTopOperatorToday,
+  aggregateByGranularity,
+  getCutDistribution
+} from '@/lib/mock-productivity-data'
 
 interface DolarData {
   compra: number
@@ -95,6 +107,15 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
   const [selectedComparisonMonths, setSelectedComparisonMonths] = useState<string[]>([last12Months[last12Months.length - 1]])
   const [selectedCategories, setSelectedCategories] = useState<string[]>(['Total'])
   const [showMonthMenu, setShowMonthMenu] = useState(false)
+
+  // Productividad de planta
+  const [productivityGranularity, setProductivityGranularity] = useState<'day' | 'week' | 'month'>('day')
+  const [selectedOperator, setSelectedOperator] = useState<string>('all')
+  const mockCutData = generateMockCutData()
+  const todayCuts = getTodayCuts(mockCutData)
+  const topOperator = getTopOperatorToday(mockCutData)
+  const cutDistribution = getCutDistribution(mockCutData)
+  const evolutionData = aggregateByGranularity(mockCutData, productivityGranularity, selectedOperator)
   
   const categories = ['Total', 'Sincalum', 'Prepintado', 'Galvanizado', 'Perfiles']
   
@@ -752,6 +773,164 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
                 Siguiente
               </button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Sección de Productividad de Planta */}
+      <div className="mt-8">
+        <h2 className="text-xl font-bold text-slate-900 mb-6">Productividad de Planta</h2>
+        
+        {/* KPIs Superiores */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          {/* Cortes Totales (Hoy) */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-500 mb-2">Cortes Totales (Hoy)</p>
+                <p className="text-3xl font-bold text-slate-900 mb-1">{todayCuts.total}</p>
+                <p className="text-xs text-green-600 flex items-center gap-1">
+                  <TrendingUp className="w-3 h-3" />
+                  <span>+12% vs ayer</span>
+                </p>
+              </div>
+              <Package className="w-8 h-8 text-blue-600" strokeWidth={1.5} />
+            </div>
+          </div>
+
+          {/* Operario del Día */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-500 mb-2">Operario del Día</p>
+                {topOperator ? (
+                  <>
+                    <p className="text-xl font-bold text-slate-900 mb-1">{topOperator.operator.name}</p>
+                    <p className="text-sm text-slate-600">{topOperator.cuts} cortes realizados</p>
+                  </>
+                ) : (
+                  <p className="text-sm text-slate-400">Sin datos</p>
+                )}
+              </div>
+              <TrendingUp className="w-8 h-8 text-green-600" strokeWidth={1.5} />
+            </div>
+          </div>
+        </div>
+
+        {/* Gráficos */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* PieChart - Distribución de Carga */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+            <h3 className="text-base font-semibold text-slate-800 mb-6">Distribución de Cortes por Operario</h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart>
+                <Pie
+                  data={cutDistribution}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={({ name, percent }) => `${name.split(' ')[0]}: ${(percent * 100).toFixed(0)}%`}
+                  outerRadius={100}
+                  fill="#8884d8"
+                  dataKey="value"
+                >
+                  {cutDistribution.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip 
+                  formatter={(value: number) => [`${value} cortes`, 'Total']}
+                  contentStyle={{ 
+                    backgroundColor: 'white', 
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                    padding: '8px 12px'
+                  }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* LineChart - Evolución de Productividad */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-base font-semibold text-slate-800">Evolución de Cortes</h3>
+              <div className="flex items-center gap-2">
+                {/* Selector de Granularidad */}
+                <select
+                  value={productivityGranularity}
+                  onChange={(e) => setProductivityGranularity(e.target.value as 'day' | 'week' | 'month')}
+                  className="text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="day">Día</option>
+                  <option value="week">Semana</option>
+                  <option value="month">Mes</option>
+                </select>
+
+                {/* Selector de Operario */}
+                <select
+                  value={selectedOperator}
+                  onChange={(e) => setSelectedOperator(e.target.value)}
+                  className="text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="all">Todos</option>
+                  {mockOperators.map(op => (
+                    <option key={op.id} value={op.id}>{op.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={evolutionData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                <XAxis 
+                  dataKey="date" 
+                  stroke="#64748b"
+                  style={{ fontSize: '11px' }}
+                  tickLine={false}
+                  tickFormatter={(value) => {
+                    const date = new Date(value)
+                    if (productivityGranularity === 'day') {
+                      return date.toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })
+                    } else if (productivityGranularity === 'week') {
+                      return `Sem ${date.toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })}`
+                    } else {
+                      return date.toLocaleDateString('es-AR', { month: 'short', year: 'numeric' })
+                    }
+                  }}
+                />
+                <YAxis 
+                  stroke="#64748b"
+                  style={{ fontSize: '11px' }}
+                  tickLine={false}
+                />
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: 'white', 
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                    padding: '8px 12px'
+                  }}
+                  labelFormatter={(value) => {
+                    const date = new Date(value)
+                    return date.toLocaleDateString('es-AR', { 
+                      day: '2-digit', 
+                      month: 'long', 
+                      year: 'numeric' 
+                    })
+                  }}
+                  formatter={(value: number) => [`${value} cortes`, 'Total']}
+                />
+                <Line 
+                  type="monotone" 
+                  dataKey="cuts" 
+                  stroke="#2563eb" 
+                  strokeWidth={2}
+                  dot={{ fill: '#2563eb', r: 4 }}
+                  activeDot={{ r: 6 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
         </div>
       </div>
