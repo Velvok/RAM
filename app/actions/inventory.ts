@@ -8,10 +8,75 @@ export async function getInventory() {
 
   const { data, error } = await supabase
     .from('inventory')
-    .select('*, product:products(*)')
+    .select(`
+      *,
+      product:products(*)
+    `)
     .order('stock_disponible', { ascending: true })
 
   if (error) throw error
+
+  // Para cada producto, obtener pedidos aprobados que lo incluyen
+  if (data) {
+    const inventoryWithOrders = await Promise.all(
+      data.map(async (item) => {
+        // Primero obtener order_lines del producto
+        const { data: orderLines } = await supabase
+          .from('order_lines')
+          .select(`
+            quantity,
+            order_id
+          `)
+          .eq('product_id', item.product_id)
+
+        if (!orderLines || orderLines.length === 0) {
+          return {
+            ...item,
+            related_orders: []
+          }
+        }
+
+        // Obtener los IDs de los pedidos
+        const orderIds = orderLines.map(ol => ol.order_id)
+
+        // Consultar los pedidos con sus clientes, filtrando por status
+        const { data: orders } = await supabase
+          .from('orders')
+          .select(`
+            id,
+            order_number,
+            status,
+            created_at,
+            client:clients(
+              name,
+              business_name
+            )
+          `)
+          .in('id', orderIds)
+          .in('status', ['aprobado', 'en_corte', 'en_proceso'])
+          .order('created_at', { ascending: false })
+
+        // Combinar order_lines con orders
+        const relatedOrders = orderLines
+          .map(ol => {
+            const order = orders?.find(o => o.id === ol.order_id)
+            if (!order) return null
+            return {
+              quantity: ol.quantity,
+              order: order
+            }
+          })
+          .filter(Boolean)
+
+        return {
+          ...item,
+          related_orders: relatedOrders
+        }
+      })
+    )
+    return inventoryWithOrders
+  }
+
   return data
 }
 

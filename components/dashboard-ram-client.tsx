@@ -48,6 +48,11 @@ interface DashboardData {
     disponible: number
     clientes: string[]
   }>
+  availableProducts: Array<{
+    code: string
+    name: string
+  }>
+  productMonthlyData: Record<string, Array<{ month: string; quantity: number }>>
   monthlyData: Array<{
     month: string
     metros: number
@@ -78,6 +83,39 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
   // Paginación para Stock por Producto
   const [stockPage, setStockPage] = useState(0)
   const [stockPerPage, setStockPerPage] = useState(20)
+  
+  // Generar últimos 12 meses
+  const last12Months = Array.from({ length: 12 }, (_, i) => {
+    const date = new Date()
+    date.setMonth(date.getMonth() - (11 - i))
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+  })
+  
+  // Análisis por producto (ahora comparación mensual por categorías)
+  const [selectedComparisonMonths, setSelectedComparisonMonths] = useState<string[]>([last12Months[last12Months.length - 1]])
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(['Total'])
+  const [showMonthMenu, setShowMonthMenu] = useState(false)
+  
+  const categories = ['Total', 'Sincalum', 'Prepintado', 'Galvanizado', 'Perfiles']
+  
+  // Generar datos mockeados por categoría y mes
+  const generateCategoryData = () => {
+    const baseData: Record<string, Record<string, number>> = {}
+    
+    last12Months.forEach(month => {
+      baseData[month] = {
+        'Total': Math.floor(Math.random() * 5000) + 3000,
+        'Sincalum': Math.floor(Math.random() * 1500) + 800,
+        'Prepintado': Math.floor(Math.random() * 1200) + 600,
+        'Galvanizado': Math.floor(Math.random() * 1000) + 500,
+        'Perfiles': Math.floor(Math.random() * 800) + 400
+      }
+    })
+    
+    return baseData
+  }
+  
+  const categoryData = generateCategoryData()
 
   useEffect(() => {
     fetch('https://dolarapi.com/v1/dolares/oficial')
@@ -136,32 +174,48 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
   const filteredPedidos = (() => {
     if (!searchQuery) return data.recentOrders
     
+    const query = searchQuery.toLowerCase()
+    
     if (searchScope === 'stock') {
       return data.recentOrders
     }
     
     if (searchScope === 'pedidos') {
       return data.recentOrders.filter(p => 
-        p.cliente.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.pedido.toLowerCase().includes(searchQuery.toLowerCase())
+        p.cliente.toLowerCase().includes(query) ||
+        p.pedido.toLowerCase().includes(query)
       )
     }
     
+    // Ámbito "Todo": Búsqueda cruzada mejorada
+    // 1. Buscar por producto en stock
     const matchingProducto = data.stockProductos.find(sp => 
-      sp.codigo.toLowerCase().includes(searchQuery.toLowerCase())
+      sp.codigo.toLowerCase().includes(query)
     )
     if (matchingProducto) {
       return data.recentOrders.filter(p => p.producto === matchingProducto.codigo)
     }
     
+    // 2. Buscar por cliente o pedido
+    const pedidosByClienteOrNumber = data.recentOrders.filter(p => 
+      p.cliente.toLowerCase().includes(query) ||
+      p.pedido.toLowerCase().includes(query)
+    )
+    
+    if (pedidosByClienteOrNumber.length > 0) {
+      return pedidosByClienteOrNumber
+    }
+    
+    // 3. Si no hay coincidencias directas, buscar por producto en pedidos
     return data.recentOrders.filter(p => 
-      p.cliente.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.pedido.toLowerCase().includes(searchQuery.toLowerCase())
+      p.producto.toLowerCase().includes(query)
     )
   })()
 
   const filteredProductos = (() => {
     if (!searchQuery) return data.stockProductos
+    
+    const query = searchQuery.toLowerCase()
     
     if (searchScope === 'pedidos') {
       return data.stockProductos
@@ -169,22 +223,39 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
     
     if (searchScope === 'stock') {
       return data.stockProductos.filter(p => 
-        p.codigo.toLowerCase().includes(searchQuery.toLowerCase())
+        p.codigo.toLowerCase().includes(query)
       )
     }
     
-    const matchingCliente = data.recentOrders.find(pd => 
-      pd.cliente.toLowerCase().includes(searchQuery.toLowerCase())
+    // Ámbito "Todo": Búsqueda cruzada mejorada
+    // 1. Buscar por código de producto
+    const productosByCode = data.stockProductos.filter(p => 
+      p.codigo.toLowerCase().includes(query)
     )
-    if (matchingCliente) {
+    if (productosByCode.length > 0) {
+      return productosByCode
+    }
+    
+    // 2. Buscar productos involucrados en pedidos que coincidan con cliente o número de pedido
+    const matchingPedidos = data.recentOrders.filter(pd => 
+      pd.cliente.toLowerCase().includes(query) ||
+      pd.pedido.toLowerCase().includes(query)
+    )
+    
+    if (matchingPedidos.length > 0) {
+      // Obtener códigos de productos de los pedidos coincidentes
+      const productosInvolucrados = matchingPedidos.map(p => p.producto)
       return data.stockProductos.filter(sp => 
-        sp.clientes.some(c => c.toLowerCase().includes(searchQuery.toLowerCase()))
+        productosInvolucrados.includes(sp.codigo)
       )
     }
     
-    return data.stockProductos.filter(p => 
-      p.codigo.toLowerCase().includes(searchQuery.toLowerCase())
+    // 3. Buscar por clientes asociados al stock
+    const productosByCliente = data.stockProductos.filter(sp => 
+      sp.clientes.some(c => c.toLowerCase().includes(query))
     )
+    
+    return productosByCliente
   })()
 
   return (
@@ -300,37 +371,193 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-semibold text-slate-900">Últimos 6 Meses</h3>
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-base font-semibold text-slate-800">Evolución Mensual</h3>
+              <div className="flex items-center gap-2">
+                {/* Botón Agregar Mes */}
+                {selectedComparisonMonths.length < 2 && (
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowMonthMenu(!showMonthMenu)}
+                      className="text-xs border border-blue-600 text-blue-600 rounded px-3 py-1.5 hover:bg-blue-50 font-medium flex items-center gap-1"
+                    >
+                      + Agregar Mes
+                    </button>
+                    {showMonthMenu && (
+                      <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg p-2 z-20 max-h-64 overflow-y-auto">
+                        {last12Months.map(month => {
+                          const date = new Date(month + '-01')
+                          const label = date.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })
+                          const isSelected = selectedComparisonMonths.includes(month)
+                          return (
+                            <button
+                              key={month}
+                              onClick={() => {
+                                if (isSelected) {
+                                  const filtered = selectedComparisonMonths.filter(m => m !== month)
+                                  setSelectedComparisonMonths(filtered.length > 0 ? filtered : [last12Months[last12Months.length - 1]])
+                                } else if (selectedComparisonMonths.length < 2) {
+                                  setSelectedComparisonMonths([...selectedComparisonMonths, month].sort())
+                                }
+                                setShowMonthMenu(false)
+                              }}
+                              className={`w-full text-left px-3 py-2 text-xs rounded hover:bg-slate-50 ${
+                                isSelected ? 'bg-blue-50 text-blue-600 font-medium' : 'text-slate-700'
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {/* Selector de Categorías */}
+                <div className="relative group">
+                  <button className="text-xs border border-slate-200 rounded px-3 py-1.5 hover:bg-slate-50 flex items-center gap-1">
+                    <span className="font-medium text-slate-700">Categorías</span>
+                    <ChevronDown className="w-3 h-3 text-slate-500" />
+                  </button>
+                  <div className="hidden group-hover:block absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg p-2 z-10 min-w-[160px]">
+                    {categories.map(category => (
+                      <label key={category} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedCategories.includes(category)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedCategories([...selectedCategories, category])
+                            } else {
+                              const filtered = selectedCategories.filter(c => c !== category)
+                              setSelectedCategories(filtered.length > 0 ? filtered : ['Total'])
+                            }
+                          }}
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-xs text-slate-700">{category}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {/* Pills de Meses Seleccionados */}
+            <div className="flex flex-wrap gap-2">
+              {selectedComparisonMonths.map((month, index) => {
+                const date = new Date(month + '-01')
+                const label = date.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })
+                const color = index === 0 ? 'bg-blue-600' : 'bg-slate-400'
+                return (
+                  <div
+                    key={month}
+                    className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium text-white ${color}`}
+                  >
+                    <span>{label}</span>
+                    <button
+                      onClick={() => {
+                        const filtered = selectedComparisonMonths.filter(m => m !== month)
+                        setSelectedComparisonMonths(filtered.length > 0 ? filtered : [last12Months[last12Months.length - 1]])
+                      }}
+                      className="hover:opacity-75"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
           </div>
+          
           <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={data.monthlyData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <BarChart 
+              data={selectedCategories.map(category => {
+                const dataPoint: any = { category }
+                selectedComparisonMonths.forEach((month, index) => {
+                  const monthLabel = new Date(month + '-01').toLocaleDateString('es-AR', { month: 'short' })
+                  dataPoint[monthLabel] = categoryData[month]?.[category] || 0
+                })
+                return dataPoint
+              })}
+              barSize={32}
+              barGap={8}
+              margin={{ left: 20 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
               <XAxis 
-                dataKey="month" 
+                dataKey="category" 
                 stroke="#64748b" 
-                style={{ fontSize: '12px' }}
+                style={{ fontSize: '11px' }}
+                tickLine={false}
+                interval={0}
               />
               <YAxis 
                 stroke="#64748b" 
-                style={{ fontSize: '12px' }}
+                style={{ fontSize: '11px' }}
+                tickLine={false}
+                tickCount={5}
+                width={60}
               />
               <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: '#fff',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '8px',
-                  fontSize: '12px'
+                cursor={{ fill: 'rgba(37, 99, 235, 0.05)' }}
+                content={({ active, payload }) => {
+                  if (!active || !payload || payload.length === 0) return null
+                  
+                  const category = payload[0].payload.category
+                  
+                  return (
+                    <div className="bg-white border border-slate-200 rounded-lg shadow-lg p-3">
+                      <p className="text-sm font-semibold text-slate-900 mb-2">{category}</p>
+                      {payload.map((entry: any, index: number) => {
+                        const value = Number(entry.value) || 0
+                        const color = index === 0 ? '#2563eb' : '#94a3b8'
+                        
+                        return (
+                          <div key={entry.name} className="flex items-center gap-2 mb-1 last:mb-0">
+                            <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: color }}></div>
+                            <span className="text-xs text-slate-600">{entry.name}:</span>
+                            <span className="text-sm font-bold" style={{ color }}>{value.toLocaleString()} m</span>
+                          </div>
+                        )
+                      })}
+                      {payload.length === 2 && (() => {
+                        const currentValue = Number(payload[0].value) || 0
+                        const previousValue = Number(payload[1].value) || 0
+                        if (previousValue > 0) {
+                          const percentChange = ((currentValue - previousValue) / previousValue * 100).toFixed(1)
+                          return (
+                            <div className="mt-2 pt-2 border-t border-slate-100">
+                              <p className={`text-xs font-medium ${
+                                parseFloat(percentChange) >= 0 ? 'text-green-600' : 'text-red-600'
+                              }`}>
+                                {parseFloat(percentChange) >= 0 ? '▲' : '▼'} {Math.abs(parseFloat(percentChange))}% vs anterior
+                              </p>
+                            </div>
+                          )
+                        }
+                        return null
+                      })()}
+                    </div>
+                  )
                 }}
               />
-              <Line 
-                type="monotone" 
-                dataKey={metricUnit} 
-                stroke="#2563eb" 
-                strokeWidth={2}
-                dot={{ fill: '#2563eb', r: 4 }}
-              />
-            </LineChart>
+              {selectedComparisonMonths.map((month, index) => {
+                const monthLabel = new Date(month + '-01').toLocaleDateString('es-AR', { month: 'short' })
+                const color = index === 0 ? '#2563eb' : '#94a3b8'
+                return (
+                  <Bar
+                    key={month}
+                    dataKey={monthLabel}
+                    fill={color}
+                    radius={[4, 4, 0, 0]}
+                    cursor="pointer"
+                  />
+                )
+              })}
+            </BarChart>
           </ResponsiveContainer>
         </div>
       </div>
@@ -463,26 +690,26 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
                 </div>
                 <div className="relative h-2 bg-slate-100 rounded-full overflow-hidden">
                   <div 
-                    className="absolute left-0 top-0 h-full bg-red-400 transition-all"
-                    style={{ width: `${(producto.reservado / producto.total) * 100}%` }}
+                    className="absolute left-0 top-0 h-full bg-blue-400 transition-all"
+                    style={{ width: `${(producto.disponible / producto.total) * 100}%` }}
                   />
                   <div 
-                    className="absolute h-full bg-green-400 transition-all"
+                    className="absolute h-full bg-yellow-400 transition-all"
                     style={{ 
-                      left: `${(producto.reservado / producto.total) * 100}%`,
-                      width: `${(producto.disponible / producto.total) * 100}%` 
+                      left: `${(producto.disponible / producto.total) * 100}%`,
+                      width: `${(producto.reservado / producto.total) * 100}%` 
                     }}
                   />
                 </div>
                 <div className="flex items-center justify-between text-xs">
                   <div className="flex items-center gap-4">
                     <div className="flex items-center gap-1.5">
-                      <div className="w-2 h-2 rounded-full bg-red-400"></div>
-                      <span className="text-slate-600">Reservado: {producto.reservado}</span>
+                      <div className="w-2 h-2 rounded-full bg-blue-400"></div>
+                      <span className="text-slate-600">Disponible: {producto.disponible}</span>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <div className="w-2 h-2 rounded-full bg-green-400"></div>
-                      <span className="text-slate-600">Disponible: {producto.disponible}</span>
+                      <div className="w-2 h-2 rounded-full bg-yellow-400"></div>
+                      <span className="text-slate-600">Reservado: {producto.reservado}</span>
                     </div>
                   </div>
                 </div>

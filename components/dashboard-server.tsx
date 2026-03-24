@@ -64,15 +64,27 @@ export async function DashboardServer() {
   // 4. Datos para gráficos mensuales
   // ============================================
   
-  // Obtener pedidos de los últimos 6 meses agrupados
-  const sixMonthsAgo = new Date()
-  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
+  // Obtener pedidos de los últimos 12 meses con productos
+  const twelveMonthsAgo = new Date()
+  twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12)
 
   const { data: monthlyOrders } = await supabase
     .from('orders')
-    .select('created_at, lines:order_lines(quantity)')
-    .gte('created_at', sixMonthsAgo.toISOString())
+    .select(`
+      created_at,
+      lines:order_lines(
+        quantity,
+        product:products(code, name)
+      )
+    `)
+    .gte('created_at', twelveMonthsAgo.toISOString())
     .order('created_at', { ascending: true })
+  
+  // Obtener lista de todos los productos disponibles
+  const { data: allProducts } = await supabase
+    .from('products')
+    .select('code, name')
+    .order('code', { ascending: true })
 
   // ============================================
   // 5. Datos para gráficos anuales
@@ -118,7 +130,12 @@ export async function DashboardServer() {
         clientes: [] // Se puede mejorar con una query adicional
       }
     }) || [],
-    monthlyData: processMonthlyData(monthlyOrders || []),
+    availableProducts: allProducts?.map(p => ({
+      code: p.code,
+      name: p.name
+    })) || [],
+    productMonthlyData: processProductMonthlyData(monthlyOrders || []),
+    monthlyData: [], // Deprecated, usar productMonthlyData
     yearlyData: processYearlyData(yearlyOrders || [])
   }
 
@@ -129,28 +146,41 @@ export async function DashboardServer() {
 // Funciones auxiliares para procesar datos
 // ============================================
 
-function processMonthlyData(orders: any[]) {
-  const monthsMap = new Map<string, { metros: number; unidades: number }>()
+function processProductMonthlyData(orders: any[]) {
+  // Estructura: { productCode: { month: quantity } }
+  const productMonthMap = new Map<string, Map<string, number>>()
   
   orders.forEach(order => {
     const date = new Date(order.created_at)
-    const monthKey = date.toLocaleDateString('es-AR', { month: 'short' })
-    const totalQuantity = order.lines?.reduce((sum: number, line: any) => sum + (line.quantity || 0), 0) || 0
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+    const lines = Array.isArray(order.lines) ? order.lines : []
     
-    if (!monthsMap.has(monthKey)) {
-      monthsMap.set(monthKey, { metros: 0, unidades: 0 })
-    }
-    
-    const current = monthsMap.get(monthKey)!
-    current.metros += totalQuantity
-    current.unidades += order.lines?.length || 0
+    lines.forEach((line: any) => {
+      const product = Array.isArray(line.product) ? line.product[0] : line.product
+      const productCode = product?.code
+      const quantity = line.quantity || 0
+      
+      if (!productCode) return
+      
+      if (!productMonthMap.has(productCode)) {
+        productMonthMap.set(productCode, new Map())
+      }
+      
+      const monthData = productMonthMap.get(productCode)!
+      monthData.set(monthKey, (monthData.get(monthKey) || 0) + quantity)
+    })
   })
-
-  return Array.from(monthsMap.entries()).map(([month, data]) => ({
-    month,
-    metros: Math.round(data.metros),
-    unidades: data.unidades
-  })).slice(-6) // Últimos 6 meses
+  
+  // Convertir a formato más amigable
+  const result: Record<string, Array<{ month: string; quantity: number }>> = {}
+  
+  productMonthMap.forEach((monthData, productCode) => {
+    result[productCode] = Array.from(monthData.entries())
+      .map(([month, quantity]) => ({ month, quantity }))
+      .sort((a, b) => a.month.localeCompare(b.month))
+  })
+  
+  return result
 }
 
 function processYearlyData(orders: any[]) {
