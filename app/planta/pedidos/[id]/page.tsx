@@ -532,7 +532,7 @@ export default function PlantaPedidoDetallePage() {
               >
                 {/* Header de la tarjeta */}
                 <button
-                  onClick={() => isPending && toggleCutOrder(cutOrder.id, cutOrder.product_id, cutOrder.quantity_requested)}
+                  onClick={() => isPending && toggleCutOrder(cutOrder.id, cutOrder.product_id, cutOrder.product?.length_meters || 0)}
                   disabled={isCompleted}
                   className={`w-full p-6 ${
                     isPending ? 'cursor-pointer hover:bg-slate-700/50' : 'cursor-default'
