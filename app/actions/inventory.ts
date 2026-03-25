@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { revalidateInventory } from '@/lib/revalidate'
 
 export async function getInventory() {
   const supabase = await createClient()
@@ -127,11 +128,8 @@ export async function updateStock(productId: string, quantity: number, type: 'ad
       user_id: user?.id,
     })
 
-  // Revalidar todas las rutas relevantes
-  revalidatePath('/admin', 'page')
-  revalidatePath('/admin/stock', 'page')
-  revalidatePath('/admin/stock', 'layout')
-  revalidatePath('/admin/pedidos', 'page')
+  // Revalidar inventario
+  revalidateInventory()
   return data
 }
 
@@ -196,11 +194,8 @@ export async function adjustStock(productId: string, newQuantity: number, notes:
         : `${notes} (añadido ${difference} unidades vírgenes)`,
     })
 
-  // Revalidar todas las rutas relevantes
-  revalidatePath('/admin', 'page')
-  revalidatePath('/admin/stock', 'page')
-  revalidatePath('/admin/stock', 'layout')
-  revalidatePath('/admin/pedidos', 'page')
+  // Revalidar inventario
+  revalidateInventory()
   return data
 }
 

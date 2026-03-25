@@ -4,15 +4,12 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: '2mb',
     },
-    // Deshabilitar todos los cachés de Next.js
+    // Configuración optimizada de caché
     staleTimes: {
-      dynamic: 0,
-      static: 30, // Mínimo 30 según Next.js
+      dynamic: 30, // 30 segundos para rutas dinámicas
+      static: 180, // 3 minutos para contenido estático
     },
   },
-  // Desactivar completamente el caché
-  cacheMaxMemorySize: 0,
-  cacheHandler: undefined,
   images: {
     remotePatterns: [
       {
@@ -21,36 +18,46 @@ const nextConfig = {
       },
     ],
   },
-  // Deshabilitar caché agresivo de Next.js 15
-  // Esto asegura que los datos siempre estén frescos
+  // Headers optimizados para caché estratégico
   async headers() {
     return [
       {
+        // API routes - sin caché
+        source: '/api/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'no-store, must-revalidate',
+          },
+        ],
+      },
+      {
+        // Assets estáticos - caché largo
+        source: '/_next/static/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
+      {
+        // Imágenes - caché medio
+        source: '/:path*.{jpg,jpeg,png,gif,svg,ico,webp}',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=86400, stale-while-revalidate=604800',
+          },
+        ],
+      },
+      {
+        // Páginas dinámicas - caché corto con revalidación
         source: '/:path*',
         headers: [
           {
             key: 'Cache-Control',
-            value: 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0',
-          },
-          {
-            key: 'Pragma',
-            value: 'no-cache',
-          },
-          {
-            key: 'Expires',
-            value: '0',
-          },
-          {
-            key: 'CDN-Cache-Control',
-            value: 'no-store',
-          },
-          {
-            key: 'Vercel-CDN-Cache-Control',
-            value: 'no-store',
-          },
-          {
-            key: 'X-Accel-Expires',
-            value: '0',
+            value: 'public, max-age=0, s-maxage=60, stale-while-revalidate=120',
           },
         ],
       },

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { revalidateOrders } from '@/lib/revalidate'
+import { revalidateOrders, revalidateStock, revalidateOrderStatus } from '@/lib/revalidate'
 
 export async function getOrders() {
   const supabase = await createClient()
@@ -68,15 +68,9 @@ export async function cancelOrder(orderId: string) {
     .eq('order_id', orderId)
     .eq('status', 'pendiente')
 
-  // Revalidar todas las rutas de pedidos
+  // Revalidar rutas de pedidos y stock
   revalidateOrders(orderId)
-  revalidatePath('/admin', 'page')
-  revalidatePath('/admin/pedidos', 'page')
-  revalidatePath('/admin/pedidos', 'layout')
-  revalidatePath(`/admin/pedidos/${orderId}`, 'page')
-  revalidatePath('/admin/stock', 'page')
-  revalidatePath('/planta/ordenes', 'page')
-  revalidatePath('/planta/ordenes', 'layout')
+  revalidateStock()
   return data
 }
 
@@ -189,16 +183,9 @@ export async function approveOrder(orderId: string) {
     })
     .eq('id', orderId)
 
-  // Revalidar todas las rutas de pedidos
+  // Revalidar rutas de pedidos y stock
   revalidateOrders(orderId)
-  revalidatePath('/admin', 'page')
-  revalidatePath('/admin/pedidos', 'page')
-  revalidatePath('/admin/pedidos', 'layout')
-  revalidatePath(`/admin/pedidos/${orderId}`, 'page')
-  revalidatePath('/admin/stock', 'page')
-  revalidatePath('/admin/stock', 'layout')
-  revalidatePath('/planta/ordenes', 'page')
-  revalidatePath('/planta/ordenes', 'layout')
+  revalidateStock()
   
   return { 
     success: true,
@@ -260,14 +247,8 @@ export async function updateOrderStatus(orderId: string) {
     .update({ status: newStatus })
     .eq('id', orderId)
 
-  // Revalidar todas las rutas relevantes
-  revalidatePath('/admin', 'page')
-  revalidatePath('/admin/pedidos', 'page')
-  revalidatePath('/admin/pedidos', 'layout')
-  revalidatePath(`/admin/pedidos/${orderId}`, 'page')
-  revalidatePath('/admin/stock', 'page')
-  revalidatePath('/planta/ordenes', 'page')
-  revalidatePath('/planta/ordenes', 'layout')
+  // Revalidar estado del pedido
+  revalidateOrderStatus(orderId)
 }
 
 /**
@@ -350,15 +331,9 @@ export async function markOrderAsDelivered(orderId: string) {
     })
   }
 
-  // Revalidar todas las rutas relevantes
-  revalidatePath('/admin', 'page')
-  revalidatePath('/admin/pedidos', 'page')
-  revalidatePath('/admin/pedidos', 'layout')
-  revalidatePath(`/admin/pedidos/${orderId}`, 'page')
-  revalidatePath('/admin/stock', 'page')
-  revalidatePath('/admin/stock', 'layout')
-  revalidatePath('/planta/ordenes', 'page')
-  revalidatePath('/planta/ordenes', 'layout')
+  // Revalidar pedidos y stock
+  revalidateOrders(orderId)
+  revalidateStock()
 
   return { success: true }
 }
