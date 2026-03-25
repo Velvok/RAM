@@ -35,6 +35,9 @@ export default function PlantaPedidoDetallePage() {
   const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({}) // Nueva: cantidad a cortar
   const [processing, setProcessing] = useState<Record<string, boolean>>({})
   const [currentTime, setCurrentTime] = useState('')
+  const [showManualSelector, setShowManualSelector] = useState<Record<string, boolean>>({})
+  const [showOtherOptions, setShowOtherOptions] = useState<Record<string, boolean>>({})
+  const [showRemnantAdjust, setShowRemnantAdjust] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     const operatorData = localStorage.getItem('operator')
@@ -604,144 +607,261 @@ export default function PlantaPedidoDetallePage() {
 
                 {/* Contenido expandido */}
                 {isExpanded && isPending && (
-                  <div className="px-4 pb-4 space-y-4 border-t border-slate-700 pt-4">
-                    {/* Sugerencia del Sistema */}
+                  <div className="px-6 pb-6 space-y-6 border-t border-slate-700 pt-6">
+                    {/* BLOQUE A: Sugerencia del Sistema (Happy Path) */}
                     {cutSuggestions?.best && (
-                      <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
-                        <div className="flex items-center gap-2 mb-3">
-                          <span className="text-xl">💡</span>
-                          <h4 className="font-bold text-white">SUGERENCIA DEL SISTEMA</h4>
+                      <div className={`rounded-2xl p-6 shadow-lg transition-all ${
+                        selectedMaterial?.id === cutSuggestions.best.id
+                          ? 'bg-green-600/20 border-2 border-green-500 shadow-green-500/30'
+                          : 'bg-slate-800/50 border-2 border-blue-500 shadow-blue-500/20'
+                      }`}>
+                        <div className="flex items-center justify-center gap-3 mb-4">
+                          <h4 className="text-xl font-bold text-white uppercase">Sugerencia del Sistema</h4>
                         </div>
                         
-                        <div className="bg-slate-900/50 rounded-lg p-3 space-y-2 mb-3">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xl">{cutSuggestions.best.type === 'remnant' ? '🔵' : '🟢'}</span>
-                            <span className="font-semibold text-white">{cutSuggestions.best.name}</span>
+                        <div className="bg-slate-900/70 rounded-xl p-5 space-y-3 mb-6">
+                          <div className="flex items-center gap-3">
+                            <span className="text-2xl font-bold text-white">{cutSuggestions.best.name}</span>
                           </div>
                           
-                          <div className="grid grid-cols-2 gap-2 text-sm">
+                          <div className="grid grid-cols-2 gap-4 text-base">
                             <div>
                               <span className="text-slate-400">Longitud:</span>
-                              <span className="font-semibold ml-2 text-white">{cutSuggestions.best.length}m</span>
+                              <span className="font-bold ml-2 text-white text-xl">{cutSuggestions.best.length}m</span>
                             </div>
                             <div>
                               <span className="text-slate-400">Desperdicio:</span>
-                              <span className="font-semibold ml-2 text-orange-400">
+                              <span className={`font-bold ml-2 text-xl ${
+                                cutSuggestions.best.waste > 0 ? 'text-orange-400' : 'text-green-400'
+                              }`}>
                                 {cutSuggestions.best.waste.toFixed(2)}m
                               </span>
-                            </div>
-                            <div className="col-span-2">
-                              <span className="text-slate-400">Ubicación:</span>
-                              <span className="font-semibold ml-2 text-white">{cutSuggestions.best.location}</span>
                             </div>
                           </div>
                         </div>
 
                         <button
-                          onClick={() => setSelectedMaterials(prev => ({ ...prev, [cutOrder.id]: cutSuggestions.best }))}
-                          className={`w-full px-4 py-2 rounded-lg font-semibold transition-colors ${
+                          onClick={() => {
+                            setSelectedMaterials(prev => ({ ...prev, [cutOrder.id]: cutSuggestions.best }))
+                            setShowOtherOptions(prev => ({ ...prev, [cutOrder.id]: false }))
+                          }}
+                          className={`w-full h-20 rounded-2xl text-xl font-bold uppercase transition-all transform active:scale-95 mt-2 ${
                             selectedMaterial?.id === cutSuggestions.best.id
-                              ? 'bg-green-600 text-white'
-                              : 'bg-green-600/20 text-green-400 hover:bg-green-600/30'
+                              ? 'bg-green-600 text-white shadow-lg shadow-green-500/30'
+                              : 'bg-green-600/20 text-green-400 hover:bg-green-600/40 border-2 border-green-500/50'
                           }`}
                         >
-                          {selectedMaterial?.id === cutSuggestions.best.id ? '✓ Material Seleccionado' : '✓ Usar Este Material'}
+                          {selectedMaterial?.id === cutSuggestions.best.id ? 'Material Seleccionado' : 'Utilizar Sugerencia'}
                         </button>
                       </div>
                     )}
 
-                    {/* Alternativas */}
-                    {cutSuggestions?.alternatives && cutSuggestions.alternatives.length > 0 && (
-                      <div>
-                        <h5 className="font-semibold text-white mb-2">Alternativas:</h5>
-                        <ul className="space-y-1 text-sm">
-                          {cutSuggestions.alternatives.map((alt: MaterialSuggestion) => (
-                            <li key={alt.id} className="flex items-center gap-2 text-slate-300">
-                              <span>{alt.type === 'remnant' ? '🔵' : '🟢'}</span>
-                              <span>{alt.name}: {alt.length}m</span>
-                              <span className="text-slate-500">(desperdicio: {alt.waste.toFixed(2)}m)</span>
-                            </li>
-                          ))}
-                        </ul>
+                    {/* BLOQUE B: Alternativas y Selector Manual (Recuadro Colapsable) */}
+                    {((cutSuggestions?.alternatives && cutSuggestions.alternatives.length > 0) || (cutSuggestions?.all && cutSuggestions.all.length > 0)) && (
+                      <div className="bg-slate-800/50 border-2 border-slate-600 rounded-2xl shadow-lg overflow-hidden">
+                        {/* Título Clickeable */}
+                        <button
+                          onClick={() => setShowOtherOptions(prev => ({ ...prev, [cutOrder.id]: !prev[cutOrder.id] }))}
+                          className="w-full p-6 hover:bg-slate-800/70 transition-all flex items-center justify-center gap-3"
+                        >
+                          <h5 className="text-xl font-bold text-white uppercase">Otras Opciones</h5>
+                          <span className="text-xl text-white">{showOtherOptions[cutOrder.id] ? '▼' : '▶'}</span>
+                        </button>
+                        
+                        {/* Contenido Expandible */}
+                        {showOtherOptions[cutOrder.id] && (
+                          <div className="px-6 pb-6 space-y-6 animate-in slide-in-from-top duration-300">
+                            {/* Grid de 3 alternativas */}
+                            {cutSuggestions?.alternatives && cutSuggestions.alternatives.length > 0 && (
+                              <div className="grid grid-cols-3 gap-4">
+                                {cutSuggestions.alternatives.slice(0, 3).map((alt: MaterialSuggestion) => (
+                                  <button
+                                    key={alt.id}
+                                    onClick={() => setSelectedMaterials(prev => ({ ...prev, [cutOrder.id]: alt }))}
+                                    className={`p-6 rounded-xl border-2 transition-all transform active:scale-95 ${
+                                      selectedMaterial?.id === alt.id
+                                        ? 'bg-blue-600 border-blue-500 shadow-lg shadow-blue-500/30'
+                                        : 'bg-slate-800 border-slate-700 hover:bg-slate-700 hover:border-slate-600'
+                                    }`}
+                                  >
+                                    <div className="text-center space-y-2">
+                                      <div className="text-2xl font-bold text-white">{alt.length}m</div>
+                                      <div className="text-sm text-slate-400">Desp: {alt.waste.toFixed(2)}m</div>
+                                      <div className="text-xs text-slate-500 truncate">{alt.name}</div>
+                                    </div>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Selector Manual Colapsable */}
+                            {cutSuggestions?.all && cutSuggestions.all.length > 0 && (
+                              <div className="border-t border-slate-700 pt-4">
+                                <button
+                                  onClick={() => {
+                                    setShowManualSelector(prev => ({ ...prev, [cutOrder.id]: !prev[cutOrder.id] }))
+                                  }}
+                                  className="w-full h-16 bg-slate-700 border-2 border-slate-600 rounded-xl text-lg font-bold text-white hover:bg-slate-600 transition-all flex items-center justify-center gap-3"
+                                >
+                                  <span>Seleccionar Otro Material</span>
+                                  <span className="text-xl">{showManualSelector[cutOrder.id] ? '▼' : '▶'}</span>
+                                </button>
+                                
+                                {showManualSelector[cutOrder.id] && (
+                                  <div className="mt-4 space-y-3 animate-in slide-in-from-top duration-300">
+                                    <select 
+                                      id={`manual-select-${cutOrder.id}`}
+                                      className="w-full p-4 bg-slate-900 border-2 border-slate-700 rounded-xl text-white text-base"
+                                      value={selectedMaterial?.id || ''}
+                                      onChange={(e) => {
+                                        const selected = cutSuggestions?.all.find((s: MaterialSuggestion) => s.id === e.target.value)
+                                        if (selected) {
+                                          setSelectedMaterials(prev => ({ ...prev, [cutOrder.id]: selected }))
+                                        }
+                                      }}
+                                    >
+                                      <option value="">Seleccionar material...</option>
+                                      {cutSuggestions?.all.map((s: MaterialSuggestion) => (
+                                        <option key={s.id} value={s.id}>
+                                          {s.name} - {s.length}m (desp: {s.waste.toFixed(2)}m)
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
 
-                    {/* Selección Manual */}
-                    <div className="border-t border-slate-700 pt-4">
-                      <label className="block font-semibold text-white mb-2">
-                        ✋ O selecciona manualmente:
-                      </label>
-                      <select 
-                        className="w-full p-3 bg-slate-700 border border-slate-600 rounded-lg text-white"
-                        value={selectedMaterial?.id || ''}
-                        onChange={(e) => {
-                          const selected = cutSuggestions?.all.find((s: MaterialSuggestion) => s.id === e.target.value)
-                          if (selected) {
-                            setSelectedMaterials(prev => ({ ...prev, [cutOrder.id]: selected }))
-                          }
-                        }}
-                      >
-                        <option value="">Seleccionar material...</option>
-                        {cutSuggestions?.all.map((s: MaterialSuggestion) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name} - {s.length}m (desperdicio: {s.waste.toFixed(2)}m)
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Cantidad a Cortar */}
+                    {/* BLOQUE C: Cantidad a Cortar (Stepper Industrial) */}
                     <div>
-                      <label className="block font-semibold text-white mb-2">
-                        Cantidad a cortar:
+                      <label className="block text-lg font-bold text-white mb-3 uppercase">
+                        Cantidad a Cortar:
                       </label>
-                      <div className="mb-2 text-sm text-slate-300">
-                        Pendientes: {cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)} unidades
+                      <div className="mb-4 text-base text-slate-300 bg-slate-800/50 p-3 rounded-lg">
+                        Pendientes: <span className="font-bold text-white text-xl">{cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)}</span> unidades
                       </div>
-                      <input
-                        type="number"
-                        min="1"
-                        max={cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)}
-                        placeholder={`Máximo ${cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)}`}
-                        value={quantityInputs[cutOrder.id] || ''}
-                        onChange={(e) => setQuantityInputs(prev => ({ ...prev, [cutOrder.id]: e.target.value }))}
-                        className="w-full p-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400"
-                      />
-                      <p className="text-xs text-slate-400 mt-1">
-                        Puedes cortar parcialmente (ej: 8 de 10)
-                      </p>
-                    </div>
-
-                    {/* Recorte Generado */}
-                    <div>
-                      <label className="block font-semibold text-white mb-2">
-                        Recorte generado:
-                      </label>
-                      {selectedMaterial && (
-                        <div className="mb-2 text-sm text-slate-300">
-                          Calculado: {Math.max(0, selectedMaterial.length - cutOrder.quantity_requested).toFixed(1)}m
+                      
+                      {/* Stepper Industrial */}
+                      <div className="flex items-center">
+                        {/* Botón Menos */}
+                        <button
+                          onClick={() => {
+                            const current = parseInt(quantityInputs[cutOrder.id] || '0')
+                            if (current > 1) {
+                              setQuantityInputs(prev => ({ ...prev, [cutOrder.id]: (current - 1).toString() }))
+                            }
+                          }}
+                          className="h-16 w-20 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-white text-4xl font-bold rounded-l-xl border-2 border-slate-700 transition-all transform active:scale-95"
+                        >
+                          −
+                        </button>
+                        
+                        {/* Display Central */}
+                        <div className="flex-1 h-16 bg-slate-900 border-y-2 border-slate-700 flex items-center justify-center">
+                          <span className="text-5xl font-bold text-white">
+                            {quantityInputs[cutOrder.id] || 0}
+                          </span>
                         </div>
-                      )}
-                      <input
-                        type="number"
-                        step="0.1"
-                        placeholder={selectedMaterial ? `${Math.max(0, selectedMaterial.length - cutOrder.quantity_requested).toFixed(1)} m (auto)` : "0.0 m"}
-                        value={remnantInputs[cutOrder.id] || ''}
-                        onChange={(e) => setRemnantInputs(prev => ({ ...prev, [cutOrder.id]: e.target.value }))}
-                        className="w-full p-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400"
-                      />
-                      <p className="text-xs text-slate-400 mt-1">
-                        Deja vacío para usar el cálculo automático
+                        
+                        {/* Botón Más */}
+                        <button
+                          onClick={() => {
+                            const current = parseInt(quantityInputs[cutOrder.id] || '0')
+                            const max = cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)
+                            if (current < max) {
+                              setQuantityInputs(prev => ({ ...prev, [cutOrder.id]: (current + 1).toString() }))
+                            }
+                          }}
+                          className="h-16 w-20 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-4xl font-bold rounded-r-xl border-2 border-blue-500 transition-all transform active:scale-95 shadow-lg shadow-blue-500/30"
+                        >
+                          +
+                        </button>
+                      </div>
+                      
+                      <p className="text-sm text-slate-400 mt-3 text-center">
+                        Usa los botones + y − para ajustar la cantidad
                       </p>
                     </div>
 
-                    {/* Botón Confirmar */}
+                    {/* BLOQUE D: Recorte Generado (Recuadro Colapsable) */}
+                    {selectedMaterial && (
+                      <div className="bg-slate-800/50 border-2 border-slate-600 rounded-2xl shadow-lg overflow-hidden">
+                        {/* Título Clickeable con Cálculo Automático */}
+                        <button
+                          onClick={() => setShowRemnantAdjust(prev => ({ ...prev, [cutOrder.id]: !prev[cutOrder.id] }))}
+                          className="w-full p-6 hover:bg-slate-800/70 transition-all"
+                        >
+                          <div className="flex items-center justify-between">
+                            <h5 className="text-xl font-bold text-white uppercase">Recorte Generado</h5>
+                            <div className="flex items-center gap-3">
+                              <span className="text-3xl font-bold text-white">
+                                {remnantInputs[cutOrder.id] || Math.max(0, selectedMaterial.length - cutOrder.quantity_requested).toFixed(1)}m
+                              </span>
+                              <span className="text-xl text-white">{showRemnantAdjust[cutOrder.id] ? '▼' : '▶'}</span>
+                            </div>
+                          </div>
+                        </button>
+                        
+                        {/* Contenido Expandible - Ajuste Manual */}
+                        {showRemnantAdjust[cutOrder.id] && (
+                          <div className="px-6 pb-6 space-y-4 animate-in slide-in-from-top duration-300">
+                            <div className="border-t border-slate-700 pt-4">
+                              <label className="text-sm text-slate-400 mb-3 block">Ajuste manual (opcional):</label>
+                              
+                              {/* Stepper para Recorte */}
+                              <div className="flex items-center">
+                                {/* Botón Menos */}
+                                <button
+                                  onClick={() => {
+                                    const current = parseFloat(remnantInputs[cutOrder.id] || Math.max(0, selectedMaterial.length - cutOrder.quantity_requested).toFixed(1))
+                                    const newValue = Math.max(0, current - 0.5)
+                                    setRemnantInputs(prev => ({ ...prev, [cutOrder.id]: newValue.toFixed(1) }))
+                                  }}
+                                  className="h-14 w-16 bg-slate-900 hover:bg-slate-800 active:bg-slate-700 text-white text-3xl font-bold rounded-l-xl border-2 border-slate-700 transition-all transform active:scale-95"
+                                >
+                                  −
+                                </button>
+                                
+                                {/* Display Central */}
+                                <div className="flex-1 h-14 bg-slate-950 border-y-2 border-slate-700 flex items-center justify-center">
+                                  <span className="text-4xl font-bold text-white">
+                                    {remnantInputs[cutOrder.id] || Math.max(0, selectedMaterial.length - cutOrder.quantity_requested).toFixed(1)}m
+                                  </span>
+                                </div>
+                                
+                                {/* Botón Más */}
+                                <button
+                                  onClick={() => {
+                                    const current = parseFloat(remnantInputs[cutOrder.id] || Math.max(0, selectedMaterial.length - cutOrder.quantity_requested).toFixed(1))
+                                    const newValue = current + 0.5
+                                    setRemnantInputs(prev => ({ ...prev, [cutOrder.id]: newValue.toFixed(1) }))
+                                  }}
+                                  className="h-14 w-16 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-white text-3xl font-bold rounded-r-xl border-2 border-slate-600 transition-all transform active:scale-95"
+                                >
+                                  +
+                                </button>
+                              </div>
+                              
+                              <p className="text-xs text-slate-400 mt-3 text-center">
+                                Ajusta en incrementos de 0.5m
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Botón Confirmar - GIGANTE */}
                     <button
                       onClick={() => handleConfirmCut(cutOrder)}
                       disabled={!selectedMaterial || isProcessing || !quantityInputs[cutOrder.id] || parseInt(quantityInputs[cutOrder.id]) <= 0}
-                      className="w-full px-6 py-4 bg-green-600 hover:bg-green-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded-lg font-bold text-lg transition-colors"
+                      className="w-full h-20 bg-green-600 hover:bg-green-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded-2xl font-bold text-2xl uppercase transition-all transform active:scale-95 shadow-lg shadow-green-500/30 disabled:shadow-none"
                     >
-                      {isProcessing ? 'Procesando...' : `✓ Confirmar Corte (${quantityInputs[cutOrder.id] || 0} unidades)`}
+                      {isProcessing ? 'Procesando...' : `Confirmar Corte (${quantityInputs[cutOrder.id] || 0} unidades)`}
                     </button>
                   </div>
                 )}
