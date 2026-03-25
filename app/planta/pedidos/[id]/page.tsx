@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useError } from '@/components/error-modal'
 import { useSuccess } from '@/components/success-modal'
-import { CheckCircle2, ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, Package } from 'lucide-react'
+import { CheckCircle2, ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, Package, Clock } from 'lucide-react'
 
 // Tipo para sugerencias (mock)
 interface MaterialSuggestion {
@@ -34,6 +34,7 @@ export default function PlantaPedidoDetallePage() {
   const [remnantInputs, setRemnantInputs] = useState<Record<string, string>>({})
   const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({}) // Nueva: cantidad a cortar
   const [processing, setProcessing] = useState<Record<string, boolean>>({})
+  const [currentTime, setCurrentTime] = useState('')
 
   useEffect(() => {
     const operatorData = localStorage.getItem('operator')
@@ -44,6 +45,26 @@ export default function PlantaPedidoDetallePage() {
     setOperator(JSON.parse(operatorData))
     loadPedido()
   }, [router, pedidoId])
+
+  // Actualizar hora cada segundo
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date()
+      const argentinaTime = now.toLocaleTimeString('es-AR', {
+        timeZone: 'America/Argentina/Buenos_Aires',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      })
+      setCurrentTime(argentinaTime)
+    }
+    
+    updateTime() // Actualizar inmediatamente
+    const interval = setInterval(updateTime, 1000) // Actualizar cada segundo
+    
+    return () => clearInterval(interval)
+  }, [])
 
   async function loadPedido() {
     try {
@@ -463,7 +484,18 @@ export default function PlantaPedidoDetallePage() {
             <span className="font-semibold">Volver</span>
           </button>
           
-          <h1 className="text-2xl font-bold text-white mb-1">{pedido.order_number}</h1>
+          <div className="flex items-center justify-between mb-1">
+            <h1 className="text-2xl font-bold text-white">{pedido.order_number}</h1>
+            
+            {/* Reloj */}
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900/50 rounded-lg border border-slate-700">
+              <Clock className="w-4 h-4 text-slate-400" />
+              <span className="text-base font-mono font-semibold text-white">
+                {currentTime}
+              </span>
+            </div>
+          </div>
+          
           {operator && (
             <p className="text-slate-400">Operario: <span className="text-white font-semibold">{operator.full_name}</span></p>
           )}
@@ -499,52 +531,74 @@ export default function PlantaPedidoDetallePage() {
                 <button
                   onClick={() => isPending && toggleCutOrder(cutOrder.id, cutOrder.product_id, cutOrder.quantity_requested)}
                   disabled={isCompleted}
-                  className={`w-full p-4 flex items-center justify-between ${
+                  className={`w-full p-6 ${
                     isPending ? 'cursor-pointer hover:bg-slate-700/50' : 'cursor-default'
                   } transition-colors`}
                 >
-                  <div className="flex-1 text-left">
-                    <div className="flex items-center gap-3 mb-2">
-                      <h3 className="text-lg font-bold text-white">
-                        {cutOrder.product?.name || 'Producto'}
-                      </h3>
-                      {isPending && (
-                        isExpanded ? <ChevronUp className="w-5 h-5 text-blue-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3 mb-2">
-                      <p className="text-sm text-slate-400">{cutOrder.cut_number}</p>
-                      <span className={`px-2 py-1 rounded text-xs font-bold ${
-                        (cutOrder.quantity_cut || 0) >= cutOrder.quantity_requested
+                  <div className="space-y-4">
+                    {/* Fila 1: Título y Estado */}
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-center gap-3 flex-1">
+                        <h3 className="text-3xl font-bold text-white leading-tight">
+                          {cutOrder.product?.name || 'Producto'}
+                        </h3>
+                        {isPending && (
+                          isExpanded ? <ChevronUp className="w-6 h-6 text-blue-400 flex-shrink-0" /> : <ChevronDown className="w-6 h-6 text-slate-400 flex-shrink-0" />
+                        )}
+                      </div>
+                      
+                      {/* Badge de Estado */}
+                      <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-base font-bold flex-shrink-0 ${
+                        isCompleted
                           ? 'bg-green-500/20 text-green-400'
-                          : (cutOrder.quantity_cut || 0) > 0
-                          ? 'bg-yellow-500/20 text-yellow-400'
-                          : 'bg-slate-500/20 text-slate-400'
+                          : isPendingConfirmation
+                          ? 'bg-orange-500/20 text-orange-400'
+                          : 'bg-yellow-500/20 text-yellow-400'
                       }`}>
-                        {cutOrder.quantity_cut || 0}/{cutOrder.quantity_requested} cortadas
+                        {isCompleted ? (
+                          <>
+                            <CheckCircle2 className="w-5 h-5" />
+                            Completada
+                          </>
+                        ) : isPendingConfirmation ? (
+                          <>
+                            <AlertTriangle className="w-5 h-5" />
+                            Confirmar Recogida
+                          </>
+                        ) : (
+                          '🟡 Pendiente'
+                        )}
                       </span>
                     </div>
-                    <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-semibold ${
-                      isCompleted
-                        ? 'bg-green-500/20 text-green-400'
-                        : isPendingConfirmation
-                        ? 'bg-orange-500/20 text-orange-400'
-                        : 'bg-yellow-500/20 text-yellow-400'
-                    }`}>
-                      {isCompleted ? (
-                        <>
-                          <CheckCircle2 className="w-4 h-4" />
-                          Completada
-                        </>
-                      ) : isPendingConfirmation ? (
-                        <>
-                          <AlertTriangle className="w-4 h-4" />
-                          Confirmar Recogida
-                        </>
-                      ) : (
-                        '🟡 Pendiente'
-                      )}
-                    </span>
+                    
+                    {/* Fila 2: Código de corte */}
+                    <p className="text-base text-slate-400 font-medium text-left">{cutOrder.cut_number}</p>
+                    
+                    {/* Fila 3: Barra de Progreso */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-slate-400 font-medium">Progreso</span>
+                        <span className="text-white font-bold text-lg">
+                          {cutOrder.quantity_cut || 0}/{cutOrder.quantity_requested}
+                        </span>
+                      </div>
+                      
+                      {/* Barra de progreso visual */}
+                      <div className="w-full bg-slate-700 rounded-full h-3 overflow-hidden">
+                        <div 
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            (cutOrder.quantity_cut || 0) >= cutOrder.quantity_requested
+                              ? 'bg-green-500'
+                              : (cutOrder.quantity_cut || 0) > 0
+                              ? 'bg-yellow-500'
+                              : 'bg-slate-600'
+                          }`}
+                          style={{ 
+                            width: `${Math.min(((cutOrder.quantity_cut || 0) / cutOrder.quantity_requested) * 100, 100)}%` 
+                          }}
+                        />
+                      </div>
+                    </div>
                   </div>
                 </button>
 
