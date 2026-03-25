@@ -345,6 +345,25 @@ export default function PlantaPedidoDetallePage() {
       // NO se consume aquí, solo se mantiene la reserva
       console.log(`📌 Stock permanece reservado hasta la entrega del pedido`)
       
+      // 5. Registrar actividad en el historial del pedido
+      await supabase.from('order_activity_log').insert({
+        order_id: cutOrder.order_id,
+        cut_order_id: cutId,
+        activity_type: 'cut_completed',
+        description: `${operator?.name || 'Operario'} cortó ${quantityToCut} unidad${quantityToCut !== 1 ? 'es' : ''} de ${cutOrder.product?.name || 'producto'} (${newQuantityCut}/${cutOrder.quantity_requested})`,
+        metadata: {
+          action: `Corte ${isFullyCompleted ? 'completado' : 'parcial'}`,
+          operator_name: operator?.name,
+          quantity_cut: quantityToCut,
+          total_cut: newQuantityCut,
+          total_requested: cutOrder.quantity_requested,
+          material_used: selectedMaterial.name,
+          remnant_generated: remnantLength,
+          is_completed: isFullyCompleted
+        }
+      })
+      console.log(`📝 Actividad registrada en el historial`)
+      
       // Mostrar confirmación con modal personalizado
       const successLines = [
         `✂️ Cortadas: ${quantityToCut} unidades`,

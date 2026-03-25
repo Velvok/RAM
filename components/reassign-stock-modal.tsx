@@ -205,7 +205,7 @@ export default function ReassignStockModal({
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
           <div>
             <h3 className="text-xl font-bold text-slate-900">
-              🔄 Reasignar chapa de otro pedido
+              Reasignar chapa de otro pedido
             </h3>
             <p className="text-sm text-slate-600 mt-1">
               Necesita: {productSize}m • Mostrando chapas de {productSize}m o mayores
@@ -323,11 +323,11 @@ export default function ReassignStockModal({
                                   <td className="px-4 py-3">
                                     {isExact ? (
                                       <span className="inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                                        ✓ Exacta
+                                        Exacta
                                       </span>
                                     ) : isBigger ? (
                                       <span className="inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                                        ⚡ Sobra {(chapaSize - productSize).toFixed(1)}m
+                                        Sobra {(chapaSize - productSize).toFixed(1)}m
                                       </span>
                                     ) : null}
                                   </td>
@@ -350,7 +350,7 @@ export default function ReassignStockModal({
           {selectedCutOrder && willGenerateRemnant && (
             <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
               <p className="text-sm text-yellow-800">
-                ⚡ <strong>Chapa más grande seleccionada:</strong> Al cortar esta orden, se generará un recorte de {(selectedSize - productSize).toFixed(1)}m que se sumará al stock.
+                <strong>Chapa más grande seleccionada:</strong> Al cortar esta orden, se generará un recorte de {(selectedSize - productSize).toFixed(1)}m que se sumará al stock.
               </p>
             </div>
           )}

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { getOrderById } from '@/app/actions/orders'
 import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { ArrowLeft, CheckCircle2, Clock, ArrowRightLeft, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Clock, ArrowRightLeft, AlertTriangle, Info } from 'lucide-react'
 import Link from 'next/link'
 import OrderActions from './order-actions'
 import ReassignStockModal from '@/components/reassign-stock-modal'
@@ -19,6 +19,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
   const [selectedCutOrder, setSelectedCutOrder] = useState<any>(null)
   const [activityLog, setActivityLog] = useState<any[]>([])
   const [loadingLog, setLoadingLog] = useState(false)
+  const [showCutOrdersInfo, setShowCutOrdersInfo] = useState(false)
   const { showSuccess, SuccessDialog } = useSuccess()
   const { showError, ErrorDialog } = useError()
 
@@ -108,7 +109,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
       
       showSuccess(
         `Desde: ${result.fromOrder}\nA: ${result.toOrder}\nChapa: ${result.productCode}`,
-        '✅ Chapa Reasignada'
+        'Chapa Reasignada'
       )
       
       setReassignModalOpen(false)
@@ -124,7 +125,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
       console.error('Error reassigning:', error)
       showError(
         error.message || 'Error desconocido al reasignar stock',
-        '❌ Error al Reasignar'
+        'Error al Reasignar'
       )
       throw error
     }
@@ -140,57 +141,106 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
-          <div>
+          <div className="flex items-center gap-3">
             <h2 className="text-2xl font-bold text-slate-900">
               {order.order_number}
             </h2>
-            <p className="text-slate-600">
-              Cliente: {order.client?.business_name}
-            </p>
+            <span
+              className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                order.status === 'nuevo'
+                  ? 'bg-slate-100 text-slate-800'
+                  : order.status === 'aprobado'
+                  ? 'bg-yellow-100 text-yellow-800'
+                  : order.status === 'en_corte'
+                  ? 'bg-blue-100 text-blue-800'
+                  : order.status === 'finalizado'
+                  ? 'bg-green-100 text-green-800'
+                  : order.status === 'entregado'
+                  ? 'bg-purple-100 text-purple-800'
+                  : 'bg-red-100 text-red-800'
+              }`}
+            >
+              {order.status === 'nuevo' ? 'Nuevo' :
+               order.status === 'aprobado' ? 'Aprobado' :
+               order.status === 'en_corte' ? 'En Corte' :
+               order.status === 'finalizado' ? 'Finalizado' :
+               order.status === 'entregado' ? 'Entregado' :
+               order.status}
+            </span>
           </div>
         </div>
-        <div className="flex items-center space-x-2">
-          <span
-            className={`px-3 py-1 rounded-full text-sm font-semibold ${
-              order.status === 'ingresado'
-                ? 'bg-blue-100 text-blue-800'
-                : order.status === 'lanzado'
-                ? 'bg-green-100 text-green-800'
-                : order.status === 'generado'
-                ? 'bg-purple-100 text-purple-800'
-                : 'bg-red-100 text-red-800'
-            }`}
-          >
-            {order.status}
-          </span>
-        </div>
-      </div>
-
-      {/* Información General */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="text-sm font-medium text-slate-600 mb-1">
-            Monto Total
-          </div>
-          <div className="text-2xl font-bold text-slate-900">
-            {formatCurrency(order.total_amount)}
-          </div>
-        </div>
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="text-sm font-medium text-slate-600 mb-1">
-            Fecha de Creación
-          </div>
-          <div className="text-2xl font-bold text-slate-900">
-            {formatDate(order.created_at)}
-          </div>
+        <div>
+          <OrderActions key={refreshKey} order={order} onUpdate={reloadOrder} isHeaderMode={true} />
         </div>
       </div>
 
-      {/* Líneas del Pedido */}
+      {/* Grid: Info Cliente (50%) + Monto y Fecha (50%, 2 filas) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Información del Cliente - 50% */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-lg font-semibold text-slate-900 mb-4">
+            Información del Cliente
+          </h3>
+          <dl className="grid grid-cols-2 gap-4">
+            <div>
+              <dt className="text-sm font-medium text-slate-600">
+                Razón Social
+              </dt>
+              <dd className="mt-1 text-sm text-slate-900">
+                {order.client?.business_name}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-sm font-medium text-slate-600">CUIT</dt>
+              <dd className="mt-1 text-sm text-slate-900">
+                {order.client?.tax_id}
+              </dd>
+            </div>
+            {order.client?.contact_name && (
+              <div>
+                <dt className="text-sm font-medium text-slate-600">Contacto</dt>
+                <dd className="mt-1 text-sm text-slate-900">
+                  {order.client.contact_name}
+                </dd>
+              </div>
+            )}
+            {order.client?.contact_phone && (
+              <div>
+                <dt className="text-sm font-medium text-slate-600">Teléfono</dt>
+                <dd className="mt-1 text-sm text-slate-900">
+                  {order.client.contact_phone}
+                </dd>
+              </div>
+            )}
+          </dl>
+        </div>
+
+        {/* Monto y Fecha - 50%, 2 filas */}
+        <div className="flex flex-col gap-6">
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="text-sm font-medium text-slate-600 mb-1">
+              Monto Total
+            </div>
+            <div className="text-2xl font-bold text-slate-900">
+              {formatCurrency(order.total_amount)}
+            </div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="text-sm font-medium text-slate-600 mb-1">
+              Fecha de Creación
+            </div>
+            <div className="text-2xl font-bold text-slate-900">
+              {formatDate(order.created_at)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Pedido (Líneas del Pedido) */}
       <div className="bg-white rounded-lg shadow">
         <div className="px-6 py-4 border-b border-slate-200">
           <h3 className="text-lg font-semibold text-slate-900">
-            Líneas del Pedido
+            Pedido
           </h3>
         </div>
         <div className="overflow-x-auto">
@@ -239,9 +289,51 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
       {order.cut_orders && order.cut_orders.length > 0 && (
         <div className="bg-white rounded-lg shadow">
           <div className="px-6 py-4 border-b border-slate-200">
-            <h3 className="text-lg font-semibold text-slate-900">
-              Órdenes de Corte
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-semibold text-slate-900">
+                Órdenes de Corte
+              </h3>
+              <div className="relative">
+                <button
+                  onMouseEnter={() => setShowCutOrdersInfo(true)}
+                  onMouseLeave={() => setShowCutOrdersInfo(false)}
+                  className="text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  <Info className="w-4 h-4" />
+                </button>
+                
+                {/* Tooltip */}
+                {showCutOrdersInfo && (
+                  <div className="absolute left-0 top-full mt-2 w-80 bg-white rounded-lg shadow-xl border border-slate-200 p-4 z-50">
+                    <div className="space-y-3 text-sm">
+                      <div>
+                        <p className="font-semibold text-slate-900 mb-1">Acciones disponibles:</p>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <div className="flex gap-2">
+                          <span className="text-blue-600 font-medium min-w-[70px]">Cambiar:</span>
+                          <span className="text-slate-600">Permite cambiar la chapa asignada por otra de tamaño suficiente disponible en stock.</span>
+                        </div>
+                        
+                        <div className="flex gap-2">
+                          <span className="text-yellow-600 font-medium min-w-[70px]">Estado:</span>
+                          <span className="text-slate-600">Indica si la orden está pendiente, en proceso o completada por el operario.</span>
+                        </div>
+                        
+                        <div className="flex gap-2">
+                          <span className="text-blue-600 font-medium min-w-[70px]">Reasignar:</span>
+                          <span className="text-slate-600">Transfiere chapas ya cortadas de otros pedidos a esta orden cuando no hay stock disponible o cuando quieres armar un pedido para que salga lo antes posible.</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Flecha del tooltip */}
+                    <div className="absolute -top-2 left-4 w-4 h-4 bg-white border-l border-t border-slate-200 transform rotate-45"></div>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-200">
@@ -337,7 +429,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                           Pendiente Operario
                         </span>
                       ) : (
-                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                        <span className="px-2 inline-flex items-center text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
                           <CheckCircle2 className="w-3 h-3 mr-1" />
                           Completada
                         </span>
@@ -365,56 +457,12 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
         </div>
       )}
 
-      {/* Grid con Cliente y Acciones */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Información del Cliente */}
-        <div className="lg:col-span-2 bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-slate-900 mb-4">
-            Información del Cliente
-          </h3>
-          <dl className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <dt className="text-sm font-medium text-slate-600">
-                Razón Social
-              </dt>
-              <dd className="mt-1 text-sm text-slate-900">
-                {order.client?.business_name}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-sm font-medium text-slate-600">CUIT</dt>
-              <dd className="mt-1 text-sm text-slate-900">
-                {order.client?.tax_id}
-              </dd>
-            </div>
-            {order.client?.contact_name && (
-              <div>
-                <dt className="text-sm font-medium text-slate-600">Contacto</dt>
-                <dd className="mt-1 text-sm text-slate-900">
-                  {order.client.contact_name}
-                </dd>
-              </div>
-            )}
-            {order.client?.contact_phone && (
-              <div>
-                <dt className="text-sm font-medium text-slate-600">Teléfono</dt>
-                <dd className="mt-1 text-sm text-slate-900">
-                  {order.client.contact_phone}
-                </dd>
-              </div>
-            )}
-          </dl>
-        </div>
-
-        {/* Acciones - Pasar función de recarga */}
-        <OrderActions key={refreshKey} order={order} onUpdate={reloadOrder} />
-      </div>
 
       {/* Log de Actividades */}
       <div className="bg-white rounded-lg shadow">
         <div className="px-6 py-4 border-b border-slate-200">
           <h3 className="text-lg font-semibold text-slate-900">
-            📋 Historial de Actividades
+            Historial de Actividades
           </h3>
         </div>
         <div className="p-6">
@@ -512,7 +560,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
             setChangeStockModalOpen(false)
             setSelectedCutOrder(null)
             await reloadOrder()
-            showSuccess('Stock actualizado correctamente', '✅ Stock Cambiado')
+            showSuccess('Stock actualizado correctamente', 'Stock Cambiado')
           }}
         />
       )}
@@ -565,6 +613,7 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
       // Filtrar por:
       // 1. Mismo tipo de producto (mismo código base)
       // 2. Tamaño >= solicitado
+      // 3. Excluir la chapa actualmente asignada
       // Y ordenar por tamaño
       const filtered = (data || [])
         .filter(item => {
@@ -578,7 +627,10 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
           // Verificar que sea de tamaño suficiente
           const isSufficientSize = product.length_meters >= productSize
           
-          return isSameProduct && isSufficientSize
+          // Excluir la chapa actualmente asignada
+          const isNotCurrentlyAssigned = item.product_id !== cutOrder.material_base_id
+          
+          return isSameProduct && isSufficientSize && isNotCurrentlyAssigned
         })
         .sort((a, b) => {
           const prodA = Array.isArray(a.product) ? a.product[0] : a.product
@@ -586,7 +638,7 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
           return (prodA?.length_meters || 0) - (prodB?.length_meters || 0)
         })
       
-      console.log('Stock filtrado (mismo producto, tamaño suficiente):', filtered.length, filtered)
+      console.log('Stock filtrado (mismo producto, tamaño suficiente, excluyendo actual):', filtered.length, filtered)
       setAvailableStock(filtered)
     } catch (error) {
       console.error('Error loading stock:', error)
@@ -683,9 +735,12 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
             </div>
           ) : availableStock.length === 0 ? (
             <div className="text-center py-12">
-              <p className="text-red-600 font-medium">No hay stock disponible</p>
-              <p className="text-sm text-slate-500 mt-2">
-                No hay chapas de tamaño suficiente en stock
+              <div className="mb-4">
+                <CheckCircle2 className="w-16 h-16 text-green-500 mx-auto mb-3" />
+              </div>
+              <p className="text-slate-700 font-medium mb-2">Chapa actual es la única opción disponible</p>
+              <p className="text-sm text-slate-500">
+                No hay otras chapas de tamaño suficiente en stock para cambiar
               </p>
             </div>
           ) : (

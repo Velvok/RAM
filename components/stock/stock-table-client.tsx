@@ -17,6 +17,12 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
 
   // Filtrar inventario basado en los filtros activos
   const filteredInventory = useMemo(() => {
+    // Debug: verificar estructura de datos
+    if (filters.search && inventory.length > 0) {
+      console.log('🔍 Búsqueda activa:', filters.search)
+      console.log('📦 Ejemplo de item con related_orders:', inventory.find(i => i.related_orders?.length > 0))
+    }
+    
     return inventory.filter(item => {
       // Filtro por búsqueda (código, nombre o cliente)
       const searchLower = filters.search.toLowerCase()
@@ -24,10 +30,20 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
         item.product?.code?.toLowerCase().includes(searchLower) ||
         item.product?.name?.toLowerCase().includes(searchLower) ||
         // Buscar en clientes de pedidos relacionados
-        item.related_orders?.some((orderLine: any) => 
-          orderLine.order?.client?.name?.toLowerCase().includes(searchLower) ||
-          orderLine.order?.client?.business_name?.toLowerCase().includes(searchLower)
-        )
+        item.related_orders?.some((orderLine: any) => {
+          const matchesClient = 
+            orderLine.order?.client?.name?.toLowerCase().includes(searchLower) ||
+            orderLine.order?.client?.business_name?.toLowerCase().includes(searchLower)
+          
+          if (matchesClient) {
+            console.log('✅ Match encontrado:', {
+              producto: item.product?.name,
+              cliente: orderLine.order?.client?.business_name || orderLine.order?.client?.name
+            })
+          }
+          
+          return matchesClient
+        })
 
       // Filtro por categoría
       const matchesCategory = filters.category === 'todas' || 

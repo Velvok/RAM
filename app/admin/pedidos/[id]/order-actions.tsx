@@ -9,10 +9,12 @@ import { useSuccess } from '@/components/success-modal'
 
 export default function OrderActions({ 
   order: initialOrder, 
-  onUpdate 
+  onUpdate,
+  isHeaderMode = false
 }: { 
   order: any
   onUpdate?: () => Promise<void>
+  isHeaderMode?: boolean
 }) {
   const [loading, setLoading] = useState(false)
   const [order, setOrder] = useState(initialOrder)
@@ -100,6 +102,41 @@ export default function OrderActions({
     }
   }
 
+  // Modo header: solo botones sin cuadro
+  if (isHeaderMode) {
+    return (
+      <>
+        <ConfirmDialog />
+        <ErrorDialog />
+        <SuccessDialog />
+        <div className="flex items-center gap-2">
+          {/* Aprobar Pedido */}
+          {order.status === 'nuevo' && (
+            <button
+              onClick={handleGenerateCutOrders}
+              disabled={loading}
+              className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Aprobar Pedido
+            </button>
+          )}
+
+          {/* Marcar como Entregado */}
+          {order.status === 'finalizado' && (
+            <button
+              onClick={handleMarkAsDelivered}
+              disabled={loading}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Marcar como Entregado
+            </button>
+          )}
+        </div>
+      </>
+    )
+  }
+
+  // Modo normal: cuadro completo (no se usa más pero lo mantenemos por compatibilidad)
   return (
     <>
       <ConfirmDialog />
@@ -118,13 +155,13 @@ export default function OrderActions({
               disabled={loading}
               className="w-full px-4 py-3 bg-green-600 hover:bg-green-500 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              ✅ Aprobar Pedido y Asignar Stock
+              Aprobar Pedido y Asignar Stock
             </button>
           )}
 
           {order.status === 'aprobado' && (
             <div className="px-4 py-3 bg-green-100 text-green-800 rounded-lg font-semibold text-center">
-              ✓ Pedido Aprobado - Stock asignado
+              Pedido Aprobado - Stock asignado
             </div>
           )}
 
@@ -135,13 +172,13 @@ export default function OrderActions({
               disabled={loading}
               className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              📦 Marcar como Entregado
+              Marcar como Entregado
             </button>
           )}
 
           {order.status === 'entregado' && (
             <div className="px-4 py-3 bg-blue-100 text-blue-800 rounded-lg font-semibold text-center">
-              ✓ Pedido Entregado
+              Pedido Entregado
             </div>
           )}
         </div>

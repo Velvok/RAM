@@ -40,6 +40,7 @@ export async function getInventory() {
         const orderIds = orderLines.map(ol => ol.order_id)
 
         // Consultar los pedidos con sus clientes, filtrando por status
+        // Incluir todos los estados excepto cancelado (pedidos activos que comprometen stock)
         const { data: orders } = await supabase
           .from('orders')
           .select(`
@@ -53,7 +54,7 @@ export async function getInventory() {
             )
           `)
           .in('id', orderIds)
-          .in('status', ['aprobado', 'en_corte', 'en_proceso'])
+          .in('status', ['nuevo', 'aprobado', 'en_corte', 'en_proceso', 'finalizado'])
           .order('created_at', { ascending: false })
 
         // Combinar order_lines con orders

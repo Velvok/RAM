@@ -68,10 +68,10 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
         icon: CheckCircle
       },
       entregado: {
-        color: 'bg-purple-600',
-        textColor: 'text-purple-700',
-        bgColor: 'bg-purple-50',
-        borderColor: 'border-purple-300',
+        color: 'bg-slate-800',
+        textColor: 'text-slate-700',
+        bgColor: 'bg-slate-50',
+        borderColor: 'border-slate-300',
         text: 'Entregado',
         icon: CheckCircle
       },
@@ -146,7 +146,7 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
     { id: 'aprobado', label: 'Aprobados', count: statusCounts.aprobado, color: 'bg-yellow-500' },
     { id: 'en_corte', label: 'En Corte', count: statusCounts.en_corte, color: 'bg-blue-500' },
     { id: 'finalizado', label: 'Finalizados', count: statusCounts.finalizado, color: 'bg-green-500' },
-    { id: 'entregado', label: 'Entregados', count: statusCounts.entregado, color: 'bg-purple-500' }
+    { id: 'entregado', label: 'Entregados', count: statusCounts.entregado, color: 'bg-slate-800' }
   ]
 
   async function handleGenerateCutOrders(e: React.MouseEvent, orderId: string) {
@@ -262,7 +262,7 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
               <div
                 key={order.id}
                 onClick={() => handleOrderClick(order)}
-                className={`bg-white rounded-lg border-2 ${statusInfo.borderColor} p-4 cursor-pointer hover:shadow-lg transition-all hover:-translate-y-0.5`}
+                className="bg-white rounded-lg border border-slate-200 p-4 cursor-pointer hover:shadow-lg transition-all hover:-translate-y-0.5"
               >
                 {/* Header */}
                 <div className="flex items-start justify-between mb-3">
@@ -336,6 +336,17 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
                     ) : (
                       '✓ Aprobar Pedido'
                     )}
+                  </button>
+                )}
+                {order.status === 'finalizado' && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      router.push(`/admin/pedidos/${order.id}`)
+                    }}
+                    className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                  >
+                    Marcar como Entregado
                   </button>
                 )}
               </div>
@@ -429,6 +440,17 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
                               className="px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded-lg text-xs font-semibold transition-colors disabled:opacity-50"
                             >
                               {loading === order.id ? 'Aprobando...' : 'Aprobar'}
+                            </button>
+                          )}
+                          {order.status === 'finalizado' && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                router.push(`/admin/pedidos/${order.id}`)
+                              }}
+                              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold transition-colors"
+                            >
+                              Marcar como Entregado
                             </button>
                           )}
                         </td>
