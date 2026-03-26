@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { StockFilters } from './stock-filters'
 import { QuickAdjustModal } from './quick-adjust-modal'
 import { ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
@@ -13,12 +13,23 @@ type SortField = 'stock_total' | 'stock_reservado' | 'stock_generado' | 'stock_d
 type SortDirection = 'asc' | 'desc' | null
 
 export function StockTableClient({ inventory }: StockTableClientProps) {
-  const [filters, setFilters] = useState({ search: '', category: 'todas', stockStatus: 'todos' })
+  const [filters, setFilters] = useState({ search: '', categories: [] as string[], stockStatus: 'todos' })
   const [currentPage, setCurrentPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(25)
   const [hoveredRow, setHoveredRow] = useState<string | null>(null)
   const [sortField, setSortField] = useState<SortField>(null)
   const [sortDirection, setSortDirection] = useState<SortDirection>(null)
+
+  // Extraer categorías únicas del inventario
+  const availableCategories = useMemo(() => {
+    const categories = new Set<string>()
+    inventory.forEach(item => {
+      if (item.product?.category) {
+        categories.add(item.product.category)
+      }
+    })
+    return Array.from(categories).sort()
+  }, [inventory])
 
   // Función para manejar el ordenamiento
   const handleSort = (field: SortField) => {
@@ -67,9 +78,9 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
           return matchesClient
         })
 
-      // Filtro por categoría
-      const matchesCategory = filters.category === 'todas' || 
-        item.product?.category === filters.category
+      // Filtro por categorías (múltiple selección)
+      const matchesCategory = filters.categories.length === 0 || 
+        filters.categories.includes(item.product?.category)
 
       // Filtro por estado de stock
       const matchesStockStatus = 
@@ -108,7 +119,7 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
   const totalPages = Math.ceil(sortedInventory.length / rowsPerPage)
 
   // Resetear a página 0 cuando cambian los filtros
-  const handleFilterChange = (newFilters: { search: string; category: string; stockStatus: string }) => {
+  const handleFilterChange = (newFilters: { search: string; categories: string[]; stockStatus: string }) => {
     setFilters(newFilters)
     setCurrentPage(0)
   }
@@ -121,7 +132,10 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
 
   return (
     <>
-      <StockFilters onFilterChange={handleFilterChange} />
+      <StockFilters 
+        onFilterChange={handleFilterChange} 
+        availableCategories={availableCategories}
+      />
 
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <table className="min-w-full divide-y divide-slate-200">
