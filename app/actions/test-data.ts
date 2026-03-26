@@ -27,13 +27,13 @@ export async function generateTestOrder(status: string = 'nuevo', numLines: numb
 
   console.log('✅ Cliente encontrado:', clients.id)
 
-  // Obtener productos que tengan stock disponible
+  // Obtener productos que tengan stock disponible (SOLO CHAPAS)
   const { data: inventoryItems } = await supabase
     .from('inventory')
     .select(`
       id,
       stock_disponible,
-      product:products(id, name, code)
+      product:products(id, name, code, category)
     `)
     .gt('stock_disponible', 0)
     .order('stock_disponible', { ascending: false })
@@ -43,18 +43,21 @@ export async function generateTestOrder(status: string = 'nuevo', numLines: numb
   }
 
   // Extraer productos únicos (puede haber varios inventory del mismo producto)
+  // FILTRAR SOLO CHAPAS
   const uniqueProducts = Array.from(
     new Map(
       inventoryItems
         .map(item => Array.isArray(item.product) ? item.product[0] : item.product)
-        .filter(p => p != null)
+        .filter(p => p != null && p.category === 'chapas') // SOLO CHAPAS
         .map(p => [p.id, p])
     ).values()
   )
 
   if (uniqueProducts.length === 0) {
-    return { error: 'No hay productos disponibles' }
+    return { error: 'No hay chapas disponibles en stock' }
   }
+
+  console.log(`✅ Chapas disponibles encontradas: ${uniqueProducts.length}`)
 
   // Seleccionar productos aleatorios (sin repetir)
   const selectedProducts = []

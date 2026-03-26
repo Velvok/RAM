@@ -260,3 +260,24 @@ BEGIN
     RAISE NOTICE 'Datos de ejemplo generados para producto: %', v_product.name;
   END LOOP;
 END $$;
+
+-- =====================================================
+-- LIMPIEZA DE DATOS EXISTENTES PARA MODELO DE UNIDADES
+-- Resetear contadores de stock manteniendo el stock total
+-- =====================================================
+
+-- Eliminar datos relacionados con pedidos
+DELETE FROM stock_items;
+DELETE FROM stock_reassignments;
+DELETE FROM remnants;
+DELETE FROM stock_reservations;
+DELETE FROM stock_movements;
+DELETE FROM cut_orders;
+DELETE FROM order_lines;
+DELETE FROM orders;
+
+-- Resetear contadores de stock (mantener stock_total)
+UPDATE inventory SET 
+  stock_reservado = 0,
+  stock_en_proceso = 0,
+  stock_generado = 0;
