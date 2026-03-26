@@ -101,7 +101,14 @@ export async function approveOrder(orderId: string) {
 
   // NUEVO: Crear UNA orden de corte por PRODUCTO (agrupada)
   // Ejemplo: Cliente pide 10 × Chapa 3m → se crea 1 orden de corte con quantity_requested=10
+  // TEMPORAL: Solo procesar productos de categoría "chapas"
   for (const line of order.order_lines) {
+    // FILTRO: Solo procesar chapas
+    if (line.product?.category !== 'chapas') {
+      console.log(`⏭️ Saltando ${line.product?.name} - No es una chapa (categoría: ${line.product?.category})`)
+      continue
+    }
+    
     // Cantidad de unidades que pide el cliente
     const units = line.units || Math.ceil(line.quantity) || 1
     
@@ -111,7 +118,7 @@ export async function approveOrder(orderId: string) {
                        line.length_meters || 
                        line.quantity
     
-    console.log(`📋 Línea: ${line.product?.name}, Unidades: ${units}, Tamaño: ${productSize}m`)
+    console.log(`📋 Línea (CHAPA): ${line.product?.name}, Unidades: ${units}, Tamaño: ${productSize}m`)
     
     // Crear UNA orden de corte agrupada para todas las unidades
     const cutNumber = `CUT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`

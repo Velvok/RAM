@@ -20,6 +20,8 @@ export default function SuccessModal({
   useEffect(() => {
     if (isOpen) {
       setShow(true)
+    } else {
+      setShow(false)
     }
   }, [isOpen])
 
@@ -74,8 +76,15 @@ export function useSuccess() {
     isOpen: false,
     message: ''
   })
+  const [lastMessage, setLastMessage] = useState<string>('')
 
   const showSuccess = (message: string, title?: string) => {
+    // Evitar mostrar el mismo mensaje repetidamente
+    if (lastMessage === message && config.isOpen) {
+      return
+    }
+    
+    setLastMessage(message)
     setConfig({
       isOpen: true,
       title: title || '¡Éxito!',
@@ -84,7 +93,12 @@ export function useSuccess() {
   }
 
   const handleClose = () => {
-    setConfig(prev => ({ ...prev, isOpen: false }))
+    setConfig({
+      isOpen: false,
+      title: undefined,
+      message: ''
+    })
+    setLastMessage('')
   }
 
   const SuccessDialog = () => (

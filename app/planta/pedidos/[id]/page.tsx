@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useError } from '@/components/error-modal'
-import { useSuccess } from '@/components/success-modal'
+import { useCutSuccess } from '@/components/cut-success-modal'
 import { CheckCircle2, ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, Package, Clock } from 'lucide-react'
 
 // Tipo para sugerencias (mock)
@@ -23,7 +23,7 @@ export default function PlantaPedidoDetallePage() {
   const params = useParams()
   const pedidoId = params.id as string
   const { showError, ErrorDialog } = useError()
-  const { showSuccess, SuccessDialog } = useSuccess()
+  const { showCutSuccess, hideCutSuccess, CutSuccessDialog } = useCutSuccess()
 
   const [operator, setOperator] = useState<any>(null)
   const [pedido, setPedido] = useState<any>(null)
@@ -248,9 +248,13 @@ export default function PlantaPedidoDetallePage() {
     }
     
     // Calcular recorte automáticamente
-    const materialLength = selectedMaterial.length // Tamaño del material usado (ej: 3m)
-    const quantityNeeded = cutOrder.quantity_requested // Cantidad solicitada (ej: 0.5m)
-    const calculatedRemnant = Math.max(0, materialLength - quantityNeeded)
+    const materialLength = selectedMaterial.length // Tamaño del material usado (ej: 9.5m)
+    const quantityToCut = parseInt(quantityInputs[cutId] || '0') // Cantidad de unidades a cortar
+    const productSize = cutOrder.product?.length_meters || 
+                       parseFloat(cutOrder.product?.code?.match(/\.(\d+),(\d+)$/)?.[0]?.replace('.', '')?.replace(',', '.') || '0') ||
+                       cutOrder.quantity_requested // Tamaño de cada pieza (ej: 0.5m)
+    const totalLengthNeeded = productSize * quantityToCut // Total a cortar (ej: 0.5m × 5 = 2.5m)
+    const calculatedRemnant = Math.max(0, materialLength - totalLengthNeeded)
     
     // Permitir override manual si el operario ingresó un valor
     const remnantLength = remnantInputs[cutId] 
@@ -259,7 +263,9 @@ export default function PlantaPedidoDetallePage() {
     
     console.log(`📏 Cálculo de recorte:`)
     console.log(`   Material usado: ${materialLength}m`)
-    console.log(`   Cantidad cortada: ${quantityNeeded}m`)
+    console.log(`   Tamaño por pieza: ${productSize}m`)
+    console.log(`   Cantidad a cortar: ${quantityToCut} unidades`)
+    console.log(`   Total a cortar: ${totalLengthNeeded}m`)
     console.log(`   Recorte calculado: ${calculatedRemnant}m`)
     console.log(`   Recorte final: ${remnantLength}m`)
 
@@ -410,15 +416,41 @@ export default function PlantaPedidoDetallePage() {
         successLines.push(`⚠️ Pendientes: ${cutOrder.quantity_requested - newQuantityCut} unidades`)
       }
       
-      showSuccess(
-        successLines.join('\n'), 
-        isFullyCompleted ? '✓ Orden Completada' : '✓ Corte Parcial Confirmado'
-      )
+      // Actualizar estado local del pedido SIN recargar desde la BD
+      setPedido((prev: any) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          cut_orders: prev.cut_orders.map((co: any) => 
+            co.id === cutId 
+              ? { 
+                  ...co, 
+                  quantity_cut: newQuantityCut,
+                  status: isFullyCompleted ? 'completada' : 'pendiente'
+                }
+              : co
+          )
+        }
+      })
       
-      // Recargar pedido y limpiar inputs
-      await loadPedido()
+      // Limpiar inputs
       setExpandedCutId(null)
       setQuantityInputs(prev => ({ ...prev, [cutId]: '' }))
+      setSelectedMaterials(prev => {
+        const newState = { ...prev }
+        delete newState[cutId]
+        return newState
+      })
+      
+      // Mostrar confirmación con la nueva modal (sin bucle)
+      showCutSuccess({
+        quantityCut: quantityToCut,
+        totalCut: newQuantityCut,
+        totalRequested: cutOrder.quantity_requested,
+        materialName: selectedMaterial.name,
+        remnantLength: remnantLength,
+        isFullyCompleted: isFullyCompleted
+      })
       
     } catch (error: any) {
       console.error('Error finishing cut:', error)
@@ -799,7 +831,12 @@ export default function PlantaPedidoDetallePage() {
                             <h5 className="text-xl font-bold text-white uppercase">Recorte Generado</h5>
                             <div className="flex items-center gap-3">
                               <span className="text-3xl font-bold text-white">
-                                {remnantInputs[cutOrder.id] || Math.max(0, selectedMaterial.length - cutOrder.quantity_requested).toFixed(1)}m
+                                {(() => {
+                                  const quantityToCut = parseInt(quantityInputs[cutOrder.id] || '0')
+                                  const productSize = cutOrder.product?.length_meters || parseFloat(cutOrder.product?.code?.match(/\.(\d+),(\d+)$/)?.[0]?.replace('.', '')?.replace(',', '.') || '0') || cutOrder.quantity_requested
+                                  const totalNeeded = productSize * quantityToCut
+                                  return (remnantInputs[cutOrder.id] || Math.max(0, selectedMaterial.length - totalNeeded).toFixed(1))
+                                })()}m
                               </span>
                               <span className="text-xl text-white">{showRemnantAdjust[cutOrder.id] ? '▼' : '▶'}</span>
                             </div>
@@ -817,7 +854,10 @@ export default function PlantaPedidoDetallePage() {
                                 {/* Botón Menos */}
                                 <button
                                   onClick={() => {
-                                    const current = parseFloat(remnantInputs[cutOrder.id] || Math.max(0, selectedMaterial.length - cutOrder.quantity_requested).toFixed(1))
+                                    const quantityToCut = parseInt(quantityInputs[cutOrder.id] || '0')
+                                    const productSize = cutOrder.product?.length_meters || parseFloat(cutOrder.product?.code?.match(/\.(\d+),(\d+)$/)?.[0]?.replace('.', '')?.replace(',', '.') || '0') || cutOrder.quantity_requested
+                                    const totalNeeded = productSize * quantityToCut
+                                    const current = parseFloat(remnantInputs[cutOrder.id] || Math.max(0, selectedMaterial.length - totalNeeded).toFixed(1))
                                     const newValue = Math.max(0, current - 0.5)
                                     setRemnantInputs(prev => ({ ...prev, [cutOrder.id]: newValue.toFixed(1) }))
                                   }}
@@ -829,14 +869,22 @@ export default function PlantaPedidoDetallePage() {
                                 {/* Display Central */}
                                 <div className="flex-1 h-14 bg-slate-950 border-y-2 border-slate-700 flex items-center justify-center">
                                   <span className="text-4xl font-bold text-white">
-                                    {remnantInputs[cutOrder.id] || Math.max(0, selectedMaterial.length - cutOrder.quantity_requested).toFixed(1)}m
+                                    {(() => {
+                                      const quantityToCut = parseInt(quantityInputs[cutOrder.id] || '0')
+                                      const productSize = cutOrder.product?.length_meters || parseFloat(cutOrder.product?.code?.match(/\.(\d+),(\d+)$/)?.[0]?.replace('.', '')?.replace(',', '.') || '0') || cutOrder.quantity_requested
+                                      const totalNeeded = productSize * quantityToCut
+                                      return (remnantInputs[cutOrder.id] || Math.max(0, selectedMaterial.length - totalNeeded).toFixed(1))
+                                    })()}m
                                   </span>
                                 </div>
                                 
                                 {/* Botón Más */}
                                 <button
                                   onClick={() => {
-                                    const current = parseFloat(remnantInputs[cutOrder.id] || Math.max(0, selectedMaterial.length - cutOrder.quantity_requested).toFixed(1))
+                                    const quantityToCut = parseInt(quantityInputs[cutOrder.id] || '0')
+                                    const productSize = cutOrder.product?.length_meters || parseFloat(cutOrder.product?.code?.match(/\.(\d+),(\d+)$/)?.[0]?.replace('.', '')?.replace(',', '.') || '0') || cutOrder.quantity_requested
+                                    const totalNeeded = productSize * quantityToCut
+                                    const current = parseFloat(remnantInputs[cutOrder.id] || Math.max(0, selectedMaterial.length - totalNeeded).toFixed(1))
                                     const newValue = current + 0.5
                                     setRemnantInputs(prev => ({ ...prev, [cutOrder.id]: newValue.toFixed(1) }))
                                   }}
@@ -896,7 +944,8 @@ export default function PlantaPedidoDetallePage() {
                           try {
                             const { confirmReassignmentPickup } = await import('@/app/actions/confirm-reassignment')
                             await confirmReassignmentPickup(cutOrder.id)
-                            showSuccess('✅ Recogida confirmada correctamente')
+                            // Para confirmación de reasignación, mostramos un mensaje simple
+                            alert('✅ Recogida confirmada correctamente')
                             // Recargar pedido completo
                             await loadPedido()
                           } catch (error: any) {
@@ -924,7 +973,7 @@ export default function PlantaPedidoDetallePage() {
       
       {/* Modales */}
       <ErrorDialog />
-      <SuccessDialog />
+      <CutSuccessDialog />
     </div>
   )
 }
