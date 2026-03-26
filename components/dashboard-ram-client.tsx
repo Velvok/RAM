@@ -7,8 +7,12 @@ import {
   Clock, 
   DollarSign, 
   Search,
-  ChevronDown
+  ChevronDown,
+  Info,
+  Sparkles,
+  AlertTriangle
 } from 'lucide-react'
+import { AIChatAssistant } from './ai-chat-assistant'
 import { 
   LineChart, 
   Line, 
@@ -87,6 +91,7 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
   const [metricUnit, setMetricUnit] = useState<'metros' | 'unidades'>('metros')
   const [searchQuery, setSearchQuery] = useState('')
   const [searchScope, setSearchScope] = useState<'todo' | 'pedidos' | 'stock'>('todo')
+  const [isChatOpen, setIsChatOpen] = useState(false)
   
   // Paginación para Últimos Pedidos
   const [pedidosPage, setPedidosPage] = useState(0)
@@ -150,24 +155,31 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
       })
   }, [])
 
+  // Calcular productos con stock crítico (disponible < 20% del total)
+  const stockCritico = data.stockProductos?.filter((producto: any) => {
+    if (producto.total === 0) return false
+    const porcentajeDisponible = (producto.disponible / producto.total) * 100
+    return porcentajeDisponible < 20 && producto.disponible > 0
+  }).length || 0
+
   const kpiData = [
     {
       icon: Package,
-      title: 'Pedidos Pendientes',
+      title: 'Pedidos Nuevos',
       value: data.kpis.pendingOrders.toString(),
       subtitle: 'Nuevos y aprobados',
       color: 'text-slate-700'
     },
     {
       icon: Clock,
-      title: 'En Producción',
+      title: 'En Preparación',
       value: data.kpis.inProductionOrders.toString(),
       subtitle: 'En corte actualmente',
       color: 'text-slate-700'
     },
     {
       icon: TrendingUp,
-      title: 'Pendientes Entrega',
+      title: 'Por Entregar',
       value: data.kpis.pendingDeliveryOrders.toString(),
       subtitle: 'Finalizados sin entregar',
       color: 'text-slate-700'
@@ -191,9 +203,24 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
     )
   }
 
-  // Lógica de filtrado según ámbito seleccionado
   const filteredPedidos = (() => {
-    if (!searchQuery) return data.recentOrders
+    let result = data.recentOrders
+    if (!searchQuery) {
+      // Ordenar por criticidad: nuevo > aprobado > en_corte > resto
+      const prioridad: Record<string, number> = {
+        'nuevo': 1,
+        'aprobado': 2,
+        'en_corte': 3,
+        'finalizado': 4,
+        'entregado': 5,
+        'cancelado': 6
+      }
+      return [...result].sort((a, b) => {
+        const prioA = prioridad[a.estado] || 999
+        const prioB = prioridad[b.estado] || 999
+        return prioA - prioB
+      })
+    }
     
     const query = searchQuery.toLowerCase()
     
@@ -228,13 +255,40 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
     }
     
     // 3. Si no hay coincidencias directas, buscar por producto en pedidos
-    return data.recentOrders.filter(p => 
+    result = data.recentOrders.filter(p => 
       p.producto.toLowerCase().includes(query)
     )
+    
+    // Ordenar por criticidad
+    const prioridad: Record<string, number> = {
+      'nuevo': 1,
+      'aprobado': 2,
+      'en_corte': 3,
+      'finalizado': 4,
+      'entregado': 5,
+      'cancelado': 6
+    }
+    return result.sort((a, b) => {
+      const prioA = prioridad[a.estado] || 999
+      const prioB = prioridad[b.estado] || 999
+      return prioA - prioB
+    })
   })()
 
   const filteredProductos = (() => {
-    if (!searchQuery) return data.stockProductos
+    let result = data.stockProductos
+    if (!searchQuery) {
+      // Ordenar por criticidad: menor disponible primero, luego mayor reservado
+      return [...result].sort((a, b) => {
+        // Primero por porcentaje de disponible (menor es más crítico)
+        const percA = a.total > 0 ? (a.disponible / a.total) : 1
+        const percB = b.total > 0 ? (b.disponible / b.total) : 1
+        if (percA !== percB) return percA - percB
+        
+        // Si tienen mismo porcentaje, ordenar por mayor reservado
+        return b.reservado - a.reservado
+      })
+    }
     
     const query = searchQuery.toLowerCase()
     
@@ -272,16 +326,22 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
     }
     
     // 3. Buscar por clientes asociados al stock
-    const productosByCliente = data.stockProductos.filter(sp => 
+    result = data.stockProductos.filter(sp => 
       sp.clientes.some(c => c.toLowerCase().includes(query))
     )
     
-    return productosByCliente
+    // Ordenar por criticidad
+    return result.sort((a, b) => {
+      const percA = a.total > 0 ? (a.disponible / a.total) : 1
+      const percB = b.total > 0 ? (b.disponible / b.total) : 1
+      if (percA !== percB) return percA - percB
+      return b.reservado - a.reservado
+    })
   })()
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
         {kpiData.map((kpi, index) => (
           <div key={index} className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 hover:shadow-md transition-shadow">
             <div className="flex items-start justify-between">
@@ -295,24 +355,6 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
           </div>
         ))}
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
-          <p className="text-sm font-medium text-slate-500 mb-2">Dólar hoy</p>
-          {loadingDolar ? (
-            <p className="text-sm text-slate-400">Cargando...</p>
-          ) : dolarData ? (
-            <>
-              <p className="text-3xl font-bold text-slate-900 mb-1">
-                {dolarData.compra} / {dolarData.venta}
-              </p>
-              <p className="text-xs text-slate-400">
-                Actualizado: {new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs
-              </p>
-            </>
-          ) : (
-            <p className="text-sm text-slate-400">No disponible</p>
-          )}
-        </div>
-
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 hover:shadow-md transition-shadow">
           <div className="flex items-start justify-between">
             <div className="flex-1">
@@ -323,12 +365,55 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
             <Package className="w-5 h-5 text-slate-400" strokeWidth={1.5} />
           </div>
         </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 hover:shadow-md transition-shadow">
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <p className="text-sm font-medium text-slate-500 mb-2">Stock Crítico</p>
+              <p className="text-3xl font-bold text-slate-900 mb-1">{stockCritico}</p>
+              <p className="text-xs text-slate-400">Productos con &lt; 20% disponible</p>
+            </div>
+            <AlertTriangle className="w-5 h-5 text-orange-600" strokeWidth={1.5} />
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 hover:shadow-md transition-shadow">
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <p className="text-sm font-medium text-slate-500 mb-2">Dólar hoy</p>
+              {loadingDolar ? (
+                <p className="text-sm text-slate-400">Cargando...</p>
+              ) : dolarData ? (
+                <>
+                  <p className="text-xl font-bold text-slate-900 mb-1">
+                    {dolarData.compra} / {dolarData.venta}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    Actualizado: {new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm text-slate-400">No disponible</p>
+              )}
+            </div>
+            <DollarSign className="w-5 h-5 text-slate-400" strokeWidth={1.5} />
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
           <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-semibold text-slate-900">Producción Anual</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-semibold text-slate-900">Volumen de Producción Anual</h3>
+              <div className="relative group">
+                <Info className="w-4 h-4 text-slate-400 cursor-help" />
+                <div className="hidden group-hover:block absolute left-0 top-full mt-2 w-64 bg-slate-900 text-white text-xs rounded-lg p-3 shadow-lg z-10">
+                  <p className="font-medium mb-1">Volumen de Producción Anual</p>
+                  <p className="text-slate-300">Total de metros o unidades de material procesado y cortado durante el año. Incluye todos los cortes confirmados por los operarios de planta.</p>
+                </div>
+              </div>
+            </div>
             <div className="flex items-center gap-2 bg-slate-50 rounded-lg p-1">
               <button
                 onClick={() => setMetricUnit('metros')}
@@ -384,7 +469,16 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
           <div className="mb-4">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-base font-semibold text-slate-800">Evolución Mensual</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-semibold text-slate-800">Evolución Mensual</h3>
+                <div className="relative group">
+                  <Info className="w-4 h-4 text-slate-400 cursor-help" />
+                  <div className="hidden group-hover:block absolute left-0 top-full mt-2 w-64 bg-slate-900 text-white text-xs rounded-lg p-3 shadow-lg z-10">
+                    <p className="font-medium mb-1">Evolución Mensual</p>
+                    <p className="text-slate-300">Compara el volumen de producción entre diferentes meses y categorías de productos. Agrega hasta 2 meses para ver tendencias y variaciones.</p>
+                  </div>
+                </div>
+              </div>
               <div className="flex items-center gap-2">
                 {/* Botón Agregar Mes */}
                 {selectedComparisonMonths.length < 2 && (
@@ -924,6 +1018,31 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
           </div>
         </div>
       </div>
+
+      {/* Botón flotante del chat IA */}
+      <button
+        onClick={() => setIsChatOpen(true)}
+        className="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all hover:scale-110 flex items-center justify-center z-40 group"
+      >
+        <Sparkles className="w-6 h-6" />
+        <span className="absolute right-full mr-3 px-3 py-2 bg-slate-900 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
+          Asistente IA
+        </span>
+      </button>
+
+      {/* Componente de chat IA */}
+      <AIChatAssistant 
+        isOpen={isChatOpen}
+        onClose={() => {
+          setIsChatOpen(false)
+          console.log('🔍 Dashboard data disponible:', {
+            pedidos: data.recentOrders?.length,
+            stock: data.stockProductos?.length,
+            kpis: data.kpis
+          })
+        }}
+        dashboardData={data}
+      />
     </div>
   )
 }

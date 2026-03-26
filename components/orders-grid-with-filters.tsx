@@ -281,7 +281,7 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
                       })}
                     </div>
                   </div>
-                  <span className={`inline-flex items-center px-3 py-1.5 ${statusInfo.color} text-white rounded-lg text-xs font-bold`}>
+                  <span className={`inline-flex items-center px-3 py-1.5 border-2 ${statusInfo.borderColor} ${statusInfo.textColor} ${statusInfo.bgColor} rounded-lg text-xs font-semibold`}>
                     {statusInfo.text}
                   </span>
                 </div>
@@ -428,7 +428,7 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
                           {order.lines?.reduce((sum: number, line: any) => sum + (line.units || 0), 0) || 0}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex items-center px-2.5 py-1 ${statusInfo.color} text-white rounded-lg text-xs font-medium`}>
+                          <span className={`inline-flex items-center px-2.5 py-1 border-2 ${statusInfo.borderColor} ${statusInfo.textColor} ${statusInfo.bgColor} rounded-lg text-xs font-semibold`}>
                             {statusInfo.text}
                           </span>
                         </td>

@@ -3,17 +3,39 @@
 import { useState, useMemo } from 'react'
 import { StockFilters } from './stock-filters'
 import { QuickAdjustModal } from './quick-adjust-modal'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 
 interface StockTableClientProps {
   inventory: any[]
 }
 
+type SortField = 'stock_total' | 'stock_reservado' | 'stock_generado' | 'stock_disponible' | null
+type SortDirection = 'asc' | 'desc' | null
+
 export function StockTableClient({ inventory }: StockTableClientProps) {
-  const [filters, setFilters] = useState({ search: '', category: 'todas' })
+  const [filters, setFilters] = useState({ search: '', category: 'todas', stockStatus: 'todos' })
   const [currentPage, setCurrentPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(25)
   const [hoveredRow, setHoveredRow] = useState<string | null>(null)
+  const [sortField, setSortField] = useState<SortField>(null)
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null)
+
+  // Función para manejar el ordenamiento
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      // Si ya está ordenado por este campo, cambiar dirección
+      if (sortDirection === 'asc') {
+        setSortDirection('desc')
+      } else if (sortDirection === 'desc') {
+        setSortField(null)
+        setSortDirection(null)
+      }
+    } else {
+      // Nuevo campo, ordenar ascendente
+      setSortField(field)
+      setSortDirection('asc')
+    }
+  }
 
   // Filtrar inventario basado en los filtros activos
   const filteredInventory = useMemo(() => {
@@ -49,21 +71,44 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
       const matchesCategory = filters.category === 'todas' || 
         item.product?.category === filters.category
 
-      return matchesSearch && matchesCategory
+      // Filtro por estado de stock
+      const matchesStockStatus = 
+        filters.stockStatus === 'todos' ||
+        (filters.stockStatus === 'sin_stock' && item.stock_disponible <= 0) ||
+        (filters.stockStatus === 'stock_bajo' && item.stock_disponible > 0 && item.stock_disponible < 100) ||
+        (filters.stockStatus === 'disponible' && item.stock_disponible >= 100)
+
+      return matchesSearch && matchesCategory && matchesStockStatus
     })
   }, [inventory, filters])
+
+  // Ordenar inventario si hay un campo de ordenamiento activo
+  const sortedInventory = useMemo(() => {
+    if (!sortField || !sortDirection) return filteredInventory
+
+    return [...filteredInventory].sort((a, b) => {
+      const aValue = a[sortField] || 0
+      const bValue = b[sortField] || 0
+      
+      if (sortDirection === 'asc') {
+        return aValue - bValue
+      } else {
+        return bValue - aValue
+      }
+    })
+  }, [filteredInventory, sortField, sortDirection])
 
   // Aplicar paginación
   const paginatedInventory = useMemo(() => {
     const startIndex = currentPage * rowsPerPage
-    return filteredInventory.slice(startIndex, startIndex + rowsPerPage)
-  }, [filteredInventory, currentPage, rowsPerPage])
+    return sortedInventory.slice(startIndex, startIndex + rowsPerPage)
+  }, [sortedInventory, currentPage, rowsPerPage])
 
   // Calcular total de páginas
-  const totalPages = Math.ceil(filteredInventory.length / rowsPerPage)
+  const totalPages = Math.ceil(sortedInventory.length / rowsPerPage)
 
   // Resetear a página 0 cuando cambian los filtros
-  const handleFilterChange = (newFilters: { search: string; category: string }) => {
+  const handleFilterChange = (newFilters: { search: string; category: string; stockStatus: string }) => {
     setFilters(newFilters)
     setCurrentPage(0)
   }
@@ -88,17 +133,57 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
               <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
                 Producto
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                Stock Total
+              <th 
+                className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors"
+                onClick={() => handleSort('stock_total')}
+              >
+                <div className="flex items-center gap-2">
+                  Stock Total
+                  {sortField === 'stock_total' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />
+                  ) : (
+                    <ArrowUpDown className="w-4 h-4 opacity-30" />
+                  )}
+                </div>
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                Reservado
+              <th 
+                className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors"
+                onClick={() => handleSort('stock_reservado')}
+              >
+                <div className="flex items-center gap-2">
+                  Reservado
+                  {sortField === 'stock_reservado' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />
+                  ) : (
+                    <ArrowUpDown className="w-4 h-4 opacity-30" />
+                  )}
+                </div>
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                Generado
+              <th 
+                className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors"
+                onClick={() => handleSort('stock_generado')}
+              >
+                <div className="flex items-center gap-2">
+                  Generado
+                  {sortField === 'stock_generado' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />
+                  ) : (
+                    <ArrowUpDown className="w-4 h-4 opacity-30" />
+                  )}
+                </div>
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                Disponible
+              <th 
+                className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors"
+                onClick={() => handleSort('stock_disponible')}
+              >
+                <div className="flex items-center gap-2">
+                  Disponible
+                  {sortField === 'stock_disponible' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />
+                  ) : (
+                    <ArrowUpDown className="w-4 h-4 opacity-30" />
+                  )}
+                </div>
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
                 Estado
@@ -229,7 +314,7 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
 
           {/* Contador de resultados */}
           <div className="text-sm text-slate-600">
-            Mostrando {currentPage * rowsPerPage + 1} - {Math.min((currentPage + 1) * rowsPerPage, filteredInventory.length)} de {filteredInventory.length} productos
+            Mostrando {currentPage * rowsPerPage + 1} - {Math.min((currentPage + 1) * rowsPerPage, sortedInventory.length)} de {sortedInventory.length} productos
           </div>
         </div>
 

@@ -4,12 +4,13 @@ import { useState } from 'react'
 import { Search, Filter } from 'lucide-react'
 
 interface StockFiltersProps {
-  onFilterChange: (filters: { search: string; category: string }) => void
+  onFilterChange: (filters: { search: string; category: string; stockStatus: string }) => void
 }
 
 export function StockFilters({ onFilterChange }: StockFiltersProps) {
   const [search, setSearch] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('todas')
+  const [selectedStockStatus, setSelectedStockStatus] = useState('todos')
 
   // Categorías basadas en los datos existentes
   const categories = [
@@ -19,12 +20,17 @@ export function StockFilters({ onFilterChange }: StockFiltersProps) {
 
   const handleSearchChange = (value: string) => {
     setSearch(value)
-    onFilterChange({ search: value, category: selectedCategory })
+    onFilterChange({ search: value, category: selectedCategory, stockStatus: selectedStockStatus })
   }
 
   const handleCategoryChange = (value: string) => {
     setSelectedCategory(value)
-    onFilterChange({ search, category: value })
+    onFilterChange({ search, category: value, stockStatus: selectedStockStatus })
+  }
+
+  const handleStockStatusChange = (value: string) => {
+    setSelectedStockStatus(value)
+    onFilterChange({ search, category: selectedCategory, stockStatus: value })
   }
 
   return (
@@ -34,7 +40,7 @@ export function StockFilters({ onFilterChange }: StockFiltersProps) {
         <h3 className="text-sm font-semibold text-slate-900">Filtros</h3>
       </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Búsqueda por nombre/código */}
         <div>
           <label className="block text-xs font-medium text-slate-600 mb-2">
@@ -69,11 +75,28 @@ export function StockFilters({ onFilterChange }: StockFiltersProps) {
             ))}
           </select>
         </div>
+
+        {/* Filtro por estado de stock */}
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-2">
+            Estado de Stock
+          </label>
+          <select
+            value={selectedStockStatus}
+            onChange={(e) => handleStockStatusChange(e.target.value)}
+            className="w-full px-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="todos">Todos los estados</option>
+            <option value="sin_stock">🔴 Sin Stock</option>
+            <option value="stock_bajo">🟡 Stock Bajo</option>
+            <option value="disponible">🟢 Disponible</option>
+          </select>
+        </div>
       </div>
 
       {/* Indicador de filtros activos */}
-      {(search || selectedCategory !== 'todas') && (
-        <div className="mt-4 flex items-center gap-2">
+      {(search || selectedCategory !== 'todas' || selectedStockStatus !== 'todos') && (
+        <div className="mt-4 flex items-center gap-2 flex-wrap">
           <span className="text-xs text-slate-600">Filtros activos:</span>
           {search && (
             <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded-full">
@@ -91,6 +114,19 @@ export function StockFilters({ onFilterChange }: StockFiltersProps) {
               {categories.find(c => c.value === selectedCategory)?.label}
               <button
                 onClick={() => handleCategoryChange('todas')}
+                className="hover:text-blue-900"
+              >
+                ×
+              </button>
+            </span>
+          )}
+          {selectedStockStatus !== 'todos' && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded-full">
+              {selectedStockStatus === 'sin_stock' && '🔴 Sin Stock'}
+              {selectedStockStatus === 'stock_bajo' && '🟡 Stock Bajo'}
+              {selectedStockStatus === 'disponible' && '🟢 Disponible'}
+              <button
+                onClick={() => handleStockStatusChange('todos')}
                 className="hover:text-blue-900"
               >
                 ×
