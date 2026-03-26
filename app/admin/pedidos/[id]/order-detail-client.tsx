@@ -613,8 +613,8 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
       // Filtrar por:
       // 1. Mismo tipo de producto (mismo código base)
       // 2. Tamaño >= solicitado
-      // 3. Excluir la chapa actualmente asignada
-      // Y ordenar por tamaño
+      // 3. Incluir el stock actualmente asignado
+      // Y ordenar por tamaño (el actual primero)
       const filtered = (data || [])
         .filter(item => {
           const product = Array.isArray(item.product) ? item.product[0] : item.product
@@ -627,18 +627,24 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
           // Verificar que sea de tamaño suficiente
           const isSufficientSize = product.length_meters >= productSize
           
-          // Excluir la chapa actualmente asignada
-          const isNotCurrentlyAssigned = item.product_id !== cutOrder.material_base_id
-          
-          return isSameProduct && isSufficientSize && isNotCurrentlyAssigned
+          return isSameProduct && isSufficientSize
         })
         .sort((a, b) => {
           const prodA = Array.isArray(a.product) ? a.product[0] : a.product
           const prodB = Array.isArray(b.product) ? b.product[0] : b.product
+          
+          // El stock actualmente asignado va primero
+          const aIsCurrent = a.product_id === cutOrder.material_base_id
+          const bIsCurrent = b.product_id === cutOrder.material_base_id
+          
+          if (aIsCurrent && !bIsCurrent) return -1
+          if (!aIsCurrent && bIsCurrent) return 1
+          
+          // Si ambos son actuales o ninguno es actual, ordenar por tamaño
           return (prodA?.length_meters || 0) - (prodB?.length_meters || 0)
         })
       
-      console.log('Stock filtrado (mismo producto, tamaño suficiente, excluyendo actual):', filtered.length, filtered)
+      console.log('Stock filtrado (mismo producto, tamaño suficiente, incluyendo actual como primera opción):', filtered.length, filtered)
       setAvailableStock(filtered)
     } catch (error) {
       console.error('Error loading stock:', error)
