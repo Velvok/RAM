@@ -190,6 +190,7 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
     const statusConfig: Record<string, { label: string; className: string }> = {
       'nuevo': { label: 'Nuevo', className: 'bg-slate-100 text-slate-700' },
       'aprobado': { label: 'Aprobado', className: 'bg-yellow-100 text-yellow-700' },
+      'aprobado_en_pausa': { label: 'En Pausa', className: 'bg-orange-100 text-orange-700' },
       'en_corte': { label: 'En Corte', className: 'bg-blue-100 text-blue-700' },
       'finalizado': { label: 'Finalizado', className: 'bg-green-100 text-green-700' },
       'entregado': { label: 'Entregado', className: 'bg-purple-100 text-purple-700' },

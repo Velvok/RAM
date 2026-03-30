@@ -51,6 +51,14 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
         text: 'Aprobado',
         icon: Package
       },
+      aprobado_en_pausa: {
+        color: 'bg-orange-500',
+        textColor: 'text-orange-700',
+        bgColor: 'bg-orange-50',
+        borderColor: 'border-orange-300',
+        text: 'En Pausa',
+        icon: Package
+      },
       en_corte: {
         color: 'bg-blue-500',
         textColor: 'text-blue-700',
@@ -135,6 +143,7 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
     todos: orders.length,
     nuevo: orders.filter(o => o.status === 'nuevo').length,
     aprobado: orders.filter(o => o.status === 'aprobado').length,
+    aprobado_en_pausa: orders.filter(o => o.status === 'aprobado_en_pausa').length,
     en_corte: orders.filter(o => o.status === 'en_corte').length,
     finalizado: orders.filter(o => o.status === 'finalizado').length,
     entregado: orders.filter(o => o.status === 'entregado').length
@@ -144,6 +153,7 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
     { id: 'todos', label: 'Todos', count: statusCounts.todos, color: 'bg-slate-600' },
     { id: 'nuevo', label: 'Nuevos', count: statusCounts.nuevo, color: 'bg-slate-500' },
     { id: 'aprobado', label: 'Aprobados', count: statusCounts.aprobado, color: 'bg-yellow-500' },
+    { id: 'aprobado_en_pausa', label: 'En Pausa', count: statusCounts.aprobado_en_pausa, color: 'bg-orange-500' },
     { id: 'en_corte', label: 'En Corte', count: statusCounts.en_corte, color: 'bg-blue-500' },
     { id: 'finalizado', label: 'Finalizados', count: statusCounts.finalizado, color: 'bg-green-500' },
     { id: 'entregado', label: 'Entregados', count: statusCounts.entregado, color: 'bg-slate-800' }

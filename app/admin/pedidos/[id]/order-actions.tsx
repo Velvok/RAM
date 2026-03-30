@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { generateCutOrders, getOrderById } from '@/app/actions/orders'
+import { generateCutOrders, getOrderById, approveOrderOnHold } from '@/app/actions/orders'
 import { useRouter } from 'next/navigation'
 import { useConfirm } from '@/components/confirm-modal'
 import { useError } from '@/components/error-modal'
@@ -76,6 +76,31 @@ export default function OrderActions({
     }
   }
 
+  async function handleApproveOnHold() {
+    const confirmed = await confirm(
+      'Aprobar Pedido en Pausa',
+      '¿Aprobar este pedido en pausa? Se crearán órdenes de corte pero NO se asignará stock automáticamente. Útil cuando se espera la llegada de material.',
+      { variant: 'warning', confirmText: 'Sí, aprobar en pausa' }
+    )
+    
+    if (!confirmed) return
+    
+    setLoading(true)
+    try {
+      const result = await approveOrderOnHold(order.id)
+      await reloadOrder()
+      
+      showSuccess(
+        result.message || 'Pedido aprobado en pausa. El stock deberá asignarse manualmente desde el detalle del pedido.',
+        'Pedido Aprobado en Pausa'
+      )
+    } catch (error: any) {
+      showError(error?.message || 'No se pudo aprobar el pedido en pausa', 'Error al Aprobar')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   async function handleMarkAsDelivered() {
     const confirmed = await confirm(
       'Marcar como Entregado',
@@ -110,15 +135,31 @@ export default function OrderActions({
         <ErrorDialog />
         <SuccessDialog />
         <div className="flex items-center gap-2">
-          {/* Aprobar Pedido */}
+          {/* Aprobar Pedido - DOS OPCIONES */}
           {order.status === 'nuevo' && (
-            <button
-              onClick={handleGenerateCutOrders}
-              disabled={loading}
-              className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Aprobar Pedido
-            </button>
+            <>
+              <button
+                onClick={handleGenerateCutOrders}
+                disabled={loading}
+                className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Aprobar Pedido
+              </button>
+              <button
+                onClick={handleApproveOnHold}
+                disabled={loading}
+                className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Aprobar en Pausa
+              </button>
+            </>
+          )}
+
+          {/* Estado Aprobado en Pausa */}
+          {order.status === 'aprobado_en_pausa' && (
+            <div className="px-4 py-2 bg-orange-100 text-orange-800 rounded-lg text-sm font-semibold">
+              ⏸️ En Pausa - Sin stock asignado
+            </div>
           )}
 
           {/* Marcar como Entregado */}
@@ -148,20 +189,35 @@ export default function OrderActions({
         </h3>
       
         <div className="space-y-3">
-          {/* Aprobar Pedido */}
+          {/* Aprobar Pedido - DOS OPCIONES */}
           {order.status === 'nuevo' && (
-            <button
-              onClick={handleGenerateCutOrders}
-              disabled={loading}
-              className="w-full px-4 py-3 bg-green-600 hover:bg-green-500 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Aprobar Pedido y Asignar Stock
-            </button>
+            <>
+              <button
+                onClick={handleGenerateCutOrders}
+                disabled={loading}
+                className="w-full px-4 py-3 bg-green-600 hover:bg-green-500 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Aprobar Pedido y Asignar Stock
+              </button>
+              <button
+                onClick={handleApproveOnHold}
+                disabled={loading}
+                className="w-full px-4 py-3 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Aprobar en Pausa (sin stock)
+              </button>
+            </>
           )}
 
           {order.status === 'aprobado' && (
             <div className="px-4 py-3 bg-green-100 text-green-800 rounded-lg font-semibold text-center">
               Pedido Aprobado - Stock asignado
+            </div>
+          )}
+
+          {order.status === 'aprobado_en_pausa' && (
+            <div className="px-4 py-3 bg-orange-100 text-orange-800 rounded-lg font-semibold text-center">
+              ⏸️ Pedido en Pausa - Sin stock asignado
             </div>
           )}
 

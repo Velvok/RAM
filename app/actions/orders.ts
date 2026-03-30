@@ -76,6 +76,94 @@ export async function cancelOrder(orderId: string) {
 
 // verifyPayment eliminada - Los pedidos ya vienen con pago verificado
 
+// Aprobar pedido EN PAUSA (sin asignar stock automáticamente)
+export async function approveOrderOnHold(orderId: string) {
+  const supabase = await createClient()
+
+  // Obtener usuario actual (admin)
+  const { data: { user } } = await supabase.auth.getUser()
+
+  // Obtener el pedido con sus líneas
+  const { data: order, error: orderError } = await supabase
+    .from('orders')
+    .select('*, order_lines(*, product:products(*))')
+    .eq('id', orderId)
+    .single()
+
+  if (orderError) throw orderError
+
+  // Verificar que el pedido esté en estado 'nuevo'
+  if (order.status !== 'nuevo') {
+    throw new Error('Solo se pueden aprobar pedidos en estado "nuevo"')
+  }
+
+  // Crear órdenes de corte SIN asignar stock
+  for (const line of order.order_lines) {
+    // FILTRO: Solo procesar chapas
+    if (line.product?.category !== 'chapas') {
+      console.log(`⏭️ Saltando ${line.product?.name} - No es una chapa (categoría: ${line.product?.category})`)
+      continue
+    }
+    
+    // Cantidad de unidades que pide el cliente
+    const units = line.units || Math.ceil(line.quantity) || 1
+    
+    // Tamaño de cada pieza (extraído del código del producto)
+    const productSize = line.product?.length_meters || 
+                       parseFloat(line.product?.code?.match(/\.(\d+),(\d+)$/)?.[0]?.replace('.', '')?.replace(',', '.') || '0') ||
+                       line.length_meters || 
+                       line.quantity
+    
+    console.log(`📋 Línea (CHAPA - EN PAUSA): ${line.product?.name}, Unidades: ${units}, Tamaño: ${productSize}m`)
+    
+    // Crear UNA orden de corte agrupada para todas las unidades
+    const cutNumber = `CUT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    
+    // Crear la orden de corte AGRUPADA (SIN STOCK ASIGNADO)
+    const { error: cutError } = await supabase
+      .from('cut_orders')
+      .insert({
+        cut_number: cutNumber,
+        order_id: orderId,
+        product_id: line.product_id,
+        quantity_requested: units,
+        quantity_cut: 0,
+        status: 'pendiente',
+        // NO asignamos material_base_id ni material_base_quantity
+      })
+      .select()
+      .single()
+    
+    if (cutError) {
+      console.error(`Error creando orden de corte: ${cutError.message}`)
+      continue
+    }
+
+    console.log(`✅ Orden de corte creada EN PAUSA: ${cutNumber} - ${units} unidades de ${productSize}m (sin stock asignado)`)
+    
+    // Pequeño delay para evitar duplicados en el timestamp
+    await new Promise(resolve => setTimeout(resolve, 10))
+  }
+
+  // Actualizar estado del pedido a "aprobado_en_pausa"
+  await supabase
+    .from('orders')
+    .update({ 
+      status: 'aprobado_en_pausa',
+      approved_at: new Date().toISOString(),
+      approved_by: user?.id || null
+    })
+    .eq('id', orderId)
+
+  // Revalidar rutas de pedidos
+  revalidateOrders(orderId)
+  
+  return { 
+    success: true,
+    message: 'Pedido aprobado en pausa. El stock deberá asignarse manualmente.'
+  }
+}
+
 // Aprobar pedido y generar órdenes de corte CON asignación automática de stock
 export async function approveOrder(orderId: string) {
   const supabase = await createClient()
