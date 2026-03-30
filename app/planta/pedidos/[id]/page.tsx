@@ -77,6 +77,7 @@ export default function PlantaPedidoDetallePage() {
         .from('orders')
         .select(`
           *,
+          client:clients!orders_client_id_fkey(*),
           cut_orders:cut_orders!cut_orders_order_id_fkey(
             *,
             product:products!cut_orders_product_id_fkey(*),
@@ -87,7 +88,13 @@ export default function PlantaPedidoDetallePage() {
         .eq('id', pedidoId)
         .single()
 
-      if (error) throw error
+      if (error) {
+        console.error('Error en consulta de pedido:', error)
+        throw error
+      }
+      
+      console.log('📋 Datos del pedido cargados:', data)
+      console.log('👤 Cliente del pedido:', data.client)
       setPedido(data)
     } catch (error) {
       console.error('Error loading pedido:', error)
@@ -520,7 +527,18 @@ export default function PlantaPedidoDetallePage() {
           </button>
           
           <div className="flex items-center justify-between mb-1">
-            <h1 className="text-2xl font-bold text-white">{pedido.order_number}</h1>
+            <div>
+              <h1 className="text-2xl font-bold text-white">{pedido.order_number}</h1>
+              {pedido.client ? (
+                <p className="text-slate-400 text-sm mt-1">
+                  Cliente: <span className="text-white font-semibold">{pedido.client.business_name || 'Sin nombre'}</span>
+                </p>
+              ) : (
+                <p className="text-slate-400 text-sm mt-1">
+                  Cliente: <span className="text-white font-semibold">No disponible</span>
+                </p>
+              )}
+            </div>
             
             {/* Reloj */}
             <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900/50 rounded-lg border border-slate-700">
