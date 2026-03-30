@@ -165,14 +165,14 @@ export async function generateTestOrder(status: string = 'nuevo', numLines: numb
   revalidatePath('/planta', 'layout')
   revalidatePath('/planta/pedidos', 'layout')
   
-  // Revalidar tags si existen
-  try {
-    revalidateTag('orders')
-    revalidateTag('pedidos')
-    revalidateTag('admin')
-  } catch (e) {
-    // Ignorar errores de tags si no existen
-  }
+  // Revalidar tags si existen (comentado por compatibilidad con build)
+  // try {
+  //   revalidateTag('orders', 'invalidate')
+  //   revalidateTag('pedidos', 'invalidate')
+  //   revalidateTag('admin', 'invalidate')
+  // } catch (e) {
+  //   // Ignorar errores de tags si no existen
+  // }
   
   // También revalidar todo
   revalidateAll()
