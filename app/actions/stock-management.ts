@@ -193,19 +193,82 @@ export async function assignStockToCutOrder(
       material_base_quantity: quantity  // Tamaño de la pieza (ej: 5m)
     })
     .eq('id', cutOrderId)
-    .select()
+    .select('*, order:orders!cut_orders_order_id_fkey(id, status)')
     .single()
 
   if (error) throw error
   
-  // Revalidar todas las rutas relevantes
-  revalidatePath('/admin', 'page')
-  revalidatePath('/admin/stock', 'page')
+  // Si el pedido está en pausa, verificar si todas las órdenes tienen stock asignado
+  if (data.order?.status === 'aprobado_en_pausa') {
+    await checkAndActivateOrderOnHold(data.order.id)
+  }
+  
+  // Revalidar todas las rutas relevantes de forma agresiva
+  revalidatePath('/admin', 'layout')
   revalidatePath('/admin/stock', 'layout')
-  revalidatePath('/admin/pedidos', 'page')
   revalidatePath('/admin/pedidos', 'layout')
-  revalidatePath('/planta/ordenes', 'page')
+  revalidatePath('/planta', 'layout')
+  
+  // También revalidar las páginas específicas
+  revalidatePath('/admin')
+  revalidatePath('/admin/stock')
+  revalidatePath('/admin/pedidos')
+  
   return data
+}
+
+/**
+ * Verificar si todas las órdenes de corte tienen stock asignado
+ * Si es así, cambiar el estado del pedido de 'aprobado_en_pausa' a 'aprobado'
+ */
+async function checkAndActivateOrderOnHold(orderId: string) {
+  const supabase = await createClient()
+  
+  console.log(`🔍 Verificando si pedido ${orderId} puede activarse...`)
+  
+  // Obtener todas las órdenes de corte del pedido
+  const { data: cutOrders, error } = await supabase
+    .from('cut_orders')
+    .select('id, material_base_id')
+    .eq('order_id', orderId)
+  
+  if (error) {
+    console.error('❌ Error checking cut orders:', error)
+    return
+  }
+  
+  console.log(`📋 Órdenes de corte encontradas: ${cutOrders?.length || 0}`)
+  console.log(`📊 Órdenes con stock:`, cutOrders?.filter(co => co.material_base_id !== null).length)
+  
+  // Verificar si TODAS tienen stock asignado (material_base_id no es null)
+  const allHaveStock = cutOrders?.every(co => co.material_base_id !== null)
+  
+  if (allHaveStock && cutOrders && cutOrders.length > 0) {
+    console.log(`✅ Todas las órdenes tienen stock asignado. Activando pedido...`)
+    
+    // Cambiar estado del pedido a 'aprobado'
+    const { error: updateError } = await supabase
+      .from('orders')
+      .update({ status: 'aprobado' })
+      .eq('id', orderId)
+    
+    if (updateError) {
+      console.error('❌ Error activating order:', updateError)
+    } else {
+      console.log(`✅ Pedido ${orderId} activado correctamente`)
+      
+      // Revalidar rutas de forma agresiva
+      revalidatePath('/admin', 'layout')
+      revalidatePath('/admin/pedidos', 'layout')
+      revalidatePath('/planta', 'layout')
+      revalidatePath(`/admin/pedidos/${orderId}`)
+      
+      const { revalidateOrders } = await import('@/lib/revalidate')
+      revalidateOrders(orderId)
+    }
+  } else {
+    console.log(`⏸️ Pedido aún en pausa: faltan ${cutOrders?.filter(co => co.material_base_id === null).length} órdenes por asignar stock`)
+  }
 }
 
 /**

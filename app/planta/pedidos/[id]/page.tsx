@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useError } from '@/components/error-modal'
 import { useCutSuccess } from '@/components/cut-success-modal'
-import { CheckCircle2, ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, Package, Clock } from 'lucide-react'
+import { CheckCircle2, ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, Package, Clock, Truck } from 'lucide-react'
 
 // Tipo para sugerencias (mock)
 interface MaterialSuggestion {
@@ -38,6 +38,7 @@ export default function PlantaPedidoDetallePage() {
   const [showManualSelector, setShowManualSelector] = useState<Record<string, boolean>>({})
   const [showOtherOptions, setShowOtherOptions] = useState<Record<string, boolean>>({})
   const [showRemnantAdjust, setShowRemnantAdjust] = useState<Record<string, boolean>>({})
+  const [markingAsDelivered, setMarkingAsDelivered] = useState(false)
 
   useEffect(() => {
     const operatorData = localStorage.getItem('operator')
@@ -100,6 +101,39 @@ export default function PlantaPedidoDetallePage() {
       console.error('Error loading pedido:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleMarkAsDelivered() {
+    if (!pedido) return
+    
+    // Verificar que todas las órdenes estén completadas
+    const allCompleted = pedido.cut_orders?.every((co: any) => 
+      co.status === 'completada' && (co.quantity_cut || 0) >= co.quantity_requested
+    )
+    
+    if (!allCompleted) {
+      showError('No se puede marcar como entregado: hay órdenes pendientes de completar', 'Error')
+      return
+    }
+    
+    setMarkingAsDelivered(true)
+    
+    try {
+      const { markOrderAsDelivered } = await import('@/app/actions/orders')
+      await markOrderAsDelivered(pedido.id)
+      
+      // Recargar el pedido para ver el nuevo estado
+      await loadPedido()
+      
+      // Mostrar mensaje de éxito
+      alert('¡Pedido marcado como entregado correctamente!')
+      
+    } catch (error: any) {
+      console.error('Error marcando como entregado:', error)
+      showError(error?.message || 'No se pudo marcar el pedido como entregado', 'Error')
+    } finally {
+      setMarkingAsDelivered(false)
     }
   }
 
@@ -540,12 +574,26 @@ export default function PlantaPedidoDetallePage() {
               )}
             </div>
             
-            {/* Reloj */}
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900/50 rounded-lg border border-slate-700">
-              <Clock className="w-4 h-4 text-slate-400" />
-              <span className="text-base font-mono font-semibold text-white">
-                {currentTime}
-              </span>
+            <div className="flex items-center gap-3">
+              {/* Botón Marcar como Entregado */}
+              {pedido.status === 'finalizado' && (
+                <button
+                  onClick={handleMarkAsDelivered}
+                  disabled={markingAsDelivered}
+                  className="flex items-center gap-2 px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg border border-blue-500 text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Truck className="w-4 h-4" />
+                  {markingAsDelivered ? 'Entregando...' : 'Entregado'}
+                </button>
+              )}
+              
+              {/* Reloj */}
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900/50 rounded-lg border border-slate-700">
+                <Clock className="w-4 h-4 text-slate-400" />
+                <span className="text-base font-mono font-semibold text-white">
+                  {currentTime}
+                </span>
+              </div>
             </div>
           </div>
           

@@ -120,7 +120,7 @@ export async function approveOrderOnHold(orderId: string) {
     const cutNumber = `CUT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
     
     // Crear la orden de corte AGRUPADA (SIN STOCK ASIGNADO)
-    const { error: cutError } = await supabase
+    const { data: cutOrderData, error: cutError } = await supabase
       .from('cut_orders')
       .insert({
         cut_number: cutNumber,
@@ -132,7 +132,6 @@ export async function approveOrderOnHold(orderId: string) {
         // NO asignamos material_base_id ni material_base_quantity
       })
       .select()
-      .single()
     
     if (cutError) {
       console.error(`Error creando orden de corte: ${cutError.message}`)
@@ -146,7 +145,7 @@ export async function approveOrderOnHold(orderId: string) {
   }
 
   // Actualizar estado del pedido a "aprobado_en_pausa"
-  await supabase
+  const { error: updateError } = await supabase
     .from('orders')
     .update({ 
       status: 'aprobado_en_pausa',
@@ -155,7 +154,17 @@ export async function approveOrderOnHold(orderId: string) {
     })
     .eq('id', orderId)
 
-  // Revalidar rutas de pedidos
+  if (updateError) {
+    console.error('Error actualizando estado del pedido:', updateError)
+    throw new Error(`No se pudo actualizar el estado del pedido: ${updateError.message}`)
+  }
+
+  console.log(`✅ Pedido ${orderId} actualizado a estado 'aprobado_en_pausa'`)
+
+  // Revalidar rutas de pedidos de forma agresiva
+  revalidatePath('/admin', 'layout')
+  revalidatePath('/admin/pedidos', 'layout')
+  revalidatePath(`/admin/pedidos/${orderId}`)
   revalidateOrders(orderId)
   
   return { 

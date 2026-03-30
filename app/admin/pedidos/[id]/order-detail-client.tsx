@@ -646,6 +646,18 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
       
       console.log('Stock filtrado (mismo producto, tamaño suficiente, incluyendo actual como primera opción):', filtered.length, filtered)
       setAvailableStock(filtered)
+      
+      // Pre-seleccionar el stock del tamaño exacto si está disponible
+      if (filtered.length > 0) {
+        // Buscar stock del tamaño exacto
+        const exactMatch = filtered.find(item => {
+          const product = Array.isArray(item.product) ? item.product[0] : item.product
+          return product?.length_meters === productSize
+        })
+        
+        // Si hay match exacto, seleccionarlo; si no, seleccionar el primero (más pequeño)
+        setSelectedStock(exactMatch || filtered[0])
+      }
     } catch (error) {
       console.error('Error loading stock:', error)
     } finally {
@@ -699,17 +711,17 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
       }
       console.log(`✅ Reservadas ${quantityPending} unidades en el nuevo stock`)
 
-      // 3. Actualizar la asignación en cut_orders
-      const { error } = await supabase
-        .from('cut_orders')
-        .update({
-          material_base_id: product.id,
-          material_base_quantity: product.length_meters
-        })
-        .eq('id', cutOrder.id)
+      // 3. Actualizar la asignación en cut_orders usando assignStockToCutOrder
+      // Esta función también verifica y activa el pedido si todas las órdenes tienen stock
+      const { assignStockToCutOrder } = await import('@/app/actions/stock-management')
+      await assignStockToCutOrder(
+        cutOrder.id,
+        selectedStock.id,
+        product.id,
+        product.length_meters
+      )
 
-      if (error) throw error
-
+      console.log('✅ Stock asignado correctamente')
       onSuccess()
     } catch (error) {
       console.error('Error changing stock:', error)
