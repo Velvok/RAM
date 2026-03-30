@@ -39,6 +39,7 @@ export default function PlantaPedidoDetallePage() {
   const [showOtherOptions, setShowOtherOptions] = useState<Record<string, boolean>>({})
   const [showRemnantAdjust, setShowRemnantAdjust] = useState<Record<string, boolean>>({})
   const [markingAsDelivered, setMarkingAsDelivered] = useState(false)
+  const [undoingDelivery, setUndoingDelivery] = useState(false)
 
   useEffect(() => {
     const operatorData = localStorage.getItem('operator')
@@ -134,6 +135,36 @@ export default function PlantaPedidoDetallePage() {
       showError(error?.message || 'No se pudo marcar el pedido como entregado', 'Error')
     } finally {
       setMarkingAsDelivered(false)
+    }
+  }
+
+  async function handleUndoDelivery() {
+    if (!pedido) return
+    
+    const confirmed = confirm(
+      '¿Estás seguro de deshacer esta entrega?\n\n' +
+      'Esta acción restaurará el stock consumido y revertirá el estado del pedido. Solo se puede hacer dentro de las primeras 24 horas.'
+    )
+    
+    if (!confirmed) return
+    
+    setUndoingDelivery(true)
+    
+    try {
+      const { undoOrderDelivery } = await import('@/app/actions/orders')
+      await undoOrderDelivery(pedido.id)
+      
+      // Recargar el pedido para ver el nuevo estado
+      await loadPedido()
+      
+      // Mostrar mensaje de éxito
+      alert('¡Entrega deshecha correctamente! El stock ha sido restaurado.')
+      
+    } catch (error: any) {
+      console.error('Error deshaciendo entrega:', error)
+      showError(error?.message || 'No se pudo deshacer la entrega', 'Error')
+    } finally {
+      setUndoingDelivery(false)
     }
   }
 
@@ -457,22 +488,8 @@ export default function PlantaPedidoDetallePage() {
         successLines.push(`⚠️ Pendientes: ${cutOrder.quantity_requested - newQuantityCut} unidades`)
       }
       
-      // Actualizar estado local del pedido SIN recargar desde la BD
-      setPedido((prev: any) => {
-        if (!prev) return prev
-        return {
-          ...prev,
-          cut_orders: prev.cut_orders.map((co: any) => 
-            co.id === cutId 
-              ? { 
-                  ...co, 
-                  quantity_cut: newQuantityCut,
-                  status: isFullyCompleted ? 'completada' : 'pendiente'
-                }
-              : co
-          )
-        }
-      })
+      // Recargar el pedido completo desde la BD para actualizar el estado
+      await loadPedido()
       
       // Limpiar inputs
       setExpandedCutId(null)
@@ -584,6 +601,18 @@ export default function PlantaPedidoDetallePage() {
                 >
                   <Truck className="w-4 h-4" />
                   {markingAsDelivered ? 'Entregando...' : 'Entregado'}
+                </button>
+              )}
+              
+              {/* Botón Deshacer Entrega */}
+              {pedido.status === 'entregado' && (
+                <button
+                  onClick={handleUndoDelivery}
+                  disabled={undoingDelivery}
+                  className="flex items-center gap-2 px-4 py-1.5 bg-orange-600 hover:bg-orange-500 text-white rounded-lg border border-orange-500 text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  {undoingDelivery ? 'Deshaciendo...' : 'Deshacer'}
                 </button>
               )}
               

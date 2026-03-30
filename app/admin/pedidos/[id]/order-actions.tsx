@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { generateCutOrders, getOrderById, approveOrderOnHold } from '@/app/actions/orders'
+import { generateCutOrders, getOrderById, approveOrderOnHold, undoOrderDelivery } from '@/app/actions/orders'
 import { useRouter } from 'next/navigation'
 import { useConfirm } from '@/components/confirm-modal'
 import { useError } from '@/components/error-modal'
@@ -17,6 +17,7 @@ export default function OrderActions({
   isHeaderMode?: boolean
 }) {
   const [loading, setLoading] = useState(false)
+  const [undoingDelivery, setUndoingDelivery] = useState(false)
   const [order, setOrder] = useState(initialOrder)
   const router = useRouter()
   const { confirm, ConfirmDialog } = useConfirm()
@@ -127,6 +128,33 @@ export default function OrderActions({
     }
   }
 
+  async function handleUndoDelivery() {
+    const confirmed = await confirm(
+      '¿Estás seguro de deshacer esta entrega?',
+      'Esta acción restaurará el stock consumido y revertirá el estado del pedido. Solo se puede hacer dentro de las primeras 24 horas.'
+    )
+    
+    if (!confirmed) return
+    
+    setUndoingDelivery(true)
+    try {
+      await undoOrderDelivery(order.id)
+      await reloadOrder()
+      
+      showSuccess(
+        'Entrega deshecha correctamente. El stock ha sido restaurado.',
+        '✓ Entrega Deshecha'
+      )
+    } catch (error: any) {
+      showError(error?.message || 'No se pudo deshacer la entrega', 'Error al Deshacer')
+    } finally {
+      setUndoingDelivery(false)
+    }
+  }
+
+  // Verificar si se puede deshacer la entrega (dentro de 24h y estado entregado)
+  const canUndoDelivery = order.status === 'entregado'
+
   // Modo header: solo botones sin cuadro
   if (isHeaderMode) {
     return (
@@ -170,6 +198,17 @@ export default function OrderActions({
               className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Marcar como Entregado
+            </button>
+          )}
+
+          {/* Deshacer Entrega */}
+          {canUndoDelivery && (
+            <button
+              onClick={handleUndoDelivery}
+              disabled={undoingDelivery}
+              className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {undoingDelivery ? 'Deshaciendo...' : 'Deshacer Entrega'}
             </button>
           )}
         </div>
@@ -233,8 +272,21 @@ export default function OrderActions({
           )}
 
           {order.status === 'entregado' && (
-            <div className="px-4 py-3 bg-blue-100 text-blue-800 rounded-lg font-semibold text-center">
-              Pedido Entregado
+            <div className="space-y-3">
+              <div className="px-4 py-3 bg-blue-100 text-blue-800 rounded-lg font-semibold text-center">
+                Pedido Entregado
+              </div>
+              
+              {/* Deshacer Entrega */}
+              {canUndoDelivery && (
+                <button
+                  onClick={handleUndoDelivery}
+                  disabled={undoingDelivery}
+                  className="w-full px-4 py-3 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {undoingDelivery ? 'Deshaciendo...' : 'Deshacer Entrega'}
+                </button>
+              )}
             </div>
           )}
         </div>

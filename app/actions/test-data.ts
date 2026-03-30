@@ -9,16 +9,22 @@ export async function generateTestOrder(status: string = 'nuevo', numLines: numb
   const supabase = await createClient()
 
   // Obtener un cliente aleatorio
-  const { data: clients, error: clientError } = await supabase
+  const { data: clientData, error: clientError } = await supabase
     .from('clients')
     .select('id')
     .limit(1)
-    .single()
 
   if (clientError) {
     console.error('❌ Error obteniendo cliente:', clientError)
     return { error: 'Error obteniendo cliente: ' + clientError.message }
   }
+
+  if (!clientData || clientData.length === 0) {
+    console.error('❌ No se encontraron clientes')
+    return { error: 'No se encontraron clientes' }
+  }
+
+  const clients = clientData[0]
 
   if (!clients) {
     console.error('❌ No hay clientes disponibles')
@@ -101,7 +107,7 @@ export async function generateTestOrder(status: string = 'nuevo', numLines: numb
   }
 
   // Crear pedido - SIEMPRE en estado 'nuevo'
-  const { data: order, error: orderError } = await supabase
+  const { data: orderData, error: orderError } = await supabase
     .from('orders')
     .insert({
       order_number: orderNumber,
@@ -111,12 +117,18 @@ export async function generateTestOrder(status: string = 'nuevo', numLines: numb
       notes: `Pedido de prueba con ${numLines} línea(s)`,
     })
     .select()
-    .single()
 
   if (orderError) {
     console.error('❌ Error creating order:', orderError)
     return { error: orderError.message }
   }
+
+  if (!orderData || orderData.length === 0) {
+    console.error('❌ No se devolvió ningún pedido después del insert')
+    return { error: 'No se pudo crear el pedido' }
+  }
+
+  const order = orderData[0]
 
   console.log('✅ Pedido creado:', order.id, order.order_number)
 
@@ -145,8 +157,29 @@ export async function generateTestOrder(status: string = 'nuevo', numLines: numb
   // NO crear órdenes de corte automáticamente
   // Las órdenes de corte se crean solo cuando el admin aprueba el pedido
 
-  // Revalidar TODO el sistema
+  // Revalidar de forma ultra agresiva para que aparezca inmediatamente
+  console.log('🔄 Revalidando TODAS las rutas...')
+  revalidatePath('/admin', 'layout')
+  revalidatePath('/admin/pedidos', 'layout')
+  revalidatePath('/admin/pedidos', 'page')
+  revalidatePath('/planta', 'layout')
+  revalidatePath('/planta/pedidos', 'layout')
+  
+  // Revalidar tags si existen
+  try {
+    revalidateTag('orders')
+    revalidateTag('pedidos')
+    revalidateTag('admin')
+  } catch (e) {
+    // Ignorar errores de tags si no existen
+  }
+  
+  // También revalidar todo
   revalidateAll()
+  
+  // Forzar revalidación de la página específica
+  revalidatePath(`/admin/pedidos/${order.id}`, 'page')
+  revalidatePath(`/planta/pedidos/${order.id}`, 'page')
   
   console.log('✅ Pedido de prueba generado exitosamente:', order.order_number)
   

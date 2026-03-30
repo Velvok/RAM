@@ -97,7 +97,13 @@ export async function startCutOrder(cutOrderId: string, operatorId: string) {
   // Actualizar estado del pedido
   await updateOrderStatus(cutOrder.order_id)
 
-  // Revalidar cortes
+  // Revalidar de forma agresiva para actualizar la tablet inmediatamente
+  revalidatePath('/planta', 'layout')
+  revalidatePath('/admin', 'layout')
+  revalidatePath(`/planta/pedidos/${cutOrder.order_id}`)
+  revalidatePath(`/admin/pedidos/${cutOrder.order_id}`)
+  
+  // También revalidar las rutas estándar
   revalidateCuts(cutOrderId)
   return data
 }
@@ -219,7 +225,13 @@ export async function finishCutOrder(
   // Actualizar estado del pedido
   await updateOrderStatus(cutOrder.order_id)
 
-  // Revalidar pedidos, stock y cortes
+  // Revalidar de forma agresiva para actualizar la tablet inmediatamente
+  revalidatePath('/planta', 'layout')
+  revalidatePath('/admin', 'layout')
+  revalidatePath(`/planta/pedidos/${cutOrder.order_id}`)
+  revalidatePath(`/admin/pedidos/${cutOrder.order_id}`)
+  
+  // También revalidar las rutas estándar
   revalidateOrders(cutOrder.order_id)
   revalidateStock()
   revalidateCuts(cutOrderId)

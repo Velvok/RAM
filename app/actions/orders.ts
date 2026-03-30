@@ -37,10 +37,11 @@ export async function getOrderById(id: string) {
       )
     `)
     .eq('id', id)
-    .single()
+    .limit(1)
 
   if (error) throw error
-  return data
+  if (!data || data.length === 0) return null
+  return data[0]
 }
 
 export async function cancelOrder(orderId: string) {
@@ -51,7 +52,6 @@ export async function cancelOrder(orderId: string) {
     .update({ status: 'cancelado' })
     .eq('id', orderId)
     .select()
-    .single()
 
   if (error) throw error
 
@@ -84,13 +84,17 @@ export async function approveOrderOnHold(orderId: string) {
   const { data: { user } } = await supabase.auth.getUser()
 
   // Obtener el pedido con sus líneas
-  const { data: order, error: orderError } = await supabase
+  const { data: orderData, error: orderError } = await supabase
     .from('orders')
     .select('*, order_lines(*, product:products(*))')
     .eq('id', orderId)
-    .single()
+    .limit(1)
 
   if (orderError) throw orderError
+  if (!orderData || orderData.length === 0) {
+    throw new Error('Pedido no encontrado')
+  }
+  const order = orderData[0]
 
   // Verificar que el pedido esté en estado 'nuevo'
   if (order.status !== 'nuevo') {
@@ -181,13 +185,17 @@ export async function approveOrder(orderId: string) {
   const { data: { user } } = await supabase.auth.getUser()
 
   // Obtener el pedido con sus líneas
-  const { data: order, error: orderError } = await supabase
+  const { data: orderData, error: orderError } = await supabase
     .from('orders')
     .select('*, order_lines(*, product:products(*))')
     .eq('id', orderId)
-    .single()
+    .limit(1)
 
   if (orderError) throw orderError
+  if (!orderData || orderData.length === 0) {
+    throw new Error('Pedido no encontrado')
+  }
+  const order = orderData[0]
 
   // Verificar que el pedido esté en estado 'nuevo'
   if (order.status !== 'nuevo') {
@@ -221,7 +229,7 @@ export async function approveOrder(orderId: string) {
     const cutNumber = `CUT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
     
     // Crear la orden de corte AGRUPADA
-    const { data: cutOrder, error: cutError } = await supabase
+    const { data: cutOrderData, error: cutError } = await supabase
       .from('cut_orders')
       .insert({
         cut_number: cutNumber,
@@ -232,12 +240,20 @@ export async function approveOrder(orderId: string) {
         status: 'pendiente',
       })
       .select()
-      .single()
     
     if (cutError) {
+      console.error('Error creando orden de corte:', cutError)
       errors.push(`Error creando orden de corte: ${cutError.message}`)
       continue
     }
+
+    if (!cutOrderData || cutOrderData.length === 0) {
+      console.error('No se devolvió ninguna orden de corte después del insert')
+      errors.push('Error: No se pudo crear la orden de corte')
+      continue
+    }
+
+    const cutOrder = cutOrderData[0]
 
     console.log(`✅ Orden de corte creada: ${cutNumber} - ${units} unidades de ${productSize}m`)
     
@@ -351,6 +367,12 @@ export async function updateOrderStatus(orderId: string) {
     .update({ status: newStatus })
     .eq('id', orderId)
 
+  // Revalidar de forma agresiva para actualizar la tablet inmediatamente
+  revalidatePath('/planta', 'layout')
+  revalidatePath('/admin', 'layout')
+  revalidatePath(`/planta/pedidos/${orderId}`)
+  revalidatePath(`/admin/pedidos/${orderId}`)
+  
   // Revalidar estado del pedido
   revalidateOrderStatus(orderId)
 }
@@ -361,6 +383,9 @@ export async function updateOrderStatus(orderId: string) {
  */
 export async function markOrderAsDelivered(orderId: string) {
   const supabase = await createClient()
+
+  // Obtener usuario actual
+  const { data: { user } } = await supabase.auth.getUser()
 
   // Verificar que todas las órdenes estén completadas
   const { data: cutOrders, error: cutOrdersError } = await supabase
@@ -376,23 +401,45 @@ export async function markOrderAsDelivered(orderId: string) {
     throw new Error('No se puede marcar como entregado: hay órdenes pendientes')
   }
 
+  // Obtener estado anterior del pedido
+  const { data: orderData, error: orderError } = await supabase
+    .from('orders')
+    .select('status, order_number')
+    .eq('id', orderId)
+    .single()
+
+  if (orderError) throw orderError
+
+  // Preparar información del stock consumido para historial
+  const stockConsumed = []
+  const previousStatus = orderData.status
+
   // NUEVO: Consumir stock reservado según quantity_requested de cada orden
   for (const cutOrder of cutOrders || []) {
     if (cutOrder.material_base_id) {
       // Obtener el inventory_id del producto asignado
-      const { data: inventory, error: invError } = await supabase
+      const { data: inventoryData, error: invError } = await supabase
         .from('inventory')
         .select('id')
         .eq('product_id', cutOrder.material_base_id)
-        .single()
+        .limit(1)
 
-      if (invError || !inventory) {
+      if (invError || !inventoryData || inventoryData.length === 0) {
         console.error('Error finding inventory:', invError)
         continue
       }
 
+      const inventory = inventoryData[0]
+
       // NUEVO: Consumir quantity_requested unidades (no solo 1)
       console.log(`📦 Consumiendo ${cutOrder.quantity_requested} unidades de stock para orden ${cutOrder.id}`)
+      
+      // Guardar información del stock consumido para historial
+      stockConsumed.push({
+        cut_order_id: cutOrder.id,
+        inventory_id: inventory.id,
+        quantity: cutOrder.quantity_requested
+      })
       
       for (let i = 0; i < cutOrder.quantity_requested; i++) {
         const { error: stockError } = await supabase.rpc('consume_reserved_stock', {
@@ -417,20 +464,50 @@ export async function markOrderAsDelivered(orderId: string) {
 
   if (updateError) throw updateError
 
-  // Registrar en el log
-  const { data: order } = await supabase
-    .from('orders')
-    .select('order_number')
-    .eq('id', orderId)
-    .single()
+  // NUEVO: Guardar en historial de entregas para poder deshacer
+  console.log('📝 Guardando en delivery_history...', {
+    order_id: orderId,
+    delivered_by: user?.id,
+    previous_status: previousStatus,
+    stock_consumed_count: stockConsumed.length,
+    stock_consumed: stockConsumed
+  })
 
-  if (order) {
+  const { data: historyData, error: historyError } = await supabase
+    .from('delivery_history')
+    .insert({
+      order_id: orderId,
+      delivered_by: user?.id,
+      previous_status: previousStatus,
+      stock_consumed: stockConsumed
+    })
+    .select()
+
+  if (historyError) {
+    console.error('❌ Error guardando historial de entrega:', historyError)
+    console.error('❌ Detalles:', {
+      code: historyError.code,
+      message: historyError.message,
+      details: historyError.details,
+      hint: historyError.hint
+    })
+    // No lanzar error, la entrega ya se completó
+  } else if (historyData && historyData.length > 0) {
+    console.log('✅ delivery_history guardado correctamente:', historyData[0].id)
+  } else {
+    console.error('❌ No se devolvieron datos después de insertar en delivery_history')
+  }
+
+  // Registrar en el log
+  if (orderData) {
     await supabase.from('order_activity_log').insert({
       order_id: orderId,
       activity_type: 'delivered',
-      description: `Pedido ${order.order_number} marcado como entregado`,
+      description: `Pedido ${orderData.order_number} marcado como entregado`,
       metadata: {
-        cut_orders_count: cutOrders?.length || 0
+        cut_orders_count: cutOrders?.length || 0,
+        previous_status: previousStatus,
+        stock_consumed_count: stockConsumed.length
       }
     })
   }
@@ -439,5 +516,108 @@ export async function markOrderAsDelivered(orderId: string) {
   revalidateOrders(orderId)
   revalidateStock()
 
+  return { success: true }
+}
+
+/**
+ * Deshacer entrega de un pedido (solo dentro de 24 horas)
+ * Restaura el stock consumido y revierte el estado del pedido
+ */
+export async function undoOrderDelivery(orderId: string) {
+  const supabase = await createClient()
+
+  // Obtener usuario actual
+  const { data: { user } } = await supabase.auth.getUser()
+
+  // Buscar historial activo de esta entrega
+  const { data: deliveryHistory, error: historyError } = await supabase
+    .from('delivery_history')
+    .select('*')
+    .eq('order_id', orderId)
+    .eq('is_active', true)
+    .single()
+
+  if (historyError) {
+    if (historyError.code === 'PGRST116') {
+      throw new Error('No se encontró historial de entrega para este pedido')
+    }
+    throw historyError
+  }
+
+  // Verificar que esté dentro de las 24 horas
+  const deliveredAt = new Date(deliveryHistory.delivered_at)
+  const now = new Date()
+  const hoursDiff = (now.getTime() - deliveredAt.getTime()) / (1000 * 60 * 60)
+
+  if (hoursDiff > 24) {
+    throw new Error('Solo se puede deshacer una entrega dentro de las primeras 24 horas')
+  }
+
+  console.log(`🔄 Deshaciendo entrega del pedido ${orderId} (${hoursDiff.toFixed(1)}h después)`)
+
+  // 1. Restaurar el stock consumido
+  for (const stockItem of deliveryHistory.stock_consumed) {
+    console.log(`📦 Restaurando ${stockItem.quantity} unidades de stock para inventory ${stockItem.inventory_id}`)
+    
+    for (let i = 0; i < stockItem.quantity; i++) {
+      // Crear función para restaurar stock (opuesto de consume_reserved_stock)
+      const { error: restoreError } = await supabase.rpc('restore_reserved_stock', {
+        p_inventory_id: stockItem.inventory_id
+      })
+
+      if (restoreError) {
+        console.error(`Error restaurando stock (unit ${i + 1}/${stockItem.quantity}):`, restoreError)
+      }
+    }
+  }
+
+  // 2. Revertir el estado del pedido
+  const { error: updateError } = await supabase
+    .from('orders')
+    .update({ status: deliveryHistory.previous_status })
+    .eq('id', orderId)
+
+  if (updateError) throw updateError
+
+  // 3. Marcar el historial como inactivo
+  const { error: deactivateError } = await supabase
+    .from('delivery_history')
+    .update({ 
+      is_active: false,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', deliveryHistory.id)
+
+  if (deactivateError) {
+    console.error('Error desactivando historial:', deactivateError)
+  }
+
+  // 4. Registrar en el log
+  const { data: orderData } = await supabase
+    .from('orders')
+    .select('order_number')
+    .eq('id', orderId)
+    .limit(1)
+
+  if (orderData && orderData.length > 0) {
+    const order = orderData[0]
+    await supabase.from('order_activity_log').insert({
+      order_id: orderId,
+      activity_type: 'delivery_undone',
+      description: `Entrega del pedido ${order.order_number} deshecha`,
+      metadata: {
+        delivered_at: deliveryHistory.delivered_at,
+        undone_by: user?.id,
+        restored_status: deliveryHistory.previous_status,
+        stock_restored_count: deliveryHistory.stock_consumed.length
+      }
+    })
+  }
+
+  // Revalidar pedidos y stock
+  revalidateOrders(orderId)
+  revalidateStock()
+
+  console.log(`✅ Entrega del pedido ${orderId} deshecha correctamente`)
   return { success: true }
 }
