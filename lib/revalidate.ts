@@ -38,34 +38,53 @@ export function revalidateAll() {
  * Optimizado para evitar revalidaciones innecesarias
  */
 export function revalidateOrders(orderId?: string) {
-  console.log(`🔄 Revalidando pedidos${orderId ? ` (ID: ${orderId})` : ''}`)
+  console.log(` Revalidando pedidos${orderId ? ` (ID: ${orderId})` : ''}`)
   
-  // Revalidar pedido específico si se proporciona ID
+  // Revalidar layouts primero
+  revalidatePath('/admin', 'layout')
+  revalidatePath('/planta', 'layout')
+  revalidatePath('/admin/pedidos', 'layout')
+  revalidatePath('/planta/pedidos', 'layout')
+  
+  // Luego páginas específicas
+  revalidatePath('/admin/pedidos', 'page')
+  revalidatePath('/planta/pedidos', 'page')
+  
   if (orderId) {
     revalidatePath(`/admin/pedidos/${orderId}`, 'page')
     revalidatePath(`/planta/pedidos/${orderId}`, 'page')
   }
-  
-  // Revalidar listas de pedidos
-  revalidatePath('/admin/pedidos', 'page')
-  revalidatePath('/planta/pedidos', 'page')
-  revalidatePath('/admin', 'page')
 }
 
 /**
  * Revalida rutas relacionadas con stock
  */
 export function revalidateStock() {
-  console.log('🔄 Revalidando stock')
+  console.log(' Revalidando stock')
   
+  // Revalidar layouts primero
+  revalidatePath('/admin', 'layout')
+  revalidatePath('/admin/stock', 'layout')
+  
+  // Luego páginas
   revalidatePath('/admin/stock', 'page')
   revalidatePath('/admin', 'page')
+  revalidatePath('/admin/recortes', 'page')
 }
 
 /**
  * Revalida rutas relacionadas con órdenes de corte
  */
 export function revalidateCuts(cutOrderId?: string) {
+  console.log(` Revalidando cortes${cutOrderId ? ` (ID: ${cutOrderId})` : ''}`)
+  
+  // Revalidar layouts primero
+  revalidatePath('/planta', 'layout')
+  revalidatePath('/admin', 'layout')
+  
+  // Luego páginas
+  revalidatePath('/planta/ordenes', 'page')
+  revalidatePath('/admin/pedidos', 'page')
   console.log(`🔄 Revalidando cortes${cutOrderId ? ` (ID: ${cutOrderId})` : ''}`)
   
   if (cutOrderId) {

@@ -576,6 +576,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
 function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
   const [availableStock, setAvailableStock] = useState<any[]>([])
   const [selectedStock, setSelectedStock] = useState<any>(null)
+  const [quantityForNewMaterial, setQuantityForNewMaterial] = useState<number>(1)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -668,6 +669,17 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
   async function handleChangeStock() {
     if (!selectedStock) return
 
+    // Validar cantidad
+    if (!quantityForNewMaterial || quantityForNewMaterial < 1) {
+      alert('Por favor ingresa una cantidad válida de unidades')
+      return
+    }
+
+    if (quantityForNewMaterial > cutOrder.quantity_requested) {
+      alert(`La cantidad no puede exceder lo solicitado (${cutOrder.quantity_requested})`)
+      return
+    }
+
     try {
       setLoading(true)
       const { createClient } = await import('@/lib/supabase/client')
@@ -679,53 +691,121 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
         return
       }
 
-      // Calcular cuántas unidades quedan pendientes (no cortadas)
-      const quantityPending = cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)
-      console.log(`📊 Pendientes de cortar: ${quantityPending} de ${cutOrder.quantity_requested}`)
+      console.log('🔄 Reasignando material...')
+      console.log('   Material anterior:', cutOrder.material_base_id)
+      console.log('   Material nuevo:', product.id)
+      console.log('   Cantidad para nuevo material:', quantityForNewMaterial)
+      console.log('   Total de la orden:', cutOrder.quantity_requested)
 
-      // 1. Si había stock anterior asignado, liberar las reservas PENDIENTES
-      if (cutOrder.material_base_id) {
-        console.log('Liberando reservas del stock anterior...')
+      // Obtener inventory_id del stock original
+      const { data: oldInventory } = await supabase
+        .from('inventory')
+        .select('id')
+        .eq('product_id', cutOrder.material_base_id)
+        .single()
+
+      const { reserveStock, unreserveStock } = await import('@/app/actions/stock-management')
+
+      // CASO 1: Reasignación COMPLETA (todas las unidades)
+      if (quantityForNewMaterial === cutOrder.quantity_requested) {
+        console.log('📋 REASIGNACIÓN COMPLETA - Actualizando material de la orden existente')
         
-        // Obtener inventory_id del stock anterior
-        const { data: oldInventory } = await supabase
-          .from('inventory')
-          .select('id')
-          .eq('product_id', cutOrder.material_base_id)
+        // Liberar stock del material anterior
+        if (oldInventory) {
+          console.log(`📤 Liberando ${quantityForNewMaterial} reservas del material original...`)
+          await unreserveStock(oldInventory.id, quantityForNewMaterial)
+          console.log(`✅ Liberadas ${quantityForNewMaterial} reservas`)
+        }
+        
+        // Reservar stock del nuevo material
+        console.log(`📥 Reservando ${quantityForNewMaterial} unidades del nuevo material...`)
+        for (let i = 0; i < quantityForNewMaterial; i++) {
+          await reserveStock(selectedStock.id)
+        }
+        console.log(`✅ Reservadas ${quantityForNewMaterial} unidades`)
+        
+        // Actualizar la orden existente con el nuevo material
+        await supabase
+          .from('cut_orders')
+          .update({ 
+            material_base_id: product.id,
+            material_base_quantity: product.length_meters,
+            material_quantity: 1
+          })
+          .eq('id', cutOrder.id)
+        
+        console.log('✅ Material actualizado en la orden existente')
+        alert(`✅ Material actualizado\n\n${quantityForNewMaterial} unidades ahora con ${product.name}`)
+      } 
+      // CASO 2: Reasignación PARCIAL (solo algunas unidades)
+      else {
+        console.log('📋 REASIGNACIÓN PARCIAL - Dividiendo en 2 órdenes')
+        
+        // Liberar stock del material anterior (solo las unidades que se mueven)
+        if (oldInventory) {
+          console.log(`📤 Liberando ${quantityForNewMaterial} reservas del material original...`)
+          await unreserveStock(oldInventory.id, quantityForNewMaterial)
+          console.log(`✅ Liberadas ${quantityForNewMaterial} reservas`)
+        }
+        
+        // Reducir la cantidad de la orden original
+        const newQuantityOriginal = cutOrder.quantity_requested - quantityForNewMaterial
+        console.log(`📝 Reduciendo orden original a ${newQuantityOriginal} unidades...`)
+        await supabase
+          .from('cut_orders')
+          .update({ 
+            quantity_requested: newQuantityOriginal
+          })
+          .eq('id', cutOrder.id)
+        
+        // Reservar el nuevo stock
+        console.log(`📥 Reservando ${quantityForNewMaterial} unidades del nuevo material...`)
+        for (let i = 0; i < quantityForNewMaterial; i++) {
+          await reserveStock(selectedStock.id)
+        }
+        console.log(`✅ Reservadas ${quantityForNewMaterial} unidades`)
+        
+        // Generar número de corte manteniendo el prefijo de la orden principal
+        // Formato: CUT-[timestamp_original]-[sufijo_nuevo]
+        const originalCutNumber = cutOrder.cut_number
+        const cutPrefix = originalCutNumber.substring(0, originalCutNumber.lastIndexOf('-'))
+        const newSuffix = Math.random().toString(36).substr(2, 9)
+        const cutNumber = `${cutPrefix}-${newSuffix}`
+        
+        console.log(`📋 Número de corte generado: ${cutNumber} (basado en ${originalCutNumber})`)
+        
+        // Crear nueva suborden de corte con el nuevo material
+        console.log('➕ Creando nueva suborden de corte...')
+        const { data: newCutOrder, error: createError } = await supabase
+          .from('cut_orders')
+          .insert({
+            order_id: cutOrder.order_id,
+            product_id: cutOrder.product_id,
+            cut_number: cutNumber,
+            parent_cut_order_id: cutOrder.id, // Relacionar con la orden principal
+            quantity_requested: quantityForNewMaterial,
+            quantity_cut: 0,
+            status: 'pendiente',
+            material_base_id: product.id,
+            material_base_quantity: product.length_meters,
+            material_quantity: 1
+          })
+          .select()
           .single()
 
-        if (oldInventory) {
-          // Liberar solo las unidades PENDIENTES (no las ya cortadas)
-          const { unreserveStock } = await import('@/app/actions/stock-management')
-          await unreserveStock(oldInventory.id, quantityPending)
-          console.log(`✅ Liberadas ${quantityPending} reservas del stock anterior (${cutOrder.quantity_cut || 0} ya cortadas se mantienen)`)
+        if (createError) {
+          throw createError
         }
-      }
 
-      // 2. Reservar en el nuevo stock solo las PENDIENTES
-      console.log('Reservando en el nuevo stock...')
-      const { reserveStock } = await import('@/app/actions/stock-management')
+        console.log('✅ Nueva suborden de corte creada:', newCutOrder.id)
+        alert(`✅ Nueva suborden creada\n\n${quantityForNewMaterial} unidades con ${product.name}\n\nLa orden original ahora tiene ${newQuantityOriginal} unidades`)
+      }
       
-      for (let i = 0; i < quantityPending; i++) {
-        await reserveStock(selectedStock.id)
-      }
-      console.log(`✅ Reservadas ${quantityPending} unidades en el nuevo stock`)
-
-      // 3. Actualizar la asignación en cut_orders usando assignStockToCutOrder
-      // Esta función también verifica y activa el pedido si todas las órdenes tienen stock
-      const { assignStockToCutOrder } = await import('@/app/actions/stock-management')
-      await assignStockToCutOrder(
-        cutOrder.id,
-        selectedStock.id,
-        product.id,
-        product.length_meters
-      )
-
-      console.log('✅ Stock asignado correctamente')
       onSuccess()
-    } catch (error) {
-      console.error('Error changing stock:', error)
-      alert('Error al cambiar stock: ' + (error as any).message)
+      onClose()
+    } catch (error: any) {
+      console.error('Error creating new cut order:', error)
+      alert(`Error al crear nueva orden: ${error.message}`)
     } finally {
       setLoading(false)
     }
@@ -824,20 +904,43 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
         </div>
 
         {/* Footer */}
-        <div className="p-6 border-t bg-slate-50 flex gap-3">
-          <button
-            onClick={onClose}
-            className="flex-1 px-4 py-2 border border-slate-300 rounded-lg hover:bg-white transition-colors"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={handleChangeStock}
-            disabled={!selectedStock || loading}
-            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors font-medium"
-          >
-            {loading ? 'Cambiando...' : selectedStock ? `Asignar ${(Array.isArray(selectedStock.product) ? selectedStock.product[0] : selectedStock.product)?.length_meters}m` : 'Seleccionar Stock'}
-          </button>
+        <div className="p-6 border-t bg-slate-50">
+          {/* Input de cantidad de unidades */}
+          {selectedStock && (
+            <div className="mb-4 p-4 bg-white border border-slate-200 rounded-lg">
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                ¿Cuántas unidades vas a cortar con este material?
+              </label>
+              <input
+                type="number"
+                min="1"
+                max={cutOrder.quantity_requested}
+                value={quantityForNewMaterial}
+                onChange={(e) => setQuantityForNewMaterial(parseInt(e.target.value) || 1)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="1"
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                Se creará una nueva orden de corte con esta cantidad. La orden original se reducirá.
+              </p>
+            </div>
+          )}
+          
+          <div className="flex gap-3">
+            <button
+              onClick={onClose}
+              className="flex-1 px-4 py-2 border border-slate-300 rounded-lg hover:bg-white transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleChangeStock}
+              disabled={!selectedStock || loading}
+              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors font-medium"
+            >
+              {loading ? 'Cambiando...' : selectedStock ? `Asignar ${(Array.isArray(selectedStock.product) ? selectedStock.product[0] : selectedStock.product)?.length_meters}m` : 'Seleccionar Stock'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
