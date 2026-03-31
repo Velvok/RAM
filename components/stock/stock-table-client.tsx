@@ -20,6 +20,21 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
   const [sortField, setSortField] = useState<SortField>(null)
   const [sortDirection, setSortDirection] = useState<SortDirection>(null)
 
+  // Aplicar filtro desde sessionStorage si viene del dashboard
+  useEffect(() => {
+    const savedFilter = sessionStorage.getItem('stockFilter')
+    if (savedFilter) {
+      try {
+        const filterData = JSON.parse(savedFilter)
+        setFilters(prev => ({ ...prev, ...filterData }))
+        // Limpiar el filtro guardado
+        sessionStorage.removeItem('stockFilter')
+      } catch (error) {
+        console.error('Error parsing stock filter:', error)
+      }
+    }
+  }, [])
+
   // Extraer categorías únicas del inventario
   const availableCategories = useMemo(() => {
     const categories = new Set<string>()
@@ -135,6 +150,7 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
       <StockFilters 
         onFilterChange={handleFilterChange} 
         availableCategories={availableCategories}
+        initialFilters={filters}
       />
 
       <div className="bg-white rounded-lg shadow overflow-hidden">
