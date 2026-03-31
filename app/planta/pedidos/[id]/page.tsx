@@ -83,8 +83,14 @@ export default function PlantaPedidoDetallePage() {
           cut_orders:cut_orders!cut_orders_order_id_fkey(
             *,
             product:products!cut_orders_product_id_fkey(*),
+            material_product:products!cut_orders_material_base_id_fkey(*),
             assigned_operator:users!cut_orders_assigned_to_fkey(*),
-            reassigned_from_order:orders!cut_orders_reassigned_from_order_id_fkey(order_number)
+            reassigned_from_order:orders!cut_orders_reassigned_from_order_id_fkey(order_number),
+            sub_orders:cut_orders!parent_cut_order_id(
+              *,
+              product:products!cut_orders_product_id_fkey(*),
+              material_product:products!cut_orders_material_base_id_fkey(*)
+            )
           )
         `)
         .eq('id', pedidoId)
@@ -319,27 +325,27 @@ export default function PlantaPedidoDetallePage() {
       return
     }
     
-    // Calcular recorte automáticamente
-    const materialLength = selectedMaterial.length // Tamaño del material usado (ej: 9.5m)
-    const quantityToCut = parseInt(quantityInputs[cutId] || '0') // Cantidad de unidades a cortar
+    // Calcular si es un corte real o solo consumo de stock exacto
+    const materialLength = selectedMaterial.length // Tamaño del material usado (ej: 6.5m)
+    const quantityToCut = parseInt(quantityInputs[cutId] || '0') // Cantidad de unidades a cortar (ej: 3)
     const productSize = cutOrder.product?.length_meters || 
                        parseFloat(cutOrder.product?.code?.match(/\.(\d+),(\d+)$/)?.[0]?.replace('.', '')?.replace(',', '.') || '0') ||
-                       cutOrder.quantity_requested // Tamaño de cada pieza (ej: 0.5m)
-    const totalLengthNeeded = productSize * quantityToCut // Total a cortar (ej: 0.5m × 5 = 2.5m)
-    const calculatedRemnant = Math.max(0, materialLength - totalLengthNeeded)
+                       cutOrder.quantity_requested // Tamaño de cada pieza (ej: 4.5m)
     
-    // Permitir override manual si el operario ingresó un valor
-    const remnantLength = remnantInputs[cutId] 
-      ? parseFloat(remnantInputs[cutId]) 
-      : calculatedRemnant
+    // Determinar si es un MATCH EXACTO o un CORTE REAL
+    const isExactMatch = Math.abs(materialLength - productSize) < 0.01 // Tolerancia de 1cm
+    const remnantPerSheet = Math.max(0, materialLength - productSize)
+    const sheetsUsed = quantityToCut // 1 chapa por pieza
     
-    console.log(`📏 Cálculo de recorte:`)
-    console.log(`   Material usado: ${materialLength}m`)
-    console.log(`   Tamaño por pieza: ${productSize}m`)
-    console.log(`   Cantidad a cortar: ${quantityToCut} unidades`)
-    console.log(`   Total a cortar: ${totalLengthNeeded}m`)
-    console.log(`   Recorte calculado: ${calculatedRemnant}m`)
-    console.log(`   Recorte final: ${remnantLength}m`)
+    console.log(`📏 Análisis de operación:`)
+    console.log(`   Material asignado: ${materialLength}m`)
+    console.log(`   Tamaño requerido: ${productSize}m`)
+    console.log(`   Cantidad: ${quantityToCut} unidades`)
+    console.log(`   Tipo: ${isExactMatch ? '🎯 MATCH EXACTO (sin corte)' : '✂️ CORTE REAL'}`)
+    if (!isExactMatch) {
+      console.log(`   Remanente por chapa: ${remnantPerSheet}m`)
+      console.log(`   Total remanentes: ${sheetsUsed} × ${remnantPerSheet}m`)
+    }
 
     setProcessing(prev => ({ ...prev, [cutId]: true }))
     
@@ -424,28 +430,96 @@ export default function PlantaPedidoDetallePage() {
       const { updateOrderStatus } = await import('@/app/actions/orders')
       await updateOrderStatus(cutOrder.order_id)
       
-      // 3. Si hay recorte, validar que existe el producto ANTES de consumir stock
-      if (remnantLength > 0) {
-        const { generateRemnantStock } = await import('@/app/actions/stock-management')
+      // 3. PROCESO DE STOCK: Diferenciar entre match exacto y corte real
+      const { generateRemnantStock, reserveStock } = await import('@/app/actions/stock-management')
+      
+      if (isExactMatch) {
+        // ========== MATCH EXACTO: Solo consumir stock reservado ==========
+        console.log(`🎯 Procesando match exacto: ${sheetsUsed} unidades de ${materialLength}m`)
         
-        // Obtener el código del producto usado
+        for (let i = 0; i < sheetsUsed; i++) {
+          console.log(`\n📦 Consumiendo unidad ${i + 1}/${sheetsUsed}:`)
+          
+          // Usar la función SQL consume_reserved_stock que baja total Y reservado
+          const { error: consumeError } = await supabase.rpc('consume_reserved_stock', {
+            p_inventory_id: selectedMaterial.id
+          })
+          
+          if (consumeError) {
+            console.error('Error al consumir stock reservado:', consumeError)
+            throw consumeError
+          }
+          
+          console.log(`   ✅ Consumida: -1 unidad de ${materialLength}m (total y reservado)`)
+        }
+        
+        console.log(`\n✅ Proceso completado: ${sheetsUsed} unidades consumidas`)
+        console.log(`   📉 Stock: -${sheetsUsed} × ${materialLength}m`)
+        
+      } else {
+        // ========== CORTE REAL: Consumir, generar pieza cortada y remanente ==========
+        // Obtener códigos de productos
         const { data: usedProduct } = await supabase
           .from('products')
           .select('code')
           .eq('id', inventoryItem.product_id)
           .single()
         
-        if (usedProduct) {
-          // IMPORTANTE: Esto lanzará error si no existe el producto
-          // y bloqueará el corte ANTES de consumir stock
-          await generateRemnantStock(usedProduct.code, remnantLength)
-          console.log(`✅ Recorte de ${remnantLength}m generado en stock`)
+        if (!usedProduct) {
+          throw new Error('No se encontró el producto usado')
+        }
+        
+        console.log(`✂️ Procesando corte real de ${sheetsUsed} chapas...`)
+        console.log(`   Chapa original: ${usedProduct.code} (${materialLength}m)`)
+        console.log(`   Pieza a obtener: ${productSize}m`)
+        console.log(`   Remanente: ${remnantPerSheet}m`)
+        
+        // Por cada chapa usada:
+        for (let i = 0; i < sheetsUsed; i++) {
+          console.log(`\n📦 Procesando chapa ${i + 1}/${sheetsUsed}:`)
+          
+          // 3.1. Consumir chapa original (baja total y reservado)
+          const { error: consumeError } = await supabase.rpc('consume_reserved_stock', {
+            p_inventory_id: selectedMaterial.id
+          })
+          
+          if (consumeError) {
+            console.error('Error al consumir stock reservado:', consumeError)
+            throw consumeError
+          }
+          
+          console.log(`   ✅ Consumida: -1 chapa de ${materialLength}m (total y reservado)`)
+          
+          // 3.2. Generar pieza cortada (sube total y generado)
+          await generateRemnantStock(usedProduct.code, productSize)
+          console.log(`   ✅ Generada: +1 pieza de ${productSize}m`)
+          
+          // 3.3. Reservar la pieza cortada (sube reservado)
+          const { data: cutPieceInventory } = await supabase
+            .from('inventory')
+            .select('id')
+            .eq('product_id', cutOrder.product_id)
+            .single()
+          
+          if (cutPieceInventory) {
+            await reserveStock(cutPieceInventory.id)
+            console.log(`   ✅ Reservada: +1 pieza de ${productSize}m`)
+          }
+          
+          // 3.4. Generar remanente (si existe) y dejarlo disponible
+          if (remnantPerSheet > 0) {
+            await generateRemnantStock(usedProduct.code, remnantPerSheet)
+            console.log(`   ✅ Remanente: +1 pieza de ${remnantPerSheet}m (disponible)`)
+          }
+        }
+        
+        console.log(`\n✅ Proceso completado: ${sheetsUsed} chapas cortadas`)
+        console.log(`   📉 Chapas originales: -${sheetsUsed} × ${materialLength}m`)
+        console.log(`   📈 Piezas cortadas: +${sheetsUsed} × ${productSize}m (generadas y reservadas)`)
+        if (remnantPerSheet > 0) {
+          console.log(`   📈 Remanentes: +${sheetsUsed} × ${remnantPerSheet}m (disponibles)`)
         }
       }
-      
-      // 4. El stock permanece reservado hasta que se marque el pedido como entregado
-      // NO se consume aquí, solo se mantiene la reserva
-      console.log(`📌 Stock permanece reservado hasta la entrega del pedido`)
       
       // 5. Registrar actividad en el historial del pedido
       await supabase.from('order_activity_log').insert({
@@ -460,7 +534,9 @@ export default function PlantaPedidoDetallePage() {
           total_cut: newQuantityCut,
           total_requested: cutOrder.quantity_requested,
           material_used: selectedMaterial.name,
-          remnant_generated: remnantLength,
+          remnant_per_sheet: remnantPerSheet,
+          sheets_used: sheetsUsed,
+          total_remnants: sheetsUsed,
           is_completed: isFullyCompleted
         }
       })
@@ -471,16 +547,15 @@ export default function PlantaPedidoDetallePage() {
         `✂️ Cortadas: ${quantityToCut} unidades`,
         `📊 Progreso: ${newQuantityCut}/${cutOrder.quantity_requested}`,
         ``,
-        `📦 Material usado:`,
-        `   ${selectedMaterial.name}`,
+        `📦 Material: ${selectedMaterial.name}`,
         ``,
-        `📏 Recorte generado:`,
-        `   ${remnantLength.toFixed(1)}m`,
       ]
       
-      if (remnantLength > 0) {
+      if (remnantPerSheet > 0) {
+        successLines.push(`📏 Recortes generados:`)
+        successLines.push(`   ${sheetsUsed} × ${remnantPerSheet.toFixed(1)}m = ${(sheetsUsed * remnantPerSheet).toFixed(1)}m total`)
         successLines.push(``)
-        successLines.push(`✅ Stock de recorte actualizado`)
+        successLines.push(`✅ Stock de recortes actualizado`)
       }
       
       if (!isFullyCompleted) {
@@ -490,6 +565,14 @@ export default function PlantaPedidoDetallePage() {
       
       // Recargar el pedido completo desde la BD para actualizar el estado
       await loadPedido()
+      
+      // Forzar revalidación del lado del servidor
+      try {
+        await fetch(`/api/revalidate?path=/planta/pedidos/${pedidoId}`, { method: 'POST' })
+        await fetch(`/api/revalidate?path=/admin/pedidos/${pedido.id}`, { method: 'POST' })
+      } catch (e) {
+        console.log('Revalidación manual fallida, pero el pedido se recargó')
+      }
       
       // Limpiar inputs
       setExpandedCutId(null)
@@ -506,7 +589,7 @@ export default function PlantaPedidoDetallePage() {
         totalCut: newQuantityCut,
         totalRequested: cutOrder.quantity_requested,
         materialName: selectedMaterial.name,
-        remnantLength: remnantLength,
+        remnantLength: remnantPerSheet * sheetsUsed,
         isFullyCompleted: isFullyCompleted
       })
       
@@ -635,7 +718,8 @@ export default function PlantaPedidoDetallePage() {
       {/* Lista de Órdenes de Corte */}
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-4">
         {pedido.cut_orders && pedido.cut_orders.length > 0 ? (
-          pedido.cut_orders.map((cutOrder: any) => {
+          // Filtrar solo órdenes principales (sin parent_cut_order_id)
+          pedido.cut_orders.filter((co: any) => !co.parent_cut_order_id).map((cutOrder: any) => {
             const isExpanded = expandedCutId === cutOrder.id
             const isPending = cutOrder.status === 'pendiente'
             const isCompleted = cutOrder.status === 'completada'
@@ -1051,6 +1135,168 @@ export default function PlantaPedidoDetallePage() {
                       >
                         ✓ Confirmar que Recogí la Pieza
                       </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Subórdenes (si existen) - Mostradas al final del contenido expandido */}
+                {cutOrder.sub_orders && cutOrder.sub_orders.length > 0 && (
+                  <div className="border-t-4 border-slate-600 bg-slate-900/50 mt-4">
+                    <div className="px-6 py-3 bg-slate-800/50">
+                      <h4 className="text-sm font-bold text-slate-400 uppercase">↳ Subórdenes de corte ({cutOrder.sub_orders.length})</h4>
+                    </div>
+                    <div className="p-4 space-y-3">
+                      {cutOrder.sub_orders.map((subOrder: any) => {
+                        const isSubExpanded = expandedCutId === subOrder.id
+                        const isSubPending = subOrder.status === 'pendiente'
+                        const isSubCompleted = subOrder.status === 'completada'
+                        const isSubProcessing = processing[subOrder.id]
+
+                        // Calcular remanente si tiene material asignado
+                        // Remanente = Material asignado - Tamaño de la pieza a cortar
+                        const subMaterialLength = subOrder.material_product?.length_meters || 0
+                        const subProductSize = subOrder.product?.length_meters || 0
+                        const subRemnant = subMaterialLength > 0 && subProductSize > 0 
+                          ? (subMaterialLength - subProductSize).toFixed(1)
+                          : null
+
+                        return (
+                          <div
+                            key={subOrder.id}
+                            className={`rounded-lg border-2 transition-all ${
+                              isSubCompleted
+                                ? 'bg-slate-800/30 border-green-500/50'
+                                : isSubExpanded
+                                ? 'bg-slate-800 border-blue-500 shadow-lg shadow-blue-500/20'
+                                : 'bg-slate-800/50 border-slate-600'
+                            }`}
+                          >
+                            {/* Header de la suborden */}
+                            <button
+                              onClick={() => isSubPending && toggleCutOrder(subOrder.id, subOrder.product_id, subOrder.product?.length_meters || 0)}
+                              disabled={isSubCompleted}
+                              className={`w-full p-4 ${
+                                isSubPending ? 'cursor-pointer hover:bg-slate-700/50' : 'cursor-default'
+                              } transition-colors`}
+                            >
+                              <div className="space-y-3">
+                                <div className="flex items-start justify-between gap-4">
+                                  <div className="flex items-center gap-2 flex-1">
+                                    <span className="text-xs text-slate-500">{subOrder.cut_number}</span>
+                                    {isSubPending && (
+                                      isSubExpanded ? <ChevronUp className="w-5 h-5 text-blue-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />
+                                    )}
+                                  </div>
+                                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                                    isSubCompleted ? 'bg-green-600/20 text-green-400' : 'bg-yellow-600/20 text-yellow-400'
+                                  }`}>
+                                    {isSubCompleted ? '✅ Completada' : '🟡 Pendiente'}
+                                  </span>
+                                </div>
+
+                                {subOrder.material_product && (
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs text-slate-500">📦 Material:</span>
+                                      <span className="text-sm text-blue-400 font-semibold">
+                                        {subOrder.material_product.name}
+                                      </span>
+                                    </div>
+                                    {subRemnant && parseFloat(subRemnant) > 0 && (
+                                      <span className="text-xs text-orange-400 font-semibold">
+                                        📏 Remanente: {subRemnant}m
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+
+                                <div className="space-y-1">
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="text-slate-400">Progreso</span>
+                                    <span className="text-white font-bold">
+                                      {subOrder.quantity_cut || 0}/{subOrder.quantity_requested}
+                                    </span>
+                                  </div>
+                                  <div className="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
+                                    <div 
+                                      className={`h-full rounded-full transition-all duration-500 ${
+                                        (subOrder.quantity_cut || 0) >= subOrder.quantity_requested
+                                          ? 'bg-green-500'
+                                          : (subOrder.quantity_cut || 0) > 0
+                                          ? 'bg-yellow-500'
+                                          : 'bg-slate-600'
+                                      }`}
+                                      style={{ 
+                                        width: `${Math.min(((subOrder.quantity_cut || 0) / subOrder.quantity_requested) * 100, 100)}%` 
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            </button>
+
+                            {/* Contenido expandido de la suborden */}
+                            {isSubExpanded && isSubPending && (
+                              <div className="px-4 pb-4 space-y-4 border-t border-slate-700 pt-4">
+                                {/* Información del material y remanente */}
+                                {subOrder.material_product && (
+                                  <div className="bg-slate-900/50 rounded-xl p-4 border border-slate-700">
+                                    <div className="grid grid-cols-2 gap-4 text-sm">
+                                      <div>
+                                        <span className="text-slate-400">Material asignado:</span>
+                                        <p className="font-bold text-white text-base">{subOrder.material_product.name}</p>
+                                      </div>
+                                      <div>
+                                        <span className="text-slate-400">Longitud:</span>
+                                        <p className="font-bold text-white text-base">{subMaterialLength}m</p>
+                                      </div>
+                                      {subRemnant && parseFloat(subRemnant) > 0 && (
+                                        <>
+                                          <div>
+                                            <span className="text-slate-400">Remanente generado:</span>
+                                            <p className="font-bold text-orange-400 text-base">{subRemnant}m</p>
+                                          </div>
+                                          <div>
+                                            <span className="text-slate-400">Desperdicio:</span>
+                                            <p className={`font-bold text-base ${
+                                              parseFloat(subRemnant) > 1 ? 'text-orange-400' : 'text-green-400'
+                                            }`}>
+                                              {parseFloat(subRemnant) > 1 ? 'Alto' : 'Bajo'}
+                                            </p>
+                                          </div>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+
+                                <div>
+                                  <label className="block text-base font-bold text-white mb-2 uppercase">
+                                    Cantidad a Cortar:
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max={subOrder.quantity_requested - (subOrder.quantity_cut || 0)}
+                                    value={quantityInputs[subOrder.id] || ''}
+                                    onChange={(e) => setQuantityInputs(prev => ({ ...prev, [subOrder.id]: e.target.value }))}
+                                    className="w-full p-4 bg-slate-900 border-2 border-slate-700 rounded-xl text-white text-2xl font-bold text-center"
+                                    placeholder="0"
+                                  />
+                                </div>
+
+                                <button
+                                  onClick={() => handleConfirmCut(subOrder)}
+                                  disabled={!quantityInputs[subOrder.id] || parseInt(quantityInputs[subOrder.id]) < 1 || isSubProcessing}
+                                  className="w-full h-20 bg-green-600 hover:bg-green-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-bold text-2xl rounded-2xl transition-all transform active:scale-95 shadow-lg uppercase"
+                                >
+                                  {isSubProcessing ? 'Procesando...' : '✂️ Confirmar Corte'}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
                 )}
