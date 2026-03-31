@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { 
   Package, 
   TrendingUp, 
@@ -8,9 +8,11 @@ import {
   DollarSign, 
   Search,
   ChevronDown,
+  ChevronUp,
   Info,
   Sparkles,
-  AlertTriangle
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react'
 import { AIChatAssistant } from './ai-chat-assistant'
 import { 
@@ -40,6 +42,8 @@ import {
 interface DolarData {
   compra: number
   venta: number
+  fechaActualizacion: string
+  variacion: number
 }
 
 interface DashboardData {
@@ -88,6 +92,8 @@ interface DashboardRAMClientProps {
 export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
   const [dolarData, setDolarData] = useState<DolarData | null>(null)
   const [loadingDolar, setLoadingDolar] = useState(true)
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  const [errorDolar, setErrorDolar] = useState<string | null>(null)
   const [metricUnit, setMetricUnit] = useState<'metros' | 'unidades'>('metros')
   const [searchQuery, setSearchQuery] = useState('')
   const [searchScope, setSearchScope] = useState<'todo' | 'pedidos' | 'stock'>('todo')
@@ -143,17 +149,99 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
   
   const categoryData = generateCategoryData()
 
+  // Función para obtener la cotización del dólar con caché inteligente
+  const fetchDolarData = async () => {
+    try {
+      // Verificar si hay datos en caché recientes (menos de 5 minutos)
+      const cachedData = localStorage.getItem('dolarData')
+      const cachedTime = localStorage.getItem('dolarDataTime')
+      
+      if (cachedData && cachedTime) {
+        const cacheAge = Date.now() - parseInt(cachedTime)
+        const fiveMinutes = 5 * 60 * 1000 // 5 minutos en milisegundos
+        
+        if (cacheAge < fiveMinutes) {
+          const data = JSON.parse(cachedData)
+          setDolarData(data)
+          setLastUpdate(new Date(parseInt(cachedTime)))
+          setLoadingDolar(false)
+          return
+        }
+      }
+
+      // Si no hay caché o es muy antiguo, obtener datos nuevos
+      const response = await fetch('https://dolarapi.com/v1/dolares/mayorista')
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+      
+      const data = await response.json()
+      
+      // Validar que los datos sean válidos
+      if (!data.compra || !data.venta || isNaN(data.compra) || isNaN(data.venta)) {
+        throw new Error('Datos inválidos')
+      }
+      
+      const dolarInfo: DolarData = {
+        compra: data.compra,
+        venta: data.venta,
+        fechaActualizacion: data.fechaActualizacion,
+        variacion: data.variacion || 0
+      }
+      
+      // Guardar en caché
+      localStorage.setItem('dolarData', JSON.stringify(dolarInfo))
+      localStorage.setItem('dolarDataTime', Date.now().toString())
+      
+      setDolarData(dolarInfo)
+      setLastUpdate(new Date())
+      setErrorDolar(null)
+      
+    } catch (error) {
+      console.error('Error obteniendo cotización del dólar:', error)
+      setErrorDolar('No se pudo obtener la cotización')
+      
+      // Intentar usar caché antiguo si existe
+      const cachedData = localStorage.getItem('dolarData')
+      if (cachedData) {
+        const data = JSON.parse(cachedData)
+        setDolarData(data)
+        setErrorDolar('Mostrando datos desactualizados')
+      }
+      
+    } finally {
+      setLoadingDolar(false)
+    }
+  }
+
   useEffect(() => {
-    fetch('https://dolarapi.com/v1/dolares/oficial')
-      .then(res => res.json())
-      .then(data => {
-        setDolarData({ compra: data.compra, venta: data.venta })
-        setLoadingDolar(false)
-      })
-      .catch(() => {
-        setLoadingDolar(false)
-      })
+    fetchDolarData()
+    
+    // Configurar actualización automática cada 5 minutos
+    const interval = setInterval(fetchDolarData, 5 * 60 * 1000)
+    
+    return () => clearInterval(interval)
   }, [])
+
+  // Actualizar cuando la ventana gana foco (usuario vuelve a la pestaña)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && !loadingDolar) {
+        const minutesSinceLastUpdate = lastUpdate 
+          ? (Date.now() - lastUpdate.getTime()) / (1000 * 60)
+          : Infinity
+        
+        // Si pasaron más de 2 minutos, actualizar
+        if (minutesSinceLastUpdate > 2) {
+          fetchDolarData()
+        }
+      }
+    }
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [lastUpdate, loadingDolar])
 
   // Calcular productos con stock crítico (disponible < 20% del total)
   const stockCritico = data.stockProductos?.filter((producto: any) => {
@@ -381,20 +469,69 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 hover:shadow-md transition-shadow">
           <div className="flex items-start justify-between">
             <div className="flex-1">
-              <p className="text-sm font-medium text-slate-500 mb-2">Dólar hoy</p>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium text-slate-500">Dólar hoy</p>
+                <button
+                  onClick={fetchDolarData}
+                  disabled={loadingDolar}
+                  className="p-1 rounded hover:bg-slate-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Actualizar cotización"
+                >
+                  <RefreshCw className={`w-4 h-4 text-slate-600 ${loadingDolar ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
               {loadingDolar ? (
-                <p className="text-sm text-slate-400">Cargando...</p>
+                <div className="space-y-1">
+                  <p className="text-sm text-slate-400">Actualizando...</p>
+                  <div className="w-full bg-slate-200 rounded-full h-1">
+                    <div className="bg-blue-600 h-1 rounded-full animate-pulse" style={{ width: '60%' }}></div>
+                  </div>
+                </div>
               ) : dolarData ? (
-                <>
-                  <p className="text-xl font-bold text-slate-900 mb-1">
-                    {dolarData.compra} / {dolarData.venta}
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    Actualizado: {new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs
-                  </p>
-                </>
+                <div className="space-y-2">
+                  <div className="flex items-baseline gap-2">
+                    <p className="text-xl font-bold text-slate-900">
+                      ${dolarData.compra}
+                    </p>
+                    <span className="text-sm text-slate-500">/</span>
+                    <p className="text-xl font-bold text-slate-900">
+                      ${dolarData.venta}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {dolarData.variacion !== 0 && (
+                      <div className={`flex items-center gap-1 text-xs font-medium ${
+                        dolarData.variacion > 0 ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        {dolarData.variacion > 0 ? (
+                          <ChevronUp className="w-3 h-3" />
+                        ) : (
+                          <ChevronDown className="w-3 h-3" />
+                        )}
+                        {Math.abs(dolarData.variacion)}%
+                      </div>
+                    )}
+                    <p className="text-xs text-slate-400">
+                      {lastUpdate ? `Actualizado: ${lastUpdate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs` : 'Recién actualizado'}
+                    </p>
+                  </div>
+                  {errorDolar && (
+                    <p className="text-xs text-amber-600 flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3" />
+                      {errorDolar}
+                    </p>
+                  )}
+                </div>
               ) : (
-                <p className="text-sm text-slate-400">No disponible</p>
+                <div className="space-y-2">
+                  <p className="text-sm text-slate-400">No disponible</p>
+                  <button
+                    onClick={fetchDolarData}
+                    className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Reintentar
+                  </button>
+                </div>
               )}
             </div>
             <DollarSign className="w-5 h-5 text-slate-400" strokeWidth={1.5} />
