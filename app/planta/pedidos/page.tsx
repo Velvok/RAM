@@ -51,11 +51,12 @@ export default function PlantaPedidosPage() {
       
       console.log('🔍 Buscando pedidos en estados: aprobado, en_corte, finalizado')
       
-      // Obtener pedidos aprobados, en_corte y finalizados con conteo de órdenes
+      // Obtener pedidos aprobados, en_corte y finalizados con conteo de órdenes y datos del cliente
       const { data, error } = await supabase
         .from('orders')
         .select(`
           *,
+          client:clients(*),
           cut_orders!cut_orders_order_id_fkey(id)
         `)
         .in('status', ['aprobado', 'en_corte', 'finalizado'])
@@ -89,11 +90,13 @@ export default function PlantaPedidosPage() {
       filtered = filtered.filter(p => p.status === statusFilter)
     }
     
-    // Filtro por búsqueda de texto
+    // Filtro por búsqueda de texto (número de pedido o nombre de cliente)
     if (searchQuery) {
       const searchLower = searchQuery.toLowerCase()
       filtered = filtered.filter(p => 
-        p.order_number?.toLowerCase().includes(searchLower)
+        p.order_number?.toLowerCase().includes(searchLower) ||
+        p.client?.business_name?.toLowerCase().includes(searchLower) ||
+        p.client?.name?.toLowerCase().includes(searchLower)
       )
     }
     
@@ -164,13 +167,13 @@ export default function PlantaPedidosPage() {
               {/* Buscador por texto - Fila 1 */}
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Número de Pedido
+                  Buscar por Cliente o Número de Pedido
                 </label>
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Ej: PED-TEST-1234..."
+                  placeholder="Ej: ACME Corp, PED-TEST-1234..."
                   className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -264,6 +267,9 @@ export default function PlantaPedidosPage() {
                     Pedido
                   </th>
                   <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+                    Cliente
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                     Fecha
                   </th>
                   <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
@@ -286,6 +292,11 @@ export default function PlantaPedidosPage() {
                     >
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-bold text-white">{pedido.order_number}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-slate-300 font-medium">
+                          {pedido.client?.business_name || pedido.client?.name || 'Sin cliente'}
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-slate-300">

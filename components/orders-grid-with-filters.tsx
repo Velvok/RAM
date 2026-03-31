@@ -21,6 +21,7 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
   })
   const [currentPage, setCurrentPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(25)
+  const [groupByClient, setGroupByClient] = useState(false)
   const router = useRouter()
 
   // Guardar preferencia de vista en localStorage
@@ -117,6 +118,51 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
     return filtered
   }, [orders, statusFilter, searchQuery])
 
+  // Detectar automáticamente si se debe agrupar por cliente
+  const shouldGroupByClient = useMemo(() => {
+    if (!searchQuery) return false
+    
+    // Si hay búsqueda, verificar si coincide con algún cliente
+    const searchLower = searchQuery.toLowerCase()
+    const matchingClients = new Set(
+      filteredOrders
+        .filter(o => 
+          o.client?.business_name?.toLowerCase().includes(searchLower) ||
+          o.client?.name?.toLowerCase().includes(searchLower)
+        )
+        .map(o => o.client?.id)
+    )
+    
+    // Agrupar si hay al menos un cliente que coincide y tiene múltiples pedidos
+    return matchingClients.size > 0
+  }, [searchQuery, filteredOrders])
+
+  // Agrupar pedidos por cliente
+  const groupedOrders = useMemo(() => {
+    if (!shouldGroupByClient) return null
+    
+    const groups = new Map<string, any[]>()
+    
+    filteredOrders.forEach(order => {
+      const clientId = order.client?.id || 'sin-cliente'
+      if (!groups.has(clientId)) {
+        groups.set(clientId, [])
+      }
+      groups.get(clientId)!.push(order)
+    })
+    
+    // Convertir a array y ordenar por cantidad de pedidos
+    return Array.from(groups.entries())
+      .map(([clientId, orders]) => ({
+        clientId,
+        clientName: orders[0]?.client?.business_name || orders[0]?.client?.name || 'Sin cliente',
+        orders: orders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+        totalOrders: orders.length,
+        totalAmount: orders.reduce((sum, o) => sum + (o.total_amount || 0), 0)
+      }))
+      .sort((a, b) => b.totalOrders - a.totalOrders)
+  }, [filteredOrders, shouldGroupByClient])
+
   // Aplicar paginación para vista de filas
   const paginatedOrders = useMemo(() => {
     if (viewMode === 'cards') return filteredOrders
@@ -136,6 +182,8 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
   const handleSearchChange = (value: string) => {
     setSearchQuery(value)
     setCurrentPage(0)
+    // Auto-activar agrupación si hay búsqueda
+    setGroupByClient(value.length > 0)
   }
 
   // Contar por estado
@@ -230,16 +278,22 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
 
         {/* Buscador y controles */}
         <div className="flex items-center justify-between gap-4">
-          {/* Buscador mejorado */}
+          {/* Buscador semántico mejorado */}
           <div className="relative flex-1 max-w-md">
-            <Package className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
             <input
               type="text"
-              placeholder="Buscar por cliente o número de pedido..."
+              placeholder="Buscar por cliente (agrupa automáticamente) o pedido..."
               value={searchQuery}
               onChange={(e) => handleSearchChange(e.target.value)}
               className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
+            {shouldGroupByClient && (
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded-lg">
+                <Filter className="w-3 h-3" />
+                Agrupado
+              </div>
+            )}
           </div>
           
           {/* Toggle Vista */}
@@ -272,14 +326,139 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
 
       {/* Vista de Tarjetas */}
       {viewMode === 'cards' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <>
         {filteredOrders.length === 0 ? (
-          <div className="col-span-full bg-white rounded-lg shadow p-12 text-center">
+          <div className="bg-white rounded-lg shadow p-12 text-center">
             <Package className="w-16 h-16 text-slate-300 mx-auto mb-4" />
             <p className="text-slate-500 text-lg">No hay pedidos con este filtro</p>
           </div>
+        ) : shouldGroupByClient && groupedOrders ? (
+          // Vista agrupada por cliente
+          <div className="space-y-6">
+            {groupedOrders.map((group) => (
+              <div key={group.clientId} className="bg-slate-50 rounded-xl p-6 border-2 border-slate-200">
+                {/* Header del grupo */}
+                <div className="flex items-center justify-between mb-4 pb-4 border-b-2 border-slate-300">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center">
+                      <User className="w-6 h-6 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold text-slate-900">{group.clientName}</h3>
+                      <p className="text-sm text-slate-600">
+                        {group.totalOrders} pedido{group.totalOrders !== 1 ? 's' : ''} • Total: {group.totalAmount.toLocaleString('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 })}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-800 rounded-lg text-sm font-semibold">
+                      <Package className="w-4 h-4" />
+                      {group.orders.reduce((sum: number, o: any) => sum + (o.lines?.reduce((s: number, l: any) => s + (l.units || 0), 0) || 0), 0)} unidades
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Pedidos del grupo */}
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {group.orders.map((order: any) => {
+                    const statusInfo = getStatusInfo(order.status)
+                    const StatusIcon = statusInfo.icon
+
+                    return (
+                      <div
+                        key={order.id}
+                        onClick={() => handleOrderClick(order)}
+                        className="bg-white rounded-lg border border-slate-200 p-4 cursor-pointer hover:shadow-lg transition-all hover:-translate-y-0.5"
+                      >
+                        {/* Header */}
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex-1">
+                            <h4 className="font-bold text-slate-900 text-lg mb-1">
+                              {order.order_number}
+                            </h4>
+                            <div className="flex items-center gap-2 text-xs text-slate-500">
+                              <Calendar className="w-3.5 h-3.5" />
+                              {new Date(order.created_at).toLocaleDateString('es-ES', {
+                                day: '2-digit',
+                                month: 'short',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </div>
+                          </div>
+                          <span className={`inline-flex items-center px-3 py-1.5 border-2 ${statusInfo.borderColor} ${statusInfo.textColor} ${statusInfo.bgColor} rounded-lg text-xs font-semibold`}>
+                            {statusInfo.text}
+                          </span>
+                        </div>
+
+                        {/* Información */}
+                        <div className="space-y-2.5 mb-4">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <DollarSign className="w-4 h-4 text-slate-400" />
+                              <span className="text-sm font-bold text-slate-900">
+                                {order.total_amount?.toLocaleString('es-ES', {
+                                  style: 'currency',
+                                  currency: 'EUR',
+                                  minimumFractionDigits: 0
+                                })}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1 text-xs text-slate-600">
+                              <Package className="w-3.5 h-3.5" />
+                              {order.lines?.reduce((sum: number, line: any) => sum + (line.units || 0), 0) || 0} unidades
+                            </div>
+                          </div>
+
+                          {/* Contador de órdenes de corte */}
+                          {order.cut_orders && order.cut_orders.length > 0 && (
+                            <div className="flex items-center gap-2 text-xs text-slate-600 pt-2 border-t border-slate-100">
+                              <Package className="w-3.5 h-3.5" />
+                              <span>{order.cut_orders.length} órdenes de corte</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Acción */}
+                        {order.status === 'nuevo' && (
+                          <button
+                            onClick={(e) => handleGenerateCutOrders(e, order.id)}
+                            disabled={loading === order.id}
+                            className="w-full px-3 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                          >
+                            {loading === order.id ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                Aprobando...
+                              </>
+                            ) : (
+                              '✓ Aprobar Pedido'
+                            )}
+                          </button>
+                        )}
+                        {order.status === 'finalizado' && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              router.push(`/admin/pedidos/${order.id}`)
+                            }}
+                            className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                          >
+                            Marcar como Entregado
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
         ) : (
-          filteredOrders.map((order) => {
+          // Vista normal sin agrupar
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {filteredOrders.map((order) => {
             const statusInfo = getStatusInfo(order.status)
             const StatusIcon = statusInfo.icon
 
@@ -376,9 +555,10 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
                 )}
               </div>
             )
-          })
+          })}
+          </div>
         )}
-        </div>
+        </>
       )}
 
       {/* Vista de Filas */}
