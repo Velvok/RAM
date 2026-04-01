@@ -430,11 +430,11 @@ export default function PlantaPedidoDetallePage() {
           .select('id')
           .eq('product_id', originalAssignedId)
           .gt('stock_reservado', 0)
-          .single()
+          .maybeSingle()
         
-        if (originalInventory?.id) {
+        if (originalInventory) {
           const { unreserveStock } = await import('@/app/actions/stock-management')
-          await unreserveStock(originalInventory.id, 1)
+          await unreserveStock(originalInventory!.id, 1)
           console.log(`✅ Reserva liberada del material original`)
         }
         
@@ -520,7 +520,7 @@ export default function PlantaPedidoDetallePage() {
         }
         
         console.log(`✂️ Procesando corte real de ${sheetsUsed} chapas...`)
-        console.log(`   Chapa original: ${usedProduct.code} (${materialLength}m)`)
+        console.log(`   Chapa original: ${usedProduct!.code} (${materialLength}m)`)
         console.log(`   Pieza a obtener: ${productSize}m`)
         console.log(`   Remanente: ${remnantPerSheet}m`)
         
@@ -541,7 +541,7 @@ export default function PlantaPedidoDetallePage() {
           console.log(`   ✅ Consumida: -1 chapa de ${materialLength}m (total y reservado)`)
           
           // 3.2. Generar pieza cortada (sube total y generado)
-          await generateRemnantStock(usedProduct.code, productSize)
+          await generateRemnantStock(usedProduct!.code, productSize)
           console.log(`   ✅ Generada: +1 pieza de ${productSize}m`)
           
           // 3.3. Reservar la pieza cortada (sube reservado)
@@ -552,13 +552,13 @@ export default function PlantaPedidoDetallePage() {
             .single()
           
           if (cutPieceInventory?.id) {
-            await reserveStock(cutPieceInventory.id)
+            await reserveStock(cutPieceInventory!.id)
             console.log(`   ✅ Reservada: +1 pieza de ${productSize}m`)
           }
           
           // 3.4. Generar remanente (si existe) y dejarlo disponible
           if (remnantPerSheet > 0) {
-            await generateRemnantStock(usedProduct.code, remnantPerSheet)
+            await generateRemnantStock(usedProduct!.code, remnantPerSheet)
             console.log(`   ✅ Remanente: +1 pieza de ${remnantPerSheet}m (disponible)`)
           }
         }
