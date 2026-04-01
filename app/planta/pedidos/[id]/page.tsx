@@ -418,10 +418,10 @@ export default function PlantaPedidoDetallePage() {
       
       // Verificar si el material seleccionado es diferente al asignado originalmente
       const originalAssignedId = cutOrder.material_base_id
-      const selectedProductId = inventoryItem.product_id
+      const selectedProductId = inventoryItem?.product_id
       
       // 1a. Si se seleccionó un material diferente, liberar la reserva original
-      if (originalAssignedId && originalAssignedId !== selectedProductId) {
+      if (originalAssignedId && selectedProductId && originalAssignedId !== selectedProductId) {
         console.log(`⚠️ Material cambiado: ${originalAssignedId} → ${selectedProductId}`)
         
         // Liberar reserva del material asignado originalmente
@@ -432,7 +432,7 @@ export default function PlantaPedidoDetallePage() {
           .gt('stock_reservado', 0)
           .single()
         
-        if (originalInventory) {
+        if (originalInventory?.id) {
           const { unreserveStock } = await import('@/app/actions/stock-management')
           await unreserveStock(originalInventory.id, 1)
           console.log(`✅ Reserva liberada del material original`)
@@ -445,7 +445,7 @@ export default function PlantaPedidoDetallePage() {
       }
       
       // 1b. Si se cambió el material, actualizar la asignación en cut_orders
-      if (originalAssignedId && originalAssignedId !== selectedProductId) {
+      if (originalAssignedId && selectedProductId && originalAssignedId !== selectedProductId) {
         const { assignStockToCutOrder } = await import('@/app/actions/stock-management')
         await assignStockToCutOrder(
           cutId,
@@ -512,10 +512,10 @@ export default function PlantaPedidoDetallePage() {
         const { data: usedProduct } = await supabase
           .from('products')
           .select('code')
-          .eq('id', inventoryItem.product_id)
+          .eq('id', inventoryItem?.product_id)
           .single()
         
-        if (!usedProduct) {
+        if (!usedProduct?.code) {
           throw new Error('No se encontró el producto usado')
         }
         
@@ -551,7 +551,7 @@ export default function PlantaPedidoDetallePage() {
             .eq('product_id', cutOrder.product_id)
             .single()
           
-          if (cutPieceInventory) {
+          if (cutPieceInventory?.id) {
             await reserveStock(cutPieceInventory.id)
             console.log(`   ✅ Reservada: +1 pieza de ${productSize}m`)
           }
