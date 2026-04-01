@@ -164,50 +164,12 @@ export async function processCutOrder(params: {
   
   if (isExactMatch) {
     // ========== MATCH EXACTO ==========
-    console.log(`\n🎯 Procesando match exacto: ${sheetsUsed} unidades de ${materialLength}m`)
-    console.log(`   Inventario ID: ${actualInventoryId}`)
-    
-    for (let i = 0; i < sheetsUsed; i++) {
-      console.log(`\n📦 Consumiendo unidad ${i + 1}/${sheetsUsed}:`)
-      
-      const { data: beforeConsume } = await supabase
-        .from('inventory')
-        .select('stock_total, stock_reservado, stock_disponible')
-        .eq('id', actualInventoryId)
-        .single()
-      
-      console.log(`   📊 Stock antes:`, {
-        total: beforeConsume?.stock_total,
-        reservado: beforeConsume?.stock_reservado,
-        disponible: beforeConsume?.stock_disponible
-      })
-      
-      // Match exacto: solo bajar reservado, NO bajar stock_total
-      const { error: consumeError } = await supabase.rpc('consume_reserved_stock_match_exacto', {
-        p_inventory_id: actualInventoryId
-      })
-      
-      if (consumeError) {
-        console.error('   ❌ Error al consumir stock reservado:', consumeError)
-        throw consumeError
-      }
-      
-      const { data: afterConsume } = await supabase
-        .from('inventory')
-        .select('stock_total, stock_reservado, stock_disponible')
-        .eq('id', actualInventoryId)
-        .single()
-      
-      console.log(`   ✅ Consumida: -1 unidad de ${materialLength}m`)
-      console.log(`   📊 Stock después:`, {
-        total: afterConsume?.stock_total,
-        reservado: afterConsume?.stock_reservado,
-        disponible: afterConsume?.stock_disponible
-      })
-    }
-    
-    console.log(`\n✅ Proceso completado: ${sheetsUsed} unidades consumidas`)
-    console.log(`   📉 Stock: -${sheetsUsed} × ${materialLength}m`)
+    // En match exacto, las piezas ya existen y están reservadas.
+    // NO consumimos stock porque las piezas siguen comprometidas con el pedido hasta la entrega.
+    // El stock_reservado se consumirá cuando se entregue el pedido completo.
+    console.log(`\n🎯 Match exacto: ${sheetsUsed} unidades de ${materialLength}m`)
+    console.log(`   ✅ Las piezas ya están reservadas, no se modifica el stock`)
+    console.log(`   📝 El stock_reservado se consumirá al entregar el pedido`)
     
   } else {
     // ========== CORTE REAL ==========
