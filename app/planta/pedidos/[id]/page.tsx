@@ -337,22 +337,72 @@ export default function PlantaPedidoDetallePage() {
     const remnantPerSheet = Math.max(0, materialLength - productSize)
     const sheetsUsed = quantityToCut // 1 chapa por pieza
     
-    console.log(`📏 Análisis de operación:`)
-    console.log(`   Material asignado: ${materialLength}m`)
-    console.log(`   Tamaño requerido: ${productSize}m`)
-    console.log(`   Cantidad: ${quantityToCut} unidades`)
-    console.log(`   Tipo: ${isExactMatch ? '🎯 MATCH EXACTO (sin corte)' : '✂️ CORTE REAL'}`)
-    if (!isExactMatch) {
-      console.log(`   Remanente por chapa: ${remnantPerSheet}m`)
-      console.log(`   Total remanentes: ${sheetsUsed} × ${remnantPerSheet}m`)
+    if (!quantityToCut || quantityToCut <= 0) {
+      showError('Por favor ingresa una cantidad válida', 'Cantidad inválida')
+      return
+    }
+
+    if (!operator) {
+      showError('No se ha identificado el operario', 'Operario no identificado')
+      return
     }
 
     setProcessing(prev => ({ ...prev, [cutId]: true }))
     
     try {
+      // ✅ Llamar a la Server Action - todos los logs saldrán en el terminal del servidor
+      const { processCutOrder } = await import('@/app/actions/cut-operations')
+      
+      const result = await processCutOrder({
+        cutOrderId: cutId,
+        selectedMaterialId: selectedMaterial.id,
+        materialLength: selectedMaterial.length,
+        quantityToCut,
+        operatorId: operator.id
+      })
+      
+      // Recargar pedido
+      await loadPedido()
+      
+      // Revalidar
+      try {
+        await fetch(`/api/revalidate?path=/planta/pedidos/${pedidoId}`, { method: 'POST' })
+        await fetch(`/api/revalidate?path=/admin/pedidos/${pedido.id}`, { method: 'POST' })
+      } catch (e) {
+        console.log('Revalidación manual fallida')
+      }
+      
+      // Limpiar inputs
+      setExpandedCutId(null)
+      setQuantityInputs(prev => ({ ...prev, [cutId]: '' }))
+      setSelectedMaterials(prev => {
+        const newState = { ...prev }
+        delete newState[cutId]
+        return newState
+      })
+      
+      // Mostrar confirmación
+      showCutSuccess({
+        quantityCut: quantityToCut,
+        totalCut: result.newQuantityCut,
+        totalRequested: result.totalRequested,
+        materialName: selectedMaterial.name,
+        remnantLength: 0,
+        isFullyCompleted: result.isFullyCompleted
+      })
+      
+    } catch (error: any) {
+      console.error('Error finishing cut:', error)
+      showError(error.message || 'Error desconocido', 'Error al finalizar corte')
+    } finally {
+      setProcessing(prev => ({ ...prev, [cutId]: false }))
+    }
+    return // ⚠️ SALIR AQUÍ - El código viejo de abajo ya no se ejecuta
+    
+    try {
       const supabase = createClient()
       
-      // Importar funciones necesarias
+      // ========== CÓDIGO VIEJO - YA NO SE EJECUTA ==========
       const { finishCutOrder } = await import('@/app/actions/cut-orders')
       
       // Obtener el product_id del inventory seleccionado
@@ -788,6 +838,15 @@ export default function PlantaPedidoDetallePage() {
                     {/* Fila 2: Código de corte */}
                     <p className="text-base text-slate-400 font-medium text-left">{cutOrder.cut_number}</p>
                     
+                    {/* Material asignado (visible siempre) */}
+                    {cutOrder.material_product && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-lg">📦</span>
+                        <span className="text-slate-400">Material:</span>
+                        <span className="text-white font-bold">{cutOrder.material_product.name}</span>
+                      </div>
+                    )}
+                    
                     {/* Fila 3: Barra de Progreso */}
                     <div className="space-y-2">
                       <div className="flex items-center justify-between text-sm">
@@ -1081,6 +1140,74 @@ export default function PlantaPedidoDetallePage() {
                         )}
                       </div>
                     )}
+
+                    {/* Botón de confirmación de cambio de material (si se seleccionó un material diferente) */}
+                    {(() => {
+                      // Verificar si el material seleccionado es diferente al asignado
+                      // Necesitamos comparar por nombre o código ya que selectedMaterial.id es inventory_id
+                      const isMaterialDifferent = selectedMaterial && 
+                        cutOrder.material_product && 
+                        !selectedMaterial.name.includes(cutOrder.material_product.code) &&
+                        selectedMaterial.name !== cutOrder.material_product.name
+                      
+                      return isMaterialDifferent && (
+                        <div className="bg-orange-500/10 border-2 border-orange-500 rounded-2xl p-6">
+                        <div className="flex items-center gap-3 mb-4">
+                          <AlertTriangle className="w-6 h-6 text-orange-400" />
+                          <h4 className="text-lg font-bold text-orange-400 uppercase">Cambio de Material Detectado</h4>
+                        </div>
+                        <p className="text-white mb-4">
+                          Has seleccionado un material diferente al asignado originalmente. ¿Deseas confirmar este cambio?
+                        </p>
+                        <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
+                          <div className="bg-slate-900/50 rounded-lg p-3">
+                            <span className="text-slate-400">Material original:</span>
+                            <p className="font-bold text-white">{cutOrder.material_product?.name}</p>
+                          </div>
+                          <div className="bg-slate-900/50 rounded-lg p-3">
+                            <span className="text-slate-400">Nuevo material:</span>
+                            <p className="font-bold text-orange-400">{selectedMaterial.name}</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const supabase = createClient()
+                              const { assignStockToCutOrder } = await import('@/app/actions/stock-management')
+                              
+                              // Obtener el product_id del nuevo material
+                              const { data: newInventory } = await supabase
+                                .from('inventory')
+                                .select('product_id')
+                                .eq('id', selectedMaterial.id)
+                                .single()
+                              
+                              if (newInventory) {
+                                // Asignar el nuevo material
+                                await assignStockToCutOrder(
+                                  cutOrder.id,
+                                  selectedMaterial.id,
+                                  newInventory.product_id,
+                                  selectedMaterial.length
+                                )
+                                
+                                // Recargar el pedido
+                                await loadPedido()
+                                
+                                alert('✅ Material cambiado correctamente')
+                              }
+                            } catch (error: any) {
+                              console.error('Error al cambiar material:', error)
+                              alert('❌ Error al cambiar material: ' + error.message)
+                            }
+                          }}
+                          className="w-full h-16 bg-orange-600 hover:bg-orange-500 text-white rounded-xl font-bold text-xl uppercase transition-all transform active:scale-95"
+                        >
+                          Confirmar Cambio de Material
+                        </button>
+                      </div>
+                      )
+                    })()}
 
                     {/* Botón Confirmar - GIGANTE */}
                     <button

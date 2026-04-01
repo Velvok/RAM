@@ -529,12 +529,14 @@ export async function undoOrderDelivery(orderId: string) {
   // Obtener usuario actual
   const { data: { user } } = await supabase.auth.getUser()
 
-  // Buscar historial activo de esta entrega
+  // Buscar historial activo de esta entrega (el más reciente)
   const { data: deliveryHistory, error: historyError } = await supabase
     .from('delivery_history')
     .select('*')
     .eq('order_id', orderId)
     .eq('is_active', true)
+    .order('delivered_at', { ascending: false })
+    .limit(1)
     .single()
 
   if (historyError) {
