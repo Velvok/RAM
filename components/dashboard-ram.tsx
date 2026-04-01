@@ -35,7 +35,7 @@ export function DashboardRAM() {
   const [searchScope, setSearchScope] = useState<'todo' | 'pedidos' | 'stock'>('todo')
 
   useEffect(() => {
-    fetch('https://dolarapi.com/v1/dolares/oficial')
+    fetch('https://dolarapi.com/v1/dolares/mayorista')
       .then(res => res.json())
       .then(data => {
         setDolarData({ compra: data.compra, venta: data.venta })

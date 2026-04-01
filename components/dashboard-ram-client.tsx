@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useMemo, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { 
   Package, 
   TrendingUp, 
@@ -8,9 +9,12 @@ import {
   DollarSign, 
   Search,
   ChevronDown,
+  ChevronUp,
   Info,
   Sparkles,
-  AlertTriangle
+  AlertTriangle,
+  RefreshCw,
+  PackageX
 } from 'lucide-react'
 import { AIChatAssistant } from './ai-chat-assistant'
 import { 
@@ -40,6 +44,8 @@ import {
 interface DolarData {
   compra: number
   venta: number
+  fechaActualizacion: string
+  variacion: number
 }
 
 interface DashboardData {
@@ -86,12 +92,16 @@ interface DashboardRAMClientProps {
 }
 
 export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
+  const router = useRouter()
   const [dolarData, setDolarData] = useState<DolarData | null>(null)
   const [loadingDolar, setLoadingDolar] = useState(true)
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  const [errorDolar, setErrorDolar] = useState<string | null>(null)
   const [metricUnit, setMetricUnit] = useState<'metros' | 'unidades'>('metros')
   const [searchQuery, setSearchQuery] = useState('')
   const [searchScope, setSearchScope] = useState<'todo' | 'pedidos' | 'stock'>('todo')
   const [isChatOpen, setIsChatOpen] = useState(false)
+  const [showStockRotoTooltip, setShowStockRotoTooltip] = useState(false)
   
   // Paginación para Últimos Pedidos
   const [pedidosPage, setPedidosPage] = useState(0)
@@ -143,24 +153,116 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
   
   const categoryData = generateCategoryData()
 
+  // Función para obtener la cotización del dólar con caché inteligente
+  const fetchDolarData = async () => {
+    try {
+      // Verificar si hay datos en caché recientes (menos de 5 minutos)
+      const cachedData = localStorage.getItem('dolarData')
+      const cachedTime = localStorage.getItem('dolarDataTime')
+      
+      if (cachedData && cachedTime) {
+        const cacheAge = Date.now() - parseInt(cachedTime)
+        const fiveMinutes = 5 * 60 * 1000 // 5 minutos en milisegundos
+        
+        if (cacheAge < fiveMinutes) {
+          const data = JSON.parse(cachedData)
+          setDolarData(data)
+          setLastUpdate(new Date(parseInt(cachedTime)))
+          setLoadingDolar(false)
+          return
+        }
+      }
+
+      // Si no hay caché o es muy antiguo, obtener datos nuevos
+      const response = await fetch('https://dolarapi.com/v1/dolares/mayorista')
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+      
+      const data = await response.json()
+      
+      // Validar que los datos sean válidos
+      if (!data.compra || !data.venta || isNaN(data.compra) || isNaN(data.venta)) {
+        throw new Error('Datos inválidos')
+      }
+      
+      const dolarInfo: DolarData = {
+        compra: data.compra,
+        venta: data.venta,
+        fechaActualizacion: data.fechaActualizacion,
+        variacion: data.variacion || 0
+      }
+      
+      // Guardar en caché
+      localStorage.setItem('dolarData', JSON.stringify(dolarInfo))
+      localStorage.setItem('dolarDataTime', Date.now().toString())
+      
+      setDolarData(dolarInfo)
+      setLastUpdate(new Date())
+      setErrorDolar(null)
+      
+    } catch (error) {
+      console.error('Error obteniendo cotización del dólar:', error)
+      setErrorDolar('No se pudo obtener la cotización')
+      
+      // Intentar usar caché antiguo si existe
+      const cachedData = localStorage.getItem('dolarData')
+      if (cachedData) {
+        const data = JSON.parse(cachedData)
+        setDolarData(data)
+        setErrorDolar('Mostrando datos desactualizados')
+      }
+      
+    } finally {
+      setLoadingDolar(false)
+    }
+  }
+
   useEffect(() => {
-    fetch('https://dolarapi.com/v1/dolares/oficial')
-      .then(res => res.json())
-      .then(data => {
-        setDolarData({ compra: data.compra, venta: data.venta })
-        setLoadingDolar(false)
-      })
-      .catch(() => {
-        setLoadingDolar(false)
-      })
+    fetchDolarData()
+    
+    // Configurar actualización automática cada 5 minutos
+    const interval = setInterval(fetchDolarData, 5 * 60 * 1000)
+    
+    return () => clearInterval(interval)
   }, [])
 
-  // Calcular productos con stock crítico (disponible < 20% del total)
-  const stockCritico = data.stockProductos?.filter((producto: any) => {
-    if (producto.total === 0) return false
-    const porcentajeDisponible = (producto.disponible / producto.total) * 100
-    return porcentajeDisponible < 20 && producto.disponible > 0
-  }).length || 0
+  // Actualizar cuando la ventana gana foco (usuario vuelve a la pestaña)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && !loadingDolar) {
+        const minutesSinceLastUpdate = lastUpdate 
+          ? (Date.now() - lastUpdate.getTime()) / (1000 * 60)
+          : Infinity
+        
+        // Si pasaron más de 2 minutos, actualizar
+        if (minutesSinceLastUpdate > 2) {
+          fetchDolarData()
+        }
+      }
+    }
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [lastUpdate, loadingDolar])
+
+  // Calcular productos con stock roto (sin stock, disponible <= 0)
+  const productosStockRoto = useMemo(() => {
+    return data.stockProductos?.filter((producto: any) => {
+      return producto.disponible <= 0
+    }) || []
+  }, [data.stockProductos])
+
+  const stockRoto = productosStockRoto.length
+  const stockRotoPreview = productosStockRoto.slice(0, 10)
+
+  // Función para redirigir a stock con filtro sin stock
+  const handleStockRotoClick = () => {
+    // Guardar el filtro en sessionStorage para que se aplique al cargar la página
+    sessionStorage.setItem('stockFilter', JSON.stringify({ stockStatus: 'sin_stock' }))
+    router.push('/admin/stock')
+  }
 
   const kpiData = [
     {
@@ -367,34 +469,145 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 hover:shadow-md transition-shadow">
+        <div 
+          className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 hover:shadow-md hover:border-red-200 transition-all cursor-pointer relative group"
+          onClick={handleStockRotoClick}
+        >
           <div className="flex items-start justify-between">
             <div className="flex-1">
-              <p className="text-sm font-medium text-slate-500 mb-2">Stock Crítico</p>
-              <p className="text-3xl font-bold text-slate-900 mb-1">{stockCritico}</p>
-              <p className="text-xs text-slate-400">Productos con &lt; 20% disponible</p>
+              <p className="text-sm font-medium text-slate-500 mb-2">Stock Roto</p>
+              <p className="text-3xl font-bold text-red-600 mb-1">{stockRoto}</p>
+              <p className="text-xs text-blue-600 font-medium hover:text-blue-700 underline decoration-dotted underline-offset-2 flex items-center gap-1">
+                <span>Ver productos sin stock</span>
+                <span>→</span>
+              </p>
             </div>
-            <AlertTriangle className="w-5 h-5 text-orange-600" strokeWidth={1.5} />
+            <PackageX className="w-5 h-5 text-red-600" strokeWidth={1.5} />
           </div>
+
+          {/* Tooltip con lista de productos sin stock */}
+          {stockRoto > 0 && (
+            <div className="invisible group-hover:visible absolute z-[9999] left-0 top-full mt-2 bg-white rounded-lg shadow-2xl border-2 border-slate-300 p-4 w-96 transition-all">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-semibold text-slate-900">Productos sin stock</h4>
+                <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded-full">
+                  {stockRoto} total{stockRoto !== 1 ? 'es' : ''}
+                </span>
+              </div>
+              {stockRotoPreview.length > 0 ? (
+                <>
+                  <div className="space-y-2 max-h-80 overflow-y-auto pr-2">
+                    {stockRotoPreview.map((producto: any, idx: number) => (
+                      <div key={idx} className="flex items-start gap-2 p-2 rounded-lg hover:bg-slate-50 transition-colors border border-slate-100">
+                        <PackageX className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-slate-900 truncate">
+                            {producto.codigo || 'Sin código'}
+                          </p>
+                          <p className="text-xs text-slate-500 truncate">
+                            {producto.nombre || 'Sin nombre'}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-xs text-red-600 font-medium bg-red-50 px-2 py-0.5 rounded">
+                              Disponible: {producto.disponible}
+                            </span>
+                            {producto.reservado > 0 && (
+                              <span className="text-xs text-orange-600 bg-orange-50 px-2 py-0.5 rounded">
+                                Reservado: {producto.reservado}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {stockRoto > 10 && (
+                    <div className="mt-3 pt-3 border-t border-slate-200">
+                      <p className="text-xs text-slate-600 text-center font-medium">
+                        +{stockRoto - 10} productos más sin stock
+                      </p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-slate-400 text-center py-4">No hay productos para mostrar</p>
+              )}
+              <div className="mt-3 pt-3 border-t border-slate-200">
+                <p className="text-xs text-blue-600 font-semibold text-center flex items-center justify-center gap-1">
+                  <span>Click para ver todos</span>
+                  <span>→</span>
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 hover:shadow-md transition-shadow">
           <div className="flex items-start justify-between">
             <div className="flex-1">
-              <p className="text-sm font-medium text-slate-500 mb-2">Dólar hoy</p>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium text-slate-500">Dólar hoy</p>
+                <button
+                  onClick={fetchDolarData}
+                  disabled={loadingDolar}
+                  className="p-1 rounded hover:bg-slate-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Actualizar cotización"
+                >
+                  <RefreshCw className={`w-4 h-4 text-slate-600 ${loadingDolar ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
               {loadingDolar ? (
-                <p className="text-sm text-slate-400">Cargando...</p>
+                <div className="space-y-1">
+                  <p className="text-sm text-slate-400">Actualizando...</p>
+                  <div className="w-full bg-slate-200 rounded-full h-1">
+                    <div className="bg-blue-600 h-1 rounded-full animate-pulse" style={{ width: '60%' }}></div>
+                  </div>
+                </div>
               ) : dolarData ? (
-                <>
-                  <p className="text-xl font-bold text-slate-900 mb-1">
-                    {dolarData.compra} / {dolarData.venta}
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    Actualizado: {new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs
-                  </p>
-                </>
+                <div className="space-y-2">
+                  <div className="flex items-baseline gap-2">
+                    <p className="text-xl font-bold text-slate-900">
+                      ${dolarData.compra}
+                    </p>
+                    <span className="text-sm text-slate-500">/</span>
+                    <p className="text-xl font-bold text-slate-900">
+                      ${dolarData.venta}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {dolarData.variacion !== 0 && (
+                      <div className={`flex items-center gap-1 text-xs font-medium ${
+                        dolarData.variacion > 0 ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        {dolarData.variacion > 0 ? (
+                          <ChevronUp className="w-3 h-3" />
+                        ) : (
+                          <ChevronDown className="w-3 h-3" />
+                        )}
+                        {Math.abs(dolarData.variacion)}%
+                      </div>
+                    )}
+                    <p className="text-xs text-slate-400">
+                      {lastUpdate ? `Actualizado: ${lastUpdate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs` : 'Recién actualizado'}
+                    </p>
+                  </div>
+                  {errorDolar && (
+                    <p className="text-xs text-amber-600 flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3" />
+                      {errorDolar}
+                    </p>
+                  )}
+                </div>
               ) : (
-                <p className="text-sm text-slate-400">No disponible</p>
+                <div className="space-y-2">
+                  <p className="text-sm text-slate-400">No disponible</p>
+                  <button
+                    onClick={fetchDolarData}
+                    className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Reintentar
+                  </button>
+                </div>
               )}
             </div>
             <DollarSign className="w-5 h-5 text-slate-400" strokeWidth={1.5} />

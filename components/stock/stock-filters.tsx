@@ -6,13 +6,21 @@ import { Search, Filter, ChevronDown, ChevronUp } from 'lucide-react'
 interface StockFiltersProps {
   onFilterChange: (filters: { search: string; categories: string[]; stockStatus: string }) => void
   availableCategories: string[]
+  initialFilters?: { search?: string; categories?: string[]; stockStatus?: string }
 }
 
-export function StockFilters({ onFilterChange, availableCategories }: StockFiltersProps) {
-  const [search, setSearch] = useState('')
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([])
-  const [selectedStockStatus, setSelectedStockStatus] = useState('todos')
+export function StockFilters({ onFilterChange, availableCategories, initialFilters }: StockFiltersProps) {
+  const [search, setSearch] = useState(initialFilters?.search || '')
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(initialFilters?.categories || [])
+  const [selectedStockStatus, setSelectedStockStatus] = useState(initialFilters?.stockStatus || 'todos')
   const [isFiltersExpanded, setIsFiltersExpanded] = useState(false)
+
+  // Expandir filtros automáticamente si hay filtros iniciales aplicados
+  useEffect(() => {
+    if (initialFilters?.stockStatus && initialFilters.stockStatus !== 'todos') {
+      setIsFiltersExpanded(true)
+    }
+  }, [initialFilters])
 
   // Categorías dinámicas + opción "todas"
   const categories = [
