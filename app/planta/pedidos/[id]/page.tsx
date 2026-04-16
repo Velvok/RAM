@@ -91,6 +91,12 @@ export default function PlantaPedidoDetallePage() {
               product:products!cut_orders_product_id_fkey(*),
               material_product:products!cut_orders_material_base_id_fkey(*)
             )
+          ),
+          preparation_items(
+            *,
+            product:products(*),
+            assigned_inventory:inventory(*),
+            assigned_operator:users(*)
           )
         `)
         .eq('id', pedidoId)
@@ -103,6 +109,10 @@ export default function PlantaPedidoDetallePage() {
       
       console.log('📋 Datos del pedido cargados:', data)
       console.log('👤 Cliente del pedido:', data.client)
+      console.log('📦 Preparation items:', {
+        count: data.preparation_items?.length || 0,
+        items: data.preparation_items
+      })
       setPedido(data)
     } catch (error) {
       console.error('Error loading pedido:', error)
@@ -1435,6 +1445,123 @@ export default function PlantaPedidoDetallePage() {
             <p className="text-slate-400 text-lg">
               No hay órdenes de corte para este pedido
             </p>
+          </div>
+        )}
+
+        {/* Sección de Artículos a Preparar */}
+        {pedido.preparation_items && pedido.preparation_items.length > 0 && (
+          <div className="mt-8 space-y-4">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+              <Package className="w-6 h-6" />
+              Artículos a Preparar
+            </h2>
+            
+            {pedido.preparation_items.map((item: any) => {
+              const isCompleted = item.status === 'completada'
+              const progress = (item.quantity_prepared / item.quantity_requested) * 100
+              const remaining = item.quantity_requested - item.quantity_prepared
+
+              return (
+                <div
+                  key={item.id}
+                  className={`rounded-lg border-2 p-6 ${
+                    isCompleted
+                      ? 'bg-slate-800/50 border-green-500'
+                      : 'bg-slate-800/70 border-blue-500'
+                  }`}
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <Package className={`w-6 h-6 ${isCompleted ? 'text-green-500' : 'text-blue-500'}`} />
+                      <div>
+                        <h3 className="text-lg font-bold text-white">{item.product.name}</h3>
+                        <p className="text-sm text-slate-400">{item.product.code}</p>
+                      </div>
+                    </div>
+                    {isCompleted && (
+                      <CheckCircle2 className="w-7 h-7 text-green-500" />
+                    )}
+                  </div>
+
+                  {/* Progreso */}
+                  <div className="mb-4">
+                    <div className="flex justify-between text-sm mb-2">
+                      <span className="text-slate-300 font-medium">Progreso</span>
+                      <span className="text-slate-400">
+                        {item.quantity_prepared} / {item.quantity_requested} unidades
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-700 rounded-full h-3">
+                      <div
+                        className={`h-3 rounded-full transition-all ${
+                          isCompleted ? 'bg-green-500' : 'bg-blue-500'
+                        }`}
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Stock disponible */}
+                  {item.assigned_inventory && (
+                    <div className="text-sm text-slate-400 mb-4">
+                      Stock disponible: {item.assigned_inventory.stock_disponible} unidades
+                    </div>
+                  )}
+
+                  {/* Selector de cantidad y botón */}
+                  {!isCompleted && (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3">
+                        <label className="text-sm font-medium text-slate-300 whitespace-nowrap">
+                          Cantidad a preparar:
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={remaining}
+                          defaultValue={1}
+                          id={`prep-quantity-${item.id}`}
+                          className="w-20 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                        />
+                        <span className="text-sm text-slate-400">
+                          de {remaining} restantes
+                        </span>
+                      </div>
+
+                      <button
+                        onClick={async () => {
+                          const input = document.getElementById(`prep-quantity-${item.id}`) as HTMLInputElement
+                          const quantity = parseInt(input.value) || 1
+                          
+                          if (quantity <= 0 || quantity > remaining) {
+                            showError('Cantidad inválida')
+                            return
+                          }
+
+                          try {
+                            const { prepareItem } = await import('@/app/actions/preparation')
+                            await prepareItem(item.id, quantity)
+                            // Recargar pedido para actualizar el estado
+                            await loadPedido()
+                          } catch (error: any) {
+                            showError(error.message || 'Error al preparar artículo')
+                          }
+                        }}
+                        className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold text-lg transition-colors"
+                      >
+                        Marcar como Preparado
+                      </button>
+                    </div>
+                  )}
+
+                  {isCompleted && (
+                    <div className="text-center py-3 text-green-500 font-semibold text-lg">
+                      ✓ Artículo completamente preparado
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         )}
       </div>

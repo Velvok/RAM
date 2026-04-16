@@ -34,6 +34,12 @@ export async function getOrderById(id: string) {
         product:products!cut_orders_product_id_fkey(*),
         material_base:products!cut_orders_material_base_id_fkey(*),
         assigned_operator:users!cut_orders_assigned_to_fkey(*)
+      ),
+      preparation_items(
+        *,
+        product:products(*),
+        assigned_inventory:inventory(*),
+        assigned_operator:users(*)
       )
     `)
     .eq('id', id)
@@ -41,6 +47,13 @@ export async function getOrderById(id: string) {
 
   if (error) throw error
   if (!data || data.length === 0) return null
+  
+  console.log(`📋 getOrderById(${id}):`, {
+    cut_orders_count: data[0].cut_orders?.length || 0,
+    preparation_items_count: data[0].preparation_items?.length || 0,
+    preparation_items: data[0].preparation_items
+  })
+  
   return data[0]
 }
 
@@ -204,89 +217,113 @@ export async function approveOrder(orderId: string) {
 
   const errors: string[] = []
 
-  // NUEVO: Crear UNA orden de corte por PRODUCTO (agrupada)
-  // Ejemplo: Cliente pide 10 × Chapa 3m → se crea 1 orden de corte con quantity_requested=10
-  // TEMPORAL: Solo procesar productos de categoría "chapas"
+  // NUEVO: Crear órdenes de corte para CHAPAS y preparation_items para ARTÍCULOS NORMALES
   for (const line of order.order_lines) {
-    // FILTRO: Solo procesar chapas
-    if (line.product?.category !== 'chapas') {
-      console.log(`⏭️ Saltando ${line.product?.name} - No es una chapa (categoría: ${line.product?.category})`)
-      continue
-    }
-    
     // Cantidad de unidades que pide el cliente
     const units = line.units || Math.ceil(line.quantity) || 1
     
-    // Tamaño de cada pieza (extraído del código del producto)
-    const productSize = line.product?.length_meters || 
-                       parseFloat(line.product?.code?.match(/\.(\d+),(\d+)$/)?.[0]?.replace('.', '')?.replace(',', '.') || '0') ||
-                       line.length_meters || 
-                       line.quantity
+    // Identificar si es chapa (código empieza con "AC")
+    const isChapa = line.product?.code?.startsWith('AC') || false
     
-    console.log(`📋 Línea (CHAPA): ${line.product?.name}, Unidades: ${units}, Tamaño: ${productSize}m`)
+    console.log(`\n🔍 Procesando línea:`, {
+      product_name: line.product?.name,
+      product_code: line.product?.code,
+      isChapa,
+      units
+    })
     
-    // Crear UNA orden de corte agrupada para todas las unidades
-    const cutNumber = `CUT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-    
-    // Crear la orden de corte AGRUPADA
-    const { data: cutOrderData, error: cutError } = await supabase
-      .from('cut_orders')
-      .insert({
-        cut_number: cutNumber,
-        order_id: orderId,
-        product_id: line.product_id,
-        quantity_requested: units, // CAMBIO: ahora es la cantidad de unidades, no el tamaño
-        quantity_cut: 0, // Inicialmente 0 cortadas
-        status: 'pendiente',
-      })
-      .select()
-    
-    if (cutError) {
-      console.error('Error creando orden de corte:', cutError)
-      errors.push(`Error creando orden de corte: ${cutError.message}`)
-      continue
-    }
-
-    if (!cutOrderData || cutOrderData.length === 0) {
-      console.error('No se devolvió ninguna orden de corte después del insert')
-      errors.push('Error: No se pudo crear la orden de corte')
-      continue
-    }
-
-    const cutOrder = cutOrderData[0]
-
-    console.log(`✅ Orden de corte creada: ${cutNumber} - ${units} unidades de ${productSize}m`)
-    
-    // ASIGNACIÓN AUTOMÁTICA DE STOCK
-    // Buscar stock disponible del tamaño exacto o mayor
-    try {
-      const { findBestStockMatch, assignStockToCutOrder, reserveStock } = await import('./stock-management')
+    if (isChapa) {
+      // ========== CHAPAS: Crear orden de corte ==========
+      console.log(`📋 Línea (CHAPA): ${line.product?.name}, Unidades: ${units}`)
       
-      // Buscar stock para el tamaño del producto
-      const bestMatch = await findBestStockMatch(line.product_id, productSize)
+      // Tamaño de cada pieza (extraído del código del producto)
+      const productSize = line.product?.length_meters || 
+                         parseFloat(line.product?.code?.match(/\.(\d+),(\d+)$/)?.[0]?.replace('.', '')?.replace(',', '.') || '0') ||
+                         line.length_meters || 
+                         line.quantity
       
-      if (bestMatch) {
-        // Asignar el stock a la orden de corte
-        await assignStockToCutOrder(
-          cutOrder.id, 
-          bestMatch.inventory_id,
-          bestMatch.product_id,  // ID del producto de la pieza asignada
-          bestMatch.quantity     // Tamaño de la pieza
-        )
-        
-        // Reservar tantas unidades como se solicitan
-        for (let i = 0; i < units; i++) {
-          await reserveStock(bestMatch.inventory_id)
-        }
-        
-        console.log(`✅ Stock asignado: ${bestMatch.product_code} ${bestMatch.quantity}m × ${units} unidades (${bestMatch.isExact ? 'exacto' : 'aproximado'})`)
-      } else {
-        errors.push(`⚠️ No hay stock disponible para ${line.product?.name} (${productSize}m × ${units})`)
-        console.warn(`⚠️ No hay stock disponible para ${cutNumber}`)
+      // Crear UNA orden de corte agrupada para todas las unidades
+      const cutNumber = `CUT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+      
+      // Crear la orden de corte AGRUPADA
+      const { data: cutOrderData, error: cutError } = await supabase
+        .from('cut_orders')
+        .insert({
+          cut_number: cutNumber,
+          order_id: orderId,
+          product_id: line.product_id,
+          quantity_requested: units,
+          quantity_cut: 0,
+          status: 'pendiente',
+        })
+        .select()
+      
+      if (cutError) {
+        console.error('Error creando orden de corte:', cutError)
+        errors.push(`Error creando orden de corte: ${cutError.message}`)
+        continue
       }
-    } catch (stockError: any) {
-      errors.push(`Error asignando stock a ${cutNumber}: ${stockError.message}`)
-      console.error('Error asignando stock:', stockError)
+
+      if (!cutOrderData || cutOrderData.length === 0) {
+        console.error('No se devolvió ninguna orden de corte después del insert')
+        errors.push('Error: No se pudo crear la orden de corte')
+        continue
+      }
+
+      const cutOrder = cutOrderData[0]
+
+      console.log(`✅ Orden de corte creada: ${cutNumber} - ${units} unidades de ${productSize}m`)
+      
+      // ASIGNACIÓN AUTOMÁTICA DE STOCK
+      // Buscar stock disponible del tamaño exacto o mayor
+      try {
+        const { findBestStockMatch, assignStockToCutOrder, reserveStock } = await import('./stock-management')
+        
+        // Buscar stock para el tamaño del producto
+        const bestMatch = await findBestStockMatch(line.product_id, productSize)
+        
+        if (bestMatch) {
+          // Asignar el stock a la orden de corte
+          await assignStockToCutOrder(
+            cutOrder.id, 
+            bestMatch.inventory_id,
+            bestMatch.product_id,  // ID del producto de la pieza asignada
+            bestMatch.quantity     // Tamaño de la pieza
+          )
+          
+          // Reservar tantas unidades como se solicitan
+          for (let i = 0; i < units; i++) {
+            await reserveStock(bestMatch.inventory_id)
+          }
+          
+          console.log(`✅ Stock asignado: ${bestMatch.product_code} ${bestMatch.quantity}m × ${units} unidades (${bestMatch.isExact ? 'exacto' : 'aproximado'})`)
+        } else {
+          errors.push(`⚠️ No hay stock disponible para ${line.product?.name} (${productSize}m × ${units})`)
+          console.warn(`⚠️ No hay stock disponible para ${cutNumber}`)
+        }
+      } catch (stockError: any) {
+        errors.push(`Error asignando stock a ${cutNumber}: ${stockError.message}`)
+        console.error('Error asignando stock:', stockError)
+      }
+      
+    } else {
+      // ========== ARTÍCULOS NORMALES: Crear preparation_item ==========
+      console.log(`📦 Línea (ARTÍCULO NORMAL): ${line.product?.name}, Unidades: ${units}`)
+      console.log(`   → Código: ${line.product?.code}`)
+      console.log(`   → Product ID: ${line.product_id}`)
+      console.log(`   → Order Line ID: ${line.id}`)
+      
+      try {
+        const { createPreparationItem } = await import('./preparation')
+        console.log(`   → Llamando a createPreparationItem...`)
+        const result = await createPreparationItem(orderId, line.id, line.product_id, units)
+        console.log(`✅ Preparation item creado:`, result)
+        console.log(`✅ Stock reservado: ${units} unidades`)
+      } catch (prepError: any) {
+        console.error('❌ Error creando preparation_item:', prepError)
+        console.error('   Stack:', prepError.stack)
+        errors.push(`Error creando preparation_item para ${line.product?.name}: ${prepError.message}`)
+      }
     }
     
     // Pequeño delay para evitar duplicados en el timestamp
@@ -318,48 +355,67 @@ export async function generateCutOrders(orderId: string) {
   return approveOrder(orderId)
 }
 
-// Actualizar estado del pedido basado en el estado de sus órdenes de corte
+// Actualizar estado del pedido basado en el estado de sus órdenes de corte Y preparation_items
 export async function updateOrderStatus(orderId: string) {
   const supabase = await createClient()
 
-  // Obtener todas las órdenes de corte del pedido con quantity_cut
-  const { data: cutOrders, error } = await supabase
+  // Obtener todas las órdenes de corte del pedido
+  const { data: cutOrders, error: cutError } = await supabase
     .from('cut_orders')
     .select('status, quantity_requested, quantity_cut')
     .eq('order_id', orderId)
 
-  if (error) throw error
+  if (cutError) throw cutError
 
-  if (!cutOrders || cutOrders.length === 0) {
-    // Si no hay órdenes de corte, el pedido debe estar en 'nuevo'
+  // Obtener todos los preparation_items del pedido
+  const { data: prepItems, error: prepError } = await supabase
+    .from('preparation_items')
+    .select('status, quantity_requested, quantity_prepared')
+    .eq('order_id', orderId)
+
+  if (prepError) throw prepError
+
+  // Si no hay ni órdenes de corte ni preparation_items, el pedido debe estar en 'nuevo'
+  if ((!cutOrders || cutOrders.length === 0) && (!prepItems || prepItems.length === 0)) {
     return
   }
 
-  const totalOrders = cutOrders.length
-  
-  // NUEVO: Contar órdenes completadas por quantity_cut, no solo por status
-  const completedOrders = cutOrders.filter(co => 
+  // Contar items completados
+  const completedCutOrders = (cutOrders || []).filter(co => 
     (co.quantity_cut || 0) >= co.quantity_requested
   ).length
   
-  const inProgressOrders = cutOrders.filter(co => co.status === 'en_proceso').length
+  const completedPrepItems = (prepItems || []).filter(pi => 
+    (pi.quantity_prepared || 0) >= pi.quantity_requested
+  ).length
+
+  const totalItems = (cutOrders?.length || 0) + (prepItems?.length || 0)
+  const completedItems = completedCutOrders + completedPrepItems
   
-  // Verificar si hay cortes parciales (quantity_cut > 0 pero no completada)
-  const partialCuts = cutOrders.filter(co => 
+  // Verificar si hay items en proceso
+  const inProgressCutOrders = (cutOrders || []).filter(co => co.status === 'en_proceso').length
+  const inProgressPrepItems = (prepItems || []).filter(pi => pi.status === 'en_proceso').length
+  
+  // Verificar si hay trabajos parciales
+  const partialCuts = (cutOrders || []).filter(co => 
     (co.quantity_cut || 0) > 0 && (co.quantity_cut || 0) < co.quantity_requested
+  ).length
+  
+  const partialPreps = (prepItems || []).filter(pi => 
+    (pi.quantity_prepared || 0) > 0 && (pi.quantity_prepared || 0) < pi.quantity_requested
   ).length
 
   let newStatus = 'aprobado'
 
-  if (completedOrders === totalOrders) {
-    // Todas las órdenes tienen quantity_cut >= quantity_requested
-    newStatus = 'finalizado'
-  } else if (completedOrders > 0 || inProgressOrders > 0 || partialCuts > 0) {
-    // Si hay alguna completada, en proceso, O con cortes parciales → está en corte
+  if (completedItems === totalItems) {
+    // Todos los items completados
+    newStatus = 'preparado'
+  } else if (completedItems > 0 || inProgressCutOrders > 0 || inProgressPrepItems > 0 || partialCuts > 0 || partialPreps > 0) {
+    // Si hay algún item completado, en proceso, o parcial → está en corte
     newStatus = 'en_corte'
   }
   
-  console.log(`📊 Estado del pedido ${orderId}: ${completedOrders}/${totalOrders} completadas → ${newStatus}`)
+  console.log(`📊 Estado del pedido ${orderId}: ${completedItems}/${totalItems} completados (${completedCutOrders} cortes + ${completedPrepItems} preparados) → ${newStatus}`)
 
   // Actualizar estado del pedido
   await supabase
@@ -387,7 +443,7 @@ export async function markOrderAsDelivered(orderId: string) {
   // Obtener usuario actual
   const { data: { user } } = await supabase.auth.getUser()
 
-  // Verificar que todas las órdenes estén completadas
+  // Verificar que todas las órdenes de corte estén completadas
   const { data: cutOrders, error: cutOrdersError } = await supabase
     .from('cut_orders')
     .select('id, status, material_base_id, quantity_requested, quantity_cut')
@@ -395,10 +451,22 @@ export async function markOrderAsDelivered(orderId: string) {
 
   if (cutOrdersError) throw cutOrdersError
 
-  // NUEVO: Verificar que todas tengan quantity_cut >= quantity_requested
-  const allCompleted = cutOrders?.every(co => (co.quantity_cut || 0) >= co.quantity_requested)
-  if (!allCompleted) {
-    throw new Error('No se puede marcar como entregado: hay órdenes pendientes')
+  // Verificar que todos los preparation_items estén completados
+  const { data: prepItems, error: prepItemsError } = await supabase
+    .from('preparation_items')
+    .select('id, status, assigned_inventory_id, quantity_requested, quantity_prepared')
+    .eq('order_id', orderId)
+
+  if (prepItemsError) throw prepItemsError
+
+  // Verificar que todas las órdenes de corte tengan quantity_cut >= quantity_requested
+  const allCutOrdersCompleted = cutOrders?.every(co => (co.quantity_cut || 0) >= co.quantity_requested) ?? true
+  
+  // Verificar que todos los preparation_items tengan quantity_prepared >= quantity_requested
+  const allPrepItemsCompleted = prepItems?.every(pi => (pi.quantity_prepared || 0) >= pi.quantity_requested) ?? true
+  
+  if (!allCutOrdersCompleted || !allPrepItemsCompleted) {
+    throw new Error('No se puede marcar como entregado: hay items pendientes de completar')
   }
 
   // Obtener estado anterior del pedido
@@ -414,7 +482,7 @@ export async function markOrderAsDelivered(orderId: string) {
   const stockConsumed = []
   const previousStatus = orderData.status
 
-  // NUEVO: Consumir stock reservado según quantity_requested de cada orden
+  // Consumir stock reservado de cut_orders
   for (const cutOrder of cutOrders || []) {
     if (cutOrder.material_base_id) {
       // Obtener el inventory_id del producto asignado
@@ -431,8 +499,7 @@ export async function markOrderAsDelivered(orderId: string) {
 
       const inventory = inventoryData[0]
 
-      // NUEVO: Consumir quantity_requested unidades (no solo 1)
-      console.log(`📦 Consumiendo ${cutOrder.quantity_requested} unidades de stock para orden ${cutOrder.id}`)
+      console.log(`📦 Consumiendo ${cutOrder.quantity_requested} unidades de stock para orden de corte ${cutOrder.id}`)
       
       // Guardar información del stock consumido para historial
       stockConsumed.push({
@@ -453,6 +520,33 @@ export async function markOrderAsDelivered(orderId: string) {
       }
       
       console.log(`✅ ${cutOrder.quantity_requested} unidades consumidas`)
+    }
+  }
+
+  // NUEVO: Consumir stock reservado de preparation_items
+  for (const prepItem of prepItems || []) {
+    if (prepItem.assigned_inventory_id) {
+      console.log(`📦 Consumiendo ${prepItem.quantity_requested} unidades de stock para preparation_item ${prepItem.id}`)
+      
+      // Guardar información del stock consumido para historial
+      stockConsumed.push({
+        preparation_item_id: prepItem.id,
+        inventory_id: prepItem.assigned_inventory_id,
+        quantity: prepItem.quantity_requested
+      })
+      
+      for (let i = 0; i < prepItem.quantity_requested; i++) {
+        const { error: stockError } = await supabase.rpc('consume_reserved_stock', {
+          p_inventory_id: prepItem.assigned_inventory_id
+        })
+
+        if (stockError) {
+          console.error(`Error consuming reserved stock (unit ${i + 1}/${prepItem.quantity_requested}):`, stockError)
+          // Continuar con las demás unidades
+        }
+      }
+      
+      console.log(`✅ ${prepItem.quantity_requested} unidades consumidas`)
     }
   }
 

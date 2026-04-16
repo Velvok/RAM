@@ -457,6 +457,82 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
         </div>
       )}
 
+      {/* Artículos a Preparar */}
+      {order.preparation_items && order.preparation_items.length > 0 && (
+        <div className="bg-white rounded-lg shadow">
+          <div className="px-6 py-4 border-b border-slate-200">
+            <h3 className="text-lg font-semibold text-slate-900">
+              Artículos a Preparar
+            </h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                    Código Producto
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                    Producto
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                    Cantidad
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                    Stock Asignado
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                    Estado
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-slate-200">
+                {order.preparation_items.map((item: any) => (
+                  <tr key={item.id}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 font-mono">
+                      {item.product?.code}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                      {item.product?.name}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <span className={item.quantity_prepared >= item.quantity_requested ? 'text-green-600' : 'text-slate-900'}>
+                        {item.quantity_prepared || 0}/{item.quantity_requested}
+                      </span>
+                      {item.quantity_prepared > 0 && item.quantity_prepared < item.quantity_requested && (
+                        <span className="ml-2 text-xs text-yellow-600">
+                          ({item.quantity_requested - item.quantity_prepared} pendientes)
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      {item.assigned_inventory ? (
+                        <span className="text-green-600 flex items-center gap-1">
+                          <CheckCircle2 className="w-4 h-4" />
+                          Stock asignado
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">Sin asignar</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        item.status === 'completada'
+                          ? 'bg-green-100 text-green-800'
+                          : item.status === 'en_proceso'
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {item.status === 'completada' ? 'Completada' : item.status === 'en_proceso' ? 'En Proceso' : 'Pendiente'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Log de Actividades */}
       <div className="bg-white rounded-lg shadow">

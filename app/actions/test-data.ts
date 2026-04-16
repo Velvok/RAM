@@ -33,7 +33,7 @@ export async function generateTestOrder(status: string = 'nuevo', numLines: numb
 
   console.log('✅ Cliente encontrado:', clients.id)
 
-  // Obtener productos que tengan stock disponible (SOLO CHAPAS)
+  // Obtener productos que tengan stock disponible (CHAPAS Y ARTÍCULOS NORMALES)
   const { data: inventoryItems } = await supabase
     .from('inventory')
     .select(`
@@ -49,21 +49,25 @@ export async function generateTestOrder(status: string = 'nuevo', numLines: numb
   }
 
   // Extraer productos únicos (puede haber varios inventory del mismo producto)
-  // FILTRAR SOLO CHAPAS
+  // INCLUIR TANTO CHAPAS COMO ARTÍCULOS NORMALES
   const uniqueProducts = Array.from(
     new Map(
       inventoryItems
         .map(item => Array.isArray(item.product) ? item.product[0] : item.product)
-        .filter(p => p != null && p.category === 'chapas') // SOLO CHAPAS
+        .filter(p => p != null) // Todos los productos con stock
         .map(p => [p.id, p])
     ).values()
   )
 
   if (uniqueProducts.length === 0) {
-    return { error: 'No hay chapas disponibles en stock' }
+    return { error: 'No hay productos disponibles en stock' }
   }
 
-  console.log(`✅ Chapas disponibles encontradas: ${uniqueProducts.length}`)
+  // Separar chapas y artículos normales
+  const chapas = uniqueProducts.filter(p => p.code?.startsWith('AC'))
+  const articulos = uniqueProducts.filter(p => !p.code?.startsWith('AC'))
+
+  console.log(`✅ Productos disponibles: ${uniqueProducts.length} (${chapas.length} chapas, ${articulos.length} artículos)`)
 
   // Seleccionar productos aleatorios (sin repetir)
   const selectedProducts = []
@@ -85,25 +89,43 @@ export async function generateTestOrder(status: string = 'nuevo', numLines: numb
   const orderLines = []
   
   for (const product of products) {
-    // El producto YA tiene la longitud en su nombre (ej: "Chapa 3mm de 12m")
-    // Extraer longitud del nombre del producto
-    const lengthMatch = product.name.match(/(\d+)m/)
-    const lengthPerUnit = lengthMatch ? parseInt(lengthMatch[1]) : 6
+    const isChapa = product.code?.startsWith('AC')
     
-    // Generar cantidad de unidades (entre 1 y 10)
-    const units = Math.floor(Math.random() * 10) + 1
-    const quantity = units * lengthPerUnit // Total en metros (para cálculos de precio)
-    
-    const unitPrice = Math.floor(Math.random() * 2000) + 1000 // Entre 1000 y 3000 por metro
-    totalAmount += quantity * unitPrice
-    orderLines.push({
-      product_id: product.id,
-      quantity, // metros totales (solo para precio)
-      units, // cantidad de chapas (LO IMPORTANTE)
-      length_meters: lengthPerUnit, // metros por chapa
-      unitPrice,
-      subtotal: quantity * unitPrice
-    })
+    if (isChapa) {
+      // CHAPAS: Extraer longitud del nombre del producto
+      const lengthMatch = product.name.match(/(\d+)m/)
+      const lengthPerUnit = lengthMatch ? parseInt(lengthMatch[1]) : 6
+      
+      // Generar cantidad de unidades (entre 1 y 10)
+      const units = Math.floor(Math.random() * 10) + 1
+      const quantity = units * lengthPerUnit // Total en metros (para cálculos de precio)
+      
+      const unitPrice = Math.floor(Math.random() * 2000) + 1000 // Entre 1000 y 3000 por metro
+      totalAmount += quantity * unitPrice
+      orderLines.push({
+        product_id: product.id,
+        quantity, // metros totales (solo para precio)
+        units, // cantidad de chapas (LO IMPORTANTE)
+        length_meters: lengthPerUnit, // metros por chapa
+        unitPrice,
+        subtotal: quantity * unitPrice
+      })
+    } else {
+      // ARTÍCULOS NORMALES: Solo cantidad de unidades
+      const units = Math.floor(Math.random() * 20) + 1 // Entre 1 y 20 unidades
+      const unitPrice = Math.floor(Math.random() * 5000) + 500 // Entre 500 y 5500 por unidad
+      const quantity = units // Para artículos normales, quantity = units
+      
+      totalAmount += quantity * unitPrice
+      orderLines.push({
+        product_id: product.id,
+        quantity, // cantidad de unidades
+        units, // cantidad de unidades (igual que quantity)
+        length_meters: null, // No aplica para artículos normales
+        unitPrice,
+        subtotal: quantity * unitPrice
+      })
+    }
   }
 
   // Crear pedido - SIEMPRE en estado 'nuevo'
