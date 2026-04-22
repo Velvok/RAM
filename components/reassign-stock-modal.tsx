@@ -62,34 +62,14 @@ export default function ReassignStockModal({
   async function loadAvailableOrders() {
     setLoading(true)
     try {
-      const { createClient } = await import('@/lib/supabase/client')
-      const supabase = createClient()
-      
-      // NUEVO: Obtener órdenes con al menos 1 unidad cortada (quantity_cut > 0)
-      // Ya no solo completadas, sino también parcialmente completadas
-      const { data: cutOrders, error } = await supabase
-        .from('cut_orders')
-        .select(`
-          id,
-          cut_number,
-          quantity_requested,
-          quantity_cut,
-          order_id,
-          material_base_id,
-          product:products!cut_orders_product_id_fkey(code, name),
-          material_base:products!cut_orders_material_base_id_fkey(code, name),
-          order:orders!cut_orders_order_id_fkey(id, order_number, client:clients(business_name))
-        `)
-        .gt('quantity_cut', 0)
-        .not('material_base_id', 'is', null)
+      const { getAvailableOrdersForReassignment } = await import('@/app/actions/dashboard-data')
+      const orders = await getAvailableOrdersForReassignment('', productSize)
 
-      if (error) throw error
-
-      console.log('📦 Órdenes completadas encontradas:', cutOrders?.length)
-      console.log('🔍 Buscando chapas para tamaño:', productSize)
+      console.log('Órdenes completadas encontradas:', orders?.length)
+      console.log('Buscando chapas para tamaño:', productSize)
 
       // Filtrar por tamaño de la CHAPA ASIGNADA (usando material_base)
-      const filtered = (cutOrders || []).filter((co: any) => {
+      const filtered = (orders || []).filter((co: any) => {
         try {
           // Obtener el producto de material_base
           const materialBase = Array.isArray(co.material_base) 

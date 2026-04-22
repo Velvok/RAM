@@ -62,33 +62,16 @@ export default function ReassignmentModal({
   async function loadAvailableOrders() {
     setLoading(true)
     try {
-      const supabase = createClient()
-      
-      // Buscar pedidos que tengan cortes completados del mismo producto
-      // y con longitud >= a la que necesitamos
-      const { data, error } = await supabase
-        .from('orders')
-        .select(`
-          id,
-          order_number,
-          created_at,
-          status,
-          client:clients!inner(business_name),
-          cut_orders!inner(
-            id,
-            cut_number,
-            quantity_requested,
-            status,
-            product:products!inner(id, name, code)
-          )
-        `)
-        .eq('cut_orders.status', 'completada')
-        .order('created_at', { ascending: false })
+      const { getAvailableOrdersForReassignment } = await import('@/app/actions/dashboard-data')
+      const orders = await getAvailableOrdersForReassignment('', targetCutOrder?.quantity_requested || 0)
 
-      if (error) throw error
+      // Filtrar por cortes completados
+      const filtered = orders?.filter(order => 
+        order.cut_orders?.some((cutOrder: any) => cutOrder.status === 'completada')
+      ) || []
 
       // Normalizar datos de Supabase (convierte arrays a objetos simples)
-      const normalizedOrders = (data || []).map((order: any) => ({
+      const normalizedOrders = (filtered || []).map((order: any) => ({
         ...order,
         client: Array.isArray(order.client) ? order.client[0] : order.client,
         cut_orders: Array.isArray(order.cut_orders) ? order.cut_orders.map((co: any) => ({

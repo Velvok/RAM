@@ -27,15 +27,16 @@ export default function AssignOperatorModal({
   }, [isOpen])
 
   async function loadOperators() {
-    const supabase = createClient()
-    const { data } = await supabase
-      .from('users')
-      .select('id, full_name')
-      .eq('role', 'operator')
-      .eq('is_active', true)
-    
-    if (data) setOperators(data)
-    setLoading(false)
+    try {
+      const { getAvailableOperators } = await import('@/app/actions/dashboard-data')
+      const data = await getAvailableOperators()
+      setOperators(data || [])
+    } catch (error) {
+      console.error('Error loading operators:', error)
+      setOperators([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   if (!isOpen) return null
