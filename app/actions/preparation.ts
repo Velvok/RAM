@@ -1,6 +1,6 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 import { revalidateOrders, revalidateStock } from '@/lib/revalidate'
 
 /**
@@ -179,7 +179,7 @@ export async function prepareItem(
  * Obtener preparation_items de un pedido
  */
 export async function getPreparationItemsByOrder(orderId: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const { data, error } = await supabase
     .from('preparation_items')

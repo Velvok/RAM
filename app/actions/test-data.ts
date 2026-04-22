@@ -1,12 +1,12 @@
 'use server'
 
 import { revalidatePath, revalidateTag } from 'next/cache'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 import { revalidateAll } from '@/lib/revalidate'
 
 export async function generateTestOrder(status: string = 'nuevo', numLines: number = 1) {
   console.log('🎲 Generando pedido de prueba...', { status, numLines })
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   // Obtener un cliente aleatorio
   const { data: clientData, error: clientError } = await supabase

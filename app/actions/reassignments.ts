@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 
 /**
  * Reasigna un corte completado de un pedido a otro
@@ -12,7 +12,7 @@ export async function reassignCutOrder(
   toCutOrderId: string,
   reason?: string
 ) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   // Obtener usuario actual
   const { data: { user } } = await supabase.auth.getUser()
@@ -139,7 +139,7 @@ export async function reassignCutOrder(
  * Actualizar estado del pedido basado en sus cut_orders
  */
 async function updateOrderStatus(orderId: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const { data: cutOrders, error } = await supabase
     .from('cut_orders')
@@ -169,7 +169,7 @@ async function updateOrderStatus(orderId: string) {
  * Revertir una reasignación (solo Master Admin)
  */
 export async function revertReassignment(reassignmentId: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   // Obtener usuario actual
   const { data: { user } } = await supabase.auth.getUser()

@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { getOrders } from '@/app/actions/orders'
 import OrdersGridWithFilters from '@/components/orders-grid-with-filters'
 import GenerateTestOrderButton from './generate-test-order-button'
 
@@ -20,25 +20,8 @@ export default async function PedidosPage() {
   let orders = []
 
   try {
-    const supabase = await createClient()
-    
-    const { data, error } = await supabase
-      .from('orders')
-      .select(`
-        *,
-        client:clients(*),
-        lines:order_lines(*, product:products(*)),
-        cut_orders:cut_orders!cut_orders_order_id_fkey(*)
-      `)
-      .order('created_at', { ascending: false })
-    
-    if (error) {
-      console.error('❌ Error loading orders:', error)
-      throw error
-    }
-    
-    console.log('✅ Pedidos cargados:', data?.length || 0)
-    orders = data || []
+    orders = await getOrders()
+    console.log('✅ Pedidos cargados:', orders?.length || 0)
   } catch (error) {
     console.error('❌ Error fatal loading orders:', error)
   }

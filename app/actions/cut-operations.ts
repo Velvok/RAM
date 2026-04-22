@@ -1,6 +1,6 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 import { generateRemnantStock, reserveStock } from './stock-management'
 import { finishCutOrder } from './cut-orders'
 import { updateOrderStatus } from './orders'
@@ -14,7 +14,7 @@ export async function processCutOrder(params: {
 }) {
   const { cutOrderId, selectedMaterialId, materialLength, quantityToCut, operatorId } = params
   
-  const supabase = await createClient()
+  const supabase = createAdminClient()
   
   console.log(`\n🔍 Buscando orden de corte con ID: ${cutOrderId}`)
   

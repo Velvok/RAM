@@ -1,10 +1,10 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 
 export async function getRemnants(status?: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   let query = supabase
     .from('remnants')
@@ -33,7 +33,7 @@ export async function getRemnants(status?: string) {
 }
 
 export async function getRemnantById(id: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const { data, error } = await supabase
     .from('remnants')
@@ -58,7 +58,7 @@ export async function getRemnantById(id: string) {
 }
 
 export async function markAsScrap(remnantId: string, notes?: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const { error } = await supabase
     .from('remnants')
@@ -81,7 +81,7 @@ export async function markAsScrap(remnantId: string, notes?: string) {
 }
 
 export async function useRemnant(remnantId: string, usedInOrderId: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const { error } = await supabase
     .from('remnants')
@@ -103,7 +103,7 @@ export async function useRemnant(remnantId: string, usedInOrderId: string) {
 }
 
 export async function reserveRemnant(remnantId: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const { error } = await supabase
     .from('remnants')
@@ -125,7 +125,7 @@ export async function reserveRemnant(remnantId: string) {
 }
 
 export async function releaseRemnant(remnantId: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const { error } = await supabase
     .from('remnants')
@@ -147,7 +147,7 @@ export async function releaseRemnant(remnantId: string) {
 }
 
 export async function getRemnantStats() {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const { data: remnants, error } = await supabase
     .from('remnants')

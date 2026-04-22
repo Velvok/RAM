@@ -1,6 +1,6 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 
 /**
  * Interfaz para datos mensuales de historial
@@ -42,7 +42,7 @@ export async function getAnnualHistory(
   year: number,
   productIds?: string[]
 ): Promise<ProductHistoryData[]> {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   // Si no se especifican productos, obtener los 6 con conversión de peso
   let selectedProductIds = productIds
@@ -128,7 +128,7 @@ export async function getAnnualHistory(
  * Obtener productos disponibles para el historial
  */
 export async function getProductsForHistory() {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   // Obtener IDs de productos con conversión
   const { data: conversions, error: convError } = await supabase
@@ -172,7 +172,7 @@ export async function getProductsForHistory() {
  * Obtener productos seleccionados por el usuario (guardados en BD)
  */
 export async function getDefaultProducts() {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   // Obtener productos seleccionados de la tabla user_selected_products
   const { data: selected, error: selError } = await supabase
@@ -219,7 +219,7 @@ export async function getDefaultProducts() {
  * Actualizar productos seleccionados (guardar en BD)
  */
 export async function updateSelectedProducts(productIds: string[]) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   // Eliminar todos los productos seleccionados actuales
   const { error: deleteError } = await supabase
@@ -254,7 +254,7 @@ export async function updateSelectedProducts(productIds: string[]) {
  * Obtener años disponibles en el historial
  */
 export async function getAvailableYears() {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const { data, error } = await supabase
     .from('annual_history')

@@ -1,8 +1,12 @@
 # Security Fix: Habilitación de RLS
 
 **Fecha**: 2026-04-22  
-**Migración**: `00048_enable_rls_security_fix.sql`  
+**Migraciones**: 
+- `00048_enable_rls_security_fix.sql` - Habilita RLS y corrige vista
+- `00049_fix_users_rls_recursion.sql` - **CRÍTICO** Corrige recursión infinita
 **Prioridad**: 🔴 CRÍTICA
+
+## ⚠️ IMPORTANTE: Ejecutar AMBAS migraciones en orden
 
 ## Problemas Solucionados
 
@@ -37,18 +41,57 @@ La migración incluye:
 - Verificación de la vista recreada
 - Resumen de políticas por tabla
 
+### 4. ✅ Recursión Infinita Corregida (Migración 00049)
+**Problema detectado**: Las políticas RLS originales causaban recursión infinita:
+```sql
+-- ❌ PROBLEMA: Esta política causa recursión infinita
+CREATE POLICY "Admin full access" ON users FOR ALL USING (
+  EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'admin')
+);
+-- La política de 'users' hace SELECT en 'users' → recursión infinita
+```
+
+**Solución implementada**: Políticas simples para `authenticated`:
+```sql
+-- ✅ SOLUCIÓN: Política simple sin recursión
+CREATE POLICY "Authenticated users can view all users"
+  ON users FOR SELECT TO authenticated USING (true);
+```
+
+**Por qué funciona**:
+- Los server actions usan `createAdminClient()` con service_role
+- Service role bypasea RLS automáticamente
+- Las políticas solo necesitan permitir acceso básico a usuarios autenticados
+- El control de permisos se hace en la capa de aplicación, no en la base de datos
+
 ## Cómo Ejecutar
 
+### ⚠️ CRÍTICO: Ejecutar en este orden exacto
+
 ### Opción 1: Supabase SQL Editor (Recomendado)
-1. Abre Supabase Dashboard
-2. Ve a SQL Editor
-3. Copia y pega el contenido de `supabase/migrations/00048_enable_rls_security_fix.sql`
-4. Ejecuta
-5. Revisa los mensajes de NOTICE para confirmar
+
+**PASO 1**: Ejecutar primera migración
+1. Abre Supabase Dashboard → SQL Editor
+2. Copia y pega `supabase/migrations/00048_enable_rls_security_fix.sql`
+3. Ejecuta
+4. Verifica que no hay errores
+
+**PASO 2**: Ejecutar segunda migración (CRÍTICA)
+1. En el mismo SQL Editor
+2. Copia y pega `supabase/migrations/00049_fix_users_rls_recursion.sql`
+3. Ejecuta
+4. Verifica el mensaje de confirmación
+
+**PASO 3**: Reiniciar servidor Next.js
+```bash
+# Detener servidor (Ctrl+C)
+npm run dev
+```
 
 ### Opción 2: CLI de Supabase
 ```bash
 supabase db push
+npm run dev
 ```
 
 ## Verificación Post-Migración

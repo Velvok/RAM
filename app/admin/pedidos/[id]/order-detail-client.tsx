@@ -73,16 +73,9 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
   async function loadActivityLog() {
     setLoadingLog(true)
     try {
-      const { createClient } = await import('@/lib/supabase/client')
-      const supabase = createClient()
+      const { getOrderActivityLog } = await import('@/app/actions/client-queries')
+      const data = await getOrderActivityLog(order.id)
       
-      const { data, error } = await supabase
-        .from('order_activity_log')
-        .select('*')
-        .eq('order_id', order.id)
-        .order('created_at', { ascending: false })
-      
-      if (error) throw error
       console.log('📋 Activity log loaded:', data)
       setActivityLog(data || [])
     } catch (error) {

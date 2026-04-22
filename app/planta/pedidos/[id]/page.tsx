@@ -73,39 +73,8 @@ export default function PlantaPedidoDetallePage() {
 
   async function loadPedido() {
     try {
-      const supabase = createClient()
-      
-      const { data, error } = await supabase
-        .from('orders')
-        .select(`
-          *,
-          client:clients!orders_client_id_fkey(*),
-          cut_orders:cut_orders!cut_orders_order_id_fkey(
-            *,
-            product:products!cut_orders_product_id_fkey(*),
-            material_product:products!cut_orders_material_base_id_fkey(*),
-            assigned_operator:users!cut_orders_assigned_to_fkey(*),
-            reassigned_from_order:orders!cut_orders_reassigned_from_order_id_fkey(order_number),
-            sub_orders:cut_orders!parent_cut_order_id(
-              *,
-              product:products!cut_orders_product_id_fkey(*),
-              material_product:products!cut_orders_material_base_id_fkey(*)
-            )
-          ),
-          preparation_items(
-            *,
-            product:products(*),
-            assigned_inventory:inventory(*),
-            assigned_operator:users(*)
-          )
-        `)
-        .eq('id', pedidoId)
-        .single()
-
-      if (error) {
-        console.error('Error en consulta de pedido:', error)
-        throw error
-      }
+      const { getOrderById } = await import('@/app/actions/client-queries')
+      const data = await getOrderById(params.id as string)
       
       console.log('📋 Datos del pedido cargados:', data)
       console.log('👤 Cliente del pedido:', data.client)

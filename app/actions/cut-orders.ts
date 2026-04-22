@@ -1,12 +1,12 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 import { updateOrderStatus } from './orders'
 import { revalidateCuts, revalidateOrders, revalidateStock } from '@/lib/revalidate'
 
 export async function getCutOrders(status?: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   let query = supabase
     .from('cut_orders')
@@ -35,7 +35,7 @@ export async function getCutOrders(status?: string) {
 }
 
 export async function getCutOrderById(id: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const { data, error } = await supabase
     .from('cut_orders')
@@ -55,7 +55,7 @@ export async function getCutOrderById(id: string) {
 }
 
 export async function assignCutOrder(cutOrderId: string, operatorId: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const { data, error } = await supabase
     .from('cut_orders')
@@ -72,7 +72,7 @@ export async function assignCutOrder(cutOrderId: string, operatorId: string) {
 }
 
 export async function startCutOrder(cutOrderId: string, operatorId: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   // Al iniciar el corte, asignar automáticamente al operario
   const { data, error } = await supabase
@@ -109,7 +109,7 @@ export async function startCutOrder(cutOrderId: string, operatorId: string) {
 }
 
 export async function pauseCutOrder(cutOrderId: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const { data, error } = await supabase
     .from('cut_orders')
@@ -135,7 +135,7 @@ export async function finishCutOrder(
   quantityUsed: number,
   remnantGenerated: number
 ) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
   const { data: { user } } = await supabase.auth.getUser()
 
   const { data: cutOrder, error: cutOrderError } = await supabase

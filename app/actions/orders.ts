@@ -1,11 +1,11 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 import { revalidateOrders, revalidateStock, revalidateOrderStatus } from '@/lib/revalidate'
 
 export async function getOrders() {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const { data, error } = await supabase
     .from('orders')
@@ -21,7 +21,7 @@ export async function getOrders() {
 }
 
 export async function getOrderById(id: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const { data, error } = await supabase
     .from('orders')
@@ -58,7 +58,7 @@ export async function getOrderById(id: string) {
 }
 
 export async function cancelOrder(orderId: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const { data, error } = await supabase
     .from('orders')
@@ -91,7 +91,7 @@ export async function cancelOrder(orderId: string) {
 
 // Aprobar pedido EN PAUSA (sin asignar stock automáticamente)
 export async function approveOrderOnHold(orderId: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   // Obtener usuario actual (admin)
   const { data: { user } } = await supabase.auth.getUser()
@@ -192,7 +192,7 @@ export async function approveOrderOnHold(orderId: string) {
 
 // Aprobar pedido y generar órdenes de corte CON asignación automática de stock
 export async function approveOrder(orderId: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   // Obtener usuario actual (admin)
   const { data: { user } } = await supabase.auth.getUser()
@@ -357,7 +357,7 @@ export async function generateCutOrders(orderId: string) {
 
 // Actualizar estado del pedido basado en el estado de sus órdenes de corte Y preparation_items
 export async function updateOrderStatus(orderId: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   // Obtener todas las órdenes de corte del pedido
   const { data: cutOrders, error: cutError } = await supabase
@@ -438,7 +438,7 @@ export async function updateOrderStatus(orderId: string) {
  * Consume el stock reservado de todas las órdenes completadas
  */
 export async function markOrderAsDelivered(orderId: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   // Obtener usuario actual
   const { data: { user } } = await supabase.auth.getUser()
@@ -618,7 +618,7 @@ export async function markOrderAsDelivered(orderId: string) {
  * Restaura el stock consumido y revierte el estado del pedido
  */
 export async function undoOrderDelivery(orderId: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   // Obtener usuario actual
   const { data: { user } } = await supabase.auth.getUser()

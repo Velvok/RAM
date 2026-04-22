@@ -1,6 +1,6 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
 /**
@@ -8,7 +8,7 @@ import { revalidatePath } from 'next/cache'
  * Marca la orden como completada
  */
 export async function confirmReassignmentPickup(cutOrderId: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   // Obtener información de la orden
   const { data: cutOrder, error: fetchError } = await supabase

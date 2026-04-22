@@ -1,11 +1,11 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 import { revalidateInventory } from '@/lib/revalidate'
 
 export async function getInventory() {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const { data, error } = await supabase
     .from('inventory')
@@ -83,7 +83,7 @@ export async function getInventory() {
 }
 
 export async function getInventoryByProduct(productId: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const { data, error } = await supabase
     .from('inventory')
@@ -96,7 +96,7 @@ export async function getInventoryByProduct(productId: string) {
 }
 
 export async function updateStock(productId: string, quantity: number, type: 'add' | 'subtract') {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
   const { data: { user } } = await supabase.auth.getUser()
 
   const { data: current } = await supabase
@@ -134,7 +134,7 @@ export async function updateStock(productId: string, quantity: number, type: 'ad
 }
 
 export async function adjustStock(productId: string, newQuantity: number, notes: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
   const { data: { user } } = await supabase.auth.getUser()
 
   const { data: current } = await supabase
@@ -200,7 +200,7 @@ export async function adjustStock(productId: string, newQuantity: number, notes:
 }
 
 export async function getRemnants() {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const { data, error } = await supabase
     .from('remnants')

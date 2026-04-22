@@ -47,25 +47,11 @@ export default function PlantaPedidosPage() {
 
   async function loadPedidos() {
     try {
-      const supabase = createClient()
+      const { getOrdersForPlanta } = await import('@/app/actions/client-queries')
       
       console.log('🔍 Buscando pedidos en estados: aprobado, en_corte, finalizado')
       
-      // Obtener pedidos aprobados, en_corte y finalizados con conteo de órdenes y datos del cliente
-      const { data, error } = await supabase
-        .from('orders')
-        .select(`
-          *,
-          client:clients(*),
-          cut_orders!cut_orders_order_id_fkey(id)
-        `)
-        .in('status', ['aprobado', 'en_corte', 'finalizado'])
-        .order('created_at', { ascending: false })
-
-      if (error) {
-        console.error('❌ Error en consulta:', error)
-        throw error
-      }
+      const data = await getOrdersForPlanta()
       
       console.log('✅ Pedidos encontrados:', data?.length || 0, data)
       setPedidos(data || [])

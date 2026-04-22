@@ -2,11 +2,11 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 import bcrypt from 'bcryptjs'
 
 export async function loginWithEmail(formData: FormData) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const data = {
     email: formData.get('email') as string,
@@ -25,7 +25,7 @@ export async function loginWithEmail(formData: FormData) {
 
 export async function loginWithPin(pin: string) {
   try {
-    const supabase = await createClient()
+    const supabase = createAdminClient()
 
     const { data: users, error } = await supabase
       .from('users')
@@ -68,13 +68,13 @@ export async function loginWithPin(pin: string) {
 }
 
 export async function logout() {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
   await supabase.auth.signOut()
   redirect('/')
 }
 
 export async function signUp(formData: FormData) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const data = {
     email: formData.get('email') as string,
@@ -92,7 +92,7 @@ export async function signUp(formData: FormData) {
 }
 
 export async function createOperatorWithPin(fullName: string, pin: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const pinHash = await bcrypt.hash(pin, 10)
 
