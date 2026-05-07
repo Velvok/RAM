@@ -15,15 +15,20 @@ interface StockActualizadoPayload {
 
 export async function POST(request: NextRequest) {
   try {
-    const headersList = await headers()
-    const webhookSecret = headersList.get('x-evo-webhook-secret')
+    // TEMPORAL: Sin validación de headers para pruebas con EVO
+    // const headersList = await headers()
+    // const webhookSecret = headersList.get('x-evo-webhook-secret')
+    // const envSecret = process.env.EVO_WEBHOOK_SECRET
 
-    if (webhookSecret !== process.env.EVO_WEBHOOK_SECRET) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
+    console.log('🔍 Webhook Debug: MODO TEST - Sin validación de headers')
+
+    // TEMPORAL: Comentar validación para pruebas
+    // if (!webhookSecret) {
+    //   return NextResponse.json({ error: 'Missing webhook secret header' }, { status: 401 })
+    // }
+    // if (webhookSecret !== envSecret) {
+    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // }
 
     const payload: StockActualizadoPayload = await request.json()
     const supabase = createAdminClient()

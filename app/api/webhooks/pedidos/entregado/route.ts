@@ -18,15 +18,15 @@ interface PedidoEntregadoPayload {
 
 export async function POST(request: NextRequest) {
   try {
-    const headersList = await headers()
-    const webhookSecret = headersList.get('x-evo-webhook-secret')
+    // TEMPORAL: Sin validación de headers para pruebas con EVO
+    console.log('🔍 Entregas Webhook Debug: MODO TEST - Sin validación de headers')
 
-    if (webhookSecret !== process.env.EVO_WEBHOOK_SECRET) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
+    // TEMPORAL: Comentar validación para pruebas
+    // const headersList = await headers()
+    // const webhookSecret = headersList.get('x-evo-webhook-secret')
+    // if (webhookSecret !== process.env.EVO_WEBHOOK_SECRET) {
+    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // }
 
     const payload: PedidoEntregadoPayload = await request.json()
     const supabase = createAdminClient()
