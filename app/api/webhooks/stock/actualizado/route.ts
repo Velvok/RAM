@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
+import { createWebhookVerifier } from '@/lib/webhook-security'
 
 interface StockActualizadoPayload {
   id_evento: string
@@ -15,22 +16,43 @@ interface StockActualizadoPayload {
 
 export async function POST(request: NextRequest) {
   try {
-    // TEMPORAL: Sin validación de headers para pruebas con EVO
-    // const headersList = await headers()
-    // const webhookSecret = headersList.get('x-evo-webhook-secret')
-    // const envSecret = process.env.EVO_WEBHOOK_SECRET
+    const headersList = await headers()
+    const body = await request.text()
+    
+    // Configuración de seguridad
+    const webhookSecret = process.env.EVO_WEBHOOK_SECRET
+    if (!webhookSecret) {
+      console.error('❌ EVO_WEBHOOK_SECRET not configured')
+      return NextResponse.json(
+        { error: 'Server configuration error' },
+        { status: 500 }
+      )
+    }
 
-    console.log('🔍 Webhook Debug: MODO TEST - Sin validación de headers')
+    // Verificar autenticación (solo Bearer token para facilitar integración con EVO)
+    const verifyWebhook = createWebhookVerifier({
+      secret: webhookSecret,
+      enableHmac: false,  // Desactivar HMAC temporalmente
+      enableBearerToken: true
+    })
 
-    // TEMPORAL: Comentar validación para pruebas
-    // if (!webhookSecret) {
-    //   return NextResponse.json({ error: 'Missing webhook secret header' }, { status: 401 })
-    // }
-    // if (webhookSecret !== envSecret) {
-    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    // }
+    const verification = await verifyWebhook(headersList, body)
+    
+    if (!verification.valid) {
+      console.error('❌ Webhook authentication failed:', verification.error)
+      return NextResponse.json(
+        { 
+          error: 'Unauthorized',
+          details: verification.error 
+        },
+        { status: 401 }
+      )
+    }
 
-    const payload: StockActualizadoPayload = await request.json()
+    console.log('✅ Webhook authentication successful')
+
+    // Parsear el payload del body que ya leímos
+    const payload: StockActualizadoPayload = JSON.parse(body)
     const supabase = createAdminClient()
 
     // Validar estructura básica

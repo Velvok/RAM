@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
+import { createWebhookVerifier } from '@/lib/webhook-security'
 
 interface PedidoEntregadoPayload {
   id_evento: string
@@ -18,17 +19,43 @@ interface PedidoEntregadoPayload {
 
 export async function POST(request: NextRequest) {
   try {
-    // TEMPORAL: Sin validación de headers para pruebas con EVO
-    console.log('🔍 Entregas Webhook Debug: MODO TEST - Sin validación de headers')
+    const headersList = await headers()
+    const body = await request.text()
+    
+    // Configuración de seguridad
+    const webhookSecret = process.env.EVO_WEBHOOK_SECRET
+    if (!webhookSecret) {
+      console.error('❌ EVO_WEBHOOK_SECRET not configured')
+      return NextResponse.json(
+        { error: 'Server configuration error' },
+        { status: 500 }
+      )
+    }
 
-    // TEMPORAL: Comentar validación para pruebas
-    // const headersList = await headers()
-    // const webhookSecret = headersList.get('x-evo-webhook-secret')
-    // if (webhookSecret !== process.env.EVO_WEBHOOK_SECRET) {
-    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    // }
+    // Verificar autenticación (solo Bearer token para facilitar integración con EVO)
+    const verifyWebhook = createWebhookVerifier({
+      secret: webhookSecret,
+      enableHmac: false,  // Desactivar HMAC temporalmente
+      enableBearerToken: true
+    })
 
-    const payload: PedidoEntregadoPayload = await request.json()
+    const verification = await verifyWebhook(headersList, body)
+    
+    if (!verification.valid) {
+      console.error('❌ Webhook authentication failed:', verification.error)
+      return NextResponse.json(
+        { 
+          error: 'Unauthorized',
+          details: verification.error 
+        },
+        { status: 401 }
+      )
+    }
+
+    console.log('✅ Entregas webhook authentication successful')
+
+    // Parsear el payload del body que ya leímos
+    const payload: PedidoEntregadoPayload = JSON.parse(body)
     const supabase = createAdminClient()
 
     // Validar estructura básica
