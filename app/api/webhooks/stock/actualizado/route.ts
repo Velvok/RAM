@@ -82,15 +82,65 @@ export async function POST(request: NextRequest) {
 
     for (const item of payload.items) {
       try {
-        // Buscar producto por evo_product_id
-        const { data: product } = await supabase
-          .from('products')
-          .select('id')
-          .eq('evo_product_id', item.id_articulo)
-          .single()
+        // Normalizar ID de producto para buscar coincidencias
+        let productId = item.id_articulo
+        
+        // Intentar múltiples variaciones del ID (priorizar formato exacto)
+        const searchVariations = [
+          productId,                           // Original: AC25110.0,5 (formato correcto)
+          productId.replace('*', ''),          // Sin asterisco: AC25110.0,5
+          productId.replace(/[^A-Z0-9,]/g, ''), // Solo alfanumérico y coma: AC25110.0,5
+          productId.replace(',', '.'),         // Coma por punto: AC25110.0.5
+          productId.replace('*', '').replace(',', '.'), // Sin asterisco y coma por punto: AC25110.0.5
+          productId.replace(/[^A-Z0-9]/g, ''), // Solo alfanumérico: AC2511005
+        ]
+
+        let product = null
+        
+        // Buscar primero por code (ya que evo_product_id es null)
+        console.log(`🔍 Searching for product: ${item.id_articulo}`)
+        console.log(`🔍 Variations to try: ${searchVariations.join(', ')}`)
+        
+        for (const variation of searchVariations) {
+          console.log(`🔍 Trying variation: "${variation}"`)
+          const { data: foundProduct, error: searchError } = await supabase
+            .from('products')
+            .select('id, code, name')
+            .eq('code', variation)
+            .single()
+          
+          console.log(`🔍 Search result for "${variation}":`, { foundProduct, searchError })
+          
+          if (foundProduct) {
+            product = foundProduct
+            console.log(`✅ Found product ${item.id_articulo} by code as ${variation}`)
+            break
+          }
+        }
+
+        // Si no se encuentra por code, buscar por evo_product_id
+        if (!product) {
+          console.log(`🔍 Trying evo_product_id search...`)
+          for (const variation of searchVariations) {
+            const { data: foundProduct, error: searchError } = await supabase
+              .from('products')
+              .select('id, code, name')
+              .eq('evo_product_id', variation)
+              .single()
+            
+            console.log(`🔍 EVO search result for "${variation}":`, { foundProduct, searchError })
+            
+            if (foundProduct) {
+              product = foundProduct
+              console.log(`✅ Found product ${item.id_articulo} by evo_product_id as ${variation}`)
+              break
+            }
+          }
+        }
 
         if (!product) {
-          errors.push(`Product ${item.id_articulo} not found`)
+          errors.push(`Product ${item.id_articulo} not found (tried: ${searchVariations.join(', ')})`)
+          console.log(`❌ Product ${item.id_articulo} not found after all variations`)
           continue
         }
 
