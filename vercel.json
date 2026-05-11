@@ -1,0 +1,16 @@
+{
+  "functions": {
+    "app/api/webhooks/stock/actualizado/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/webhooks/pedidos/nuevo/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/webhooks/pedidos/entregado/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/debug/webhook-test/route.ts": {
+      "maxDuration": 300
+    }
+  }
+}
