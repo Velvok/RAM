@@ -105,66 +105,36 @@ export async function POST(request: NextRequest) {
     for (const item of payload.items) {
       try {
         // Normalizar ID de producto para buscar coincidencias
-        let productId = item.id_articulo
+        const productId = item.id_articulo
         
-        // Intentar múltiples variaciones del ID (priorizar formato exacto)
+        // Generar variaciones del ID
         const searchVariations = [
-          productId,                           // Original: AC25110.0,5 (formato correcto)
-          productId.replace('*', ''),          // Sin asterisco: AC25110.0,5
-          productId.replace(/[^A-Z0-9,]/g, ''), // Solo alfanumérico y coma: AC25110.0,5
-          productId.replace(',', '.'),         // Coma por punto: AC25110.0.5
-          productId.replace('*', '').replace(',', '.'), // Sin asterisco y coma por punto: AC25110.0.5
-          productId.replace(/[^A-Z0-9]/g, ''), // Solo alfanumérico: AC2511005
+          productId,                                        // Original: A*B25110.2,5
+          productId.replace('*', ''),                       // Sin asterisco: AB25110.2,5
+          productId.replace(/[^A-Z0-9,]/g, ''),            // Solo alfanumérico y coma: AB251102,5
+          productId.replace(',', '.'),                      // Coma por punto: A*B25110.2.5
+          productId.replace('*', '').replace(',', '.'),    // Sin asterisco y coma por punto: AB25110.2.5
+          productId.replace(/[^A-Z0-9]/g, ''),             // Solo alfanumérico: AB2511025
         ]
 
-        let product = null
-        
-        // Buscar primero por code (ya que evo_product_id es null)
         console.log(`🔍 Searching for product: ${item.id_articulo}`)
-        console.log(`🔍 Variations to try: ${searchVariations.join(', ')}`)
         
-        for (const variation of searchVariations) {
-          console.log(`🔍 Trying variation: "${variation}"`)
-          const { data: foundProduct, error: searchError } = await supabase
-            .from('products')
-            .select('id, code, name')
-            .eq('code', variation)
-            .single()
-          
-          console.log(`🔍 Search result for "${variation}":`, { foundProduct, searchError })
-          
-          if (foundProduct) {
-            product = foundProduct
-            console.log(`✅ Found product ${item.id_articulo} by code as ${variation}`)
-            break
-          }
-        }
+        // Buscar con una sola consulta usando OR para todas las variaciones
+        const { data: products } = await supabase
+          .from('products')
+          .select('id, code, name, evo_product_id')
+          .or(searchVariations.map(v => `code.eq.${v},evo_product_id.eq.${v}`).join(','))
+          .limit(1)
 
-        // Si no se encuentra por code, buscar por evo_product_id
-        if (!product) {
-          console.log(`🔍 Trying evo_product_id search...`)
-          for (const variation of searchVariations) {
-            const { data: foundProduct, error: searchError } = await supabase
-              .from('products')
-              .select('id, code, name')
-              .eq('evo_product_id', variation)
-              .single()
-            
-            console.log(`🔍 EVO search result for "${variation}":`, { foundProduct, searchError })
-            
-            if (foundProduct) {
-              product = foundProduct
-              console.log(`✅ Found product ${item.id_articulo} by evo_product_id as ${variation}`)
-              break
-            }
-          }
-        }
+        const product = products && products.length > 0 ? products[0] : null
 
         if (!product) {
-          errors.push(`Product ${item.id_articulo} not found (tried: ${searchVariations.join(', ')})`)
-          console.log(`❌ Product ${item.id_articulo} not found after all variations`)
+          errors.push(`Product ${item.id_articulo} not found`)
+          console.log(`❌ Product ${item.id_articulo} not found`)
           continue
         }
+
+        console.log(`✅ Found product ${item.id_articulo} as ${product.code}`)
 
         // Actualizar stock en inventory
         const { error: updateError } = await supabase
