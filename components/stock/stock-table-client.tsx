@@ -15,7 +15,7 @@ type SortDirection = 'asc' | 'desc' | null
 export function StockTableClient({ inventory }: StockTableClientProps) {
   const [filters, setFilters] = useState({ search: '', categories: [] as string[], stockStatus: 'todos' })
   const [currentPage, setCurrentPage] = useState(0)
-  const [rowsPerPage, setRowsPerPage] = useState(25)
+  const [rowsPerPage, setRowsPerPage] = useState(100)
   const [hoveredRow, setHoveredRow] = useState<string | null>(null)
   const [sortField, setSortField] = useState<SortField>(null)
   const [sortDirection, setSortDirection] = useState<SortDirection>(null)
@@ -153,8 +153,8 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
         initialFilters={filters}
       />
 
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <table className="min-w-full divide-y divide-slate-200">
+      <div className="bg-white rounded-lg shadow overflow-x-auto">
+        <table className="w-full divide-y divide-slate-200">
           <thead className="bg-slate-50">
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
@@ -218,7 +218,7 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
               <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
                 Estado
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-32">
                 Acciones
               </th>
             </tr>
@@ -278,7 +278,7 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
                       </span>
                     )}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 w-32">
                     <QuickAdjustModal inventoryItem={item} />
                   </td>
 
@@ -334,10 +334,12 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
               onChange={(e) => handleRowsPerPageChange(Number(e.target.value))}
               className="border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value={10}>10</option>
               <option value={25}>25</option>
               <option value={50}>50</option>
               <option value={100}>100</option>
+              <option value={200}>200</option>
+              <option value={500}>500</option>
+              <option value={sortedInventory.length}>Todos ({sortedInventory.length})</option>
             </select>
             <span className="text-sm text-slate-600">filas</span>
           </div>

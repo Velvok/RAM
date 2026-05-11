@@ -67,39 +67,14 @@ export async function getDashboardData() {
     .limit(10)
 
   // ============================================
-  // 4. Datos para gráficos mensuales
+  // 4. Datos para gráficos mensuales (DESACTIVADO TEMPORALMENTE)
   // ============================================
   
-  // Obtener pedidos de los últimos 12 meses con productos
-  const twelveMonthsAgo = new Date()
-  twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12)
-
-  const { data: monthlyOrders } = await supabase
-    .from('orders')
-    .select(`
-      created_at,
-      lines:order_lines(
-        quantity,
-        product:products(code, name)
-      )
-    `)
-    .gte('created_at', twelveMonthsAgo.toISOString())
-    .order('created_at', { ascending: true })
-  
-  // Obtener lista de todos los productos disponibles
-  const { data: allProducts } = await supabase
-    .from('products')
-    .select('code, name')
-    .order('code', { ascending: true })
-
-  // ============================================
-  // 5. Datos para gráficos anuales
-  // ============================================
-  
-  const { data: yearlyOrders } = await supabase
-    .from('orders')
-    .select('created_at, lines:order_lines(quantity)')
-    .order('created_at', { ascending: true })
+  // NOTA: Desactivado durante carga inicial de productos para evitar stack overflow
+  // Se reactivará cuando haya pedidos reales en el sistema
+  const monthlyOrders: any[] = []
+  const allProducts: any[] = []
+  const yearlyOrders: any[] = []
 
   // ============================================
   // Preparar datos para el componente cliente

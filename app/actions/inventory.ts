@@ -7,79 +7,58 @@ import { revalidateInventory } from '@/lib/revalidate'
 export async function getInventory() {
   const supabase = createAdminClient()
 
-  const { data, error } = await supabase
+  // Primero obtener el total de productos para saber cuántos lotes necesitamos
+  const { count, error: countError } = await supabase
     .from('inventory')
-    .select(`
-      *,
-      product:products(*)
-    `)
-    .order('stock_disponible', { ascending: true })
+    .select('*', { count: 'exact', head: true })
 
-  if (error) throw error
+  if (countError) throw countError
+  const totalCount = count || 0
+  console.log(`📊 Total inventory records: ${totalCount}`)
 
-  // Para cada producto, obtener pedidos aprobados que lo incluyen
-  if (data) {
-    const inventoryWithOrders = await Promise.all(
-      data.map(async (item) => {
-        // Primero obtener order_lines del producto
-        const { data: orderLines } = await supabase
-          .from('order_lines')
-          .select(`
-            quantity,
-            order_id
-          `)
-          .eq('product_id', item.product_id)
+  // Traer datos por lotes de 1000 (límite de Supabase con joins)
+  const batchSize = 1000
+  const allData: any[] = []
+  let offset = 0
 
-        if (!orderLines || orderLines.length === 0) {
-          return {
-            ...item,
-            related_orders: []
-          }
-        }
+  while (offset < totalCount) {
+    const { data, error } = await supabase
+      .from('inventory')
+      .select(`
+        *,
+        product:products(
+          id,
+          code,
+          name,
+          category,
+          unit,
+          evo_product_id
+        )
+      `)
+      .order('stock_disponible', { ascending: true })
+      .range(offset, offset + batchSize - 1)
 
-        // Obtener los IDs de los pedidos
-        const orderIds = orderLines.map(ol => ol.order_id)
+    if (error) throw error
+    if (data && data.length > 0) {
+      allData.push(...data)
+      console.log(`📦 Batch ${Math.floor(offset / batchSize) + 1}: ${data.length} products`)
+    }
 
-        // Consultar los pedidos con sus clientes, filtrando por status
-        // Incluir todos los estados excepto cancelado (pedidos activos que comprometen stock)
-        const { data: orders } = await supabase
-          .from('orders')
-          .select(`
-            id,
-            order_number,
-            status,
-            created_at,
-            client:clients(
-              name,
-              business_name
-            )
-          `)
-          .in('id', orderIds)
-          .in('status', ['nuevo', 'aprobado', 'en_corte', 'en_proceso', 'finalizado'])
-          .order('created_at', { ascending: false })
-
-        // Combinar order_lines con orders
-        const relatedOrders = orderLines
-          .map(ol => {
-            const order = orders?.find(o => o.id === ol.order_id)
-            if (!order) return null
-            return {
-              quantity: ol.quantity,
-              order: order
-            }
-          })
-          .filter(Boolean)
-
-        return {
-          ...item,
-          related_orders: relatedOrders
-        }
-      })
-    )
-    return inventoryWithOrders
+    offset += batchSize
   }
 
-  return data
+  console.log(`📊 Inventory loaded: ${allData.length} products`)
+
+  // NOTA: Consultas de pedidos relacionados desactivadas temporalmente
+  // para evitar stack overflow con muchos productos
+  // Se reactivará cuando sea necesario o se optimice la consulta
+  
+  const result = allData.map(item => ({
+    ...item,
+    related_orders: []
+  }))
+  console.log(`✅ Returning ${result.length} products to client`)
+  return result
 }
 
 export async function getInventoryByProduct(productId: string) {
@@ -87,7 +66,17 @@ export async function getInventoryByProduct(productId: string) {
 
   const { data, error } = await supabase
     .from('inventory')
-    .select('*, product:products(*)')
+    .select(`
+      *,
+      product:products(
+        id,
+        code,
+        name,
+        category,
+        unit,
+        evo_product_id
+      )
+    `)
     .eq('product_id', productId)
     .single()
 
