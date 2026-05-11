@@ -126,15 +126,36 @@ export async function POST(request: NextRequest) {
           .or(searchVariations.map(v => `code.eq.${v},evo_product_id.eq.${v}`).join(','))
           .limit(1)
 
-        const product = products && products.length > 0 ? products[0] : null
+        let product = products && products.length > 0 ? products[0] : null
 
+        // Si no existe el producto, crearlo automáticamente
         if (!product) {
-          errors.push(`Product ${item.id_articulo} not found`)
-          console.log(`❌ Product ${item.id_articulo} not found`)
-          continue
-        }
+          console.log(`📦 Creating new product: ${item.id_articulo}`)
+          
+          const { data: newProduct, error: createError } = await supabase
+            .from('products')
+            .insert({
+              code: productId,
+              evo_product_id: productId,
+              name: `Producto ${productId}`,
+              category: 'chapa',
+              unit: 'kg',
+              is_active: true
+            })
+            .select('id, code, name, evo_product_id')
+            .single()
 
-        console.log(`✅ Found product ${item.id_articulo} as ${product.code}`)
+          if (createError || !newProduct) {
+            errors.push(`Error creating product ${item.id_articulo}: ${createError?.message || 'Unknown'}`)
+            console.log(`❌ Error creating product ${item.id_articulo}`)
+            continue
+          }
+
+          product = newProduct
+          console.log(`✅ Created product ${item.id_articulo}`)
+        } else {
+          console.log(`✅ Found product ${item.id_articulo} as ${product.code}`)
+        }
 
         // Actualizar stock en inventory
         const { error: updateError } = await supabase
