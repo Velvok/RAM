@@ -10,6 +10,7 @@ interface StockActualizadoPayload {
   timestamp: string
   items: Array<{
     id_articulo: string
+    nombre?: string
     cantidad: number
   }>
 }
@@ -131,13 +132,13 @@ export async function POST(request: NextRequest) {
         // Si no existe el producto, crearlo automáticamente
         if (!product) {
           console.log(`📦 Creating new product: ${item.id_articulo}`)
-          
+
           const { data: newProduct, error: createError } = await supabase
             .from('products')
             .insert({
               code: productId,
               evo_product_id: productId,
-              name: `Producto ${productId}`,
+              name: item.nombre || `Producto ${productId}`,
               category: 'chapa',
               unit: 'kg',
               is_active: true
@@ -155,6 +156,22 @@ export async function POST(request: NextRequest) {
           console.log(`✅ Created product ${item.id_articulo}`)
         } else {
           console.log(`✅ Found product ${item.id_articulo} as ${product.code}`)
+
+          // Si viene un nombre en el payload y es diferente, actualizar el producto
+          if (item.nombre && item.nombre !== product.name) {
+            console.log(`📝 Updating product name: ${product.name} → ${item.nombre}`)
+            const { error: updateNameError } = await supabase
+              .from('products')
+              .update({ name: item.nombre })
+              .eq('id', product.id)
+
+            if (updateNameError) {
+              console.error(`❌ Error updating product name: ${updateNameError.message}`)
+            } else {
+              product.name = item.nombre
+              console.log(`✅ Updated product name`)
+            }
+          }
         }
 
         // Actualizar stock en inventory
