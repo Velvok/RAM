@@ -79,6 +79,19 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    // Registrar evento inmediatamente (antes de procesar) para que aparezca en logs
+    await supabase
+      .from('evo_events')
+      .insert({
+        id_evento: payload.id_evento,
+        tipo_evento: payload.tipo_evento,
+        version: payload.version,
+        payload: payload,
+        processed_at: new Date().toISOString(),
+        success: null, // Se actualizará después del procesamiento
+        errors: null
+      })
+
     // Responder inmediatamente antes de procesar para evitar timeout de EVO
     // Procesar en background
     processStockUpdate(payload).catch(error => {
@@ -204,18 +217,15 @@ async function processStockUpdate(payload: StockActualizadoPayload) {
       }
     }
 
-    // Registrar evento procesado
+    // Actualizar evento con resultado del procesamiento
     await supabase
       .from('evo_events')
-      .insert({
-        id_evento: payload.id_evento,
-        tipo_evento: payload.tipo_evento,
-        version: payload.version,
-        payload: payload,
-        processed_at: new Date().toISOString(),
+      .update({
         success: errors.length === 0,
-        errors: errors.length > 0 ? errors : null
+        errors: errors.length > 0 ? errors : null,
+        processed_at: new Date().toISOString()
       })
+      .eq('id_evento', payload.id_evento)
 
     // Registrar sincronización
     await supabase

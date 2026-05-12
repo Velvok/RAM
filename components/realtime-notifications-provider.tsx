@@ -39,42 +39,57 @@ export function RealtimeNotificationsProvider() {
     // ============================================
     // ENTRADA: Eventos desde RAM (evo_events)
     // ============================================
+    const handleInboundEvent = (event: any) => {
+      const { label, icon } = getEventLabel(event.tipo_evento)
+
+      // Solo mostrar notificación si el evento tiene resultado (success no es null)
+      if (event.success === null) return
+
+      if (event.success) {
+        // Agregar información de items procesados si es stock_actualizado
+        let description = `Recibido de RAM • ${new Date(event.created_at).toLocaleTimeString('es-AR')}`
+        if (event.tipo_evento === 'stock_actualizado' && event.payload?.items) {
+          description = `${event.payload.items.length} productos actualizados • ${new Date(event.created_at).toLocaleTimeString('es-AR')}`
+        }
+
+        toast.success(`📥 ${label}`, {
+          description,
+          icon,
+          duration: 5000,
+          action: {
+            label: 'Ver logs',
+            onClick: () => router.push('/admin/logs'),
+          },
+        })
+      } else {
+        toast.error(`⚠️ Error procesando: ${label}`, {
+          description: event.errors?.join('; ') || 'Error desconocido',
+          icon: <AlertTriangle className="w-5 h-5 text-red-500" />,
+          duration: 10000,
+          action: {
+            label: 'Ver logs',
+            onClick: () => router.push('/admin/logs'),
+          },
+        })
+      }
+
+      // Auto-refrescar la página activa si corresponde
+      if (shouldRefreshCurrentPage(event.tipo_evento)) {
+        setTimeout(() => router.refresh(), 1500)
+      }
+    }
+
     const inboundChannel = supabase
       .channel('global-inbound-events')
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'evo_events' },
-        (payload) => {
-          const event = payload.new as any
-          const { label, icon } = getEventLabel(event.tipo_evento)
-
-          if (event.success) {
-            toast.success(`📥 ${label}`, {
-              description: `Recibido de RAM • ${new Date(event.created_at).toLocaleTimeString('es-AR')}`,
-              icon,
-              duration: 5000,
-              action: {
-                label: 'Ver logs',
-                onClick: () => router.push('/admin/logs'),
-              },
-            })
-          } else {
-            toast.error(`⚠️ Error procesando: ${label}`, {
-              description: event.errors?.join('; ') || 'Error desconocido',
-              icon: <AlertTriangle className="w-5 h-5 text-red-500" />,
-              duration: 10000,
-              action: {
-                label: 'Ver logs',
-                onClick: () => router.push('/admin/logs'),
-              },
-            })
-          }
-
-          // Auto-refrescar la página activa si corresponde
-          if (shouldRefreshCurrentPage(event.tipo_evento)) {
-            setTimeout(() => router.refresh(), 1500)
-          }
-        }
+        (payload) => handleInboundEvent(payload.new)
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'evo_events' },
+        (payload) => handleInboundEvent(payload.new)
       )
       .subscribe()
 
