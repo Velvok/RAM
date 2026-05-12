@@ -176,6 +176,37 @@ export async function sendTestEvent() {
   return { success: true, eventId }
 }
 
+/**
+ * Devuelve eventos recientes (entrada y salida) para notificaciones del cliente.
+ * Bypassa RLS usando admin client. Usado por el provider de notificaciones en polling.
+ */
+export async function getRecentEventsForNotifications(sinceIso?: string) {
+  const supabase = createAdminClient()
+  const since = sinceIso || new Date(Date.now() - 5 * 60 * 1000).toISOString()
+
+  const [inboundResult, outboundResult] = await Promise.all([
+    supabase
+      .from('evo_events')
+      .select('id, tipo_evento, success, errors, payload, created_at, processed_at')
+      .gte('processed_at', since)
+      .not('success', 'is', null)
+      .order('processed_at', { ascending: false })
+      .limit(20),
+    supabase
+      .from('outbound_events')
+      .select('id, event_type, status, error_message, completed_at, created_at')
+      .gte('updated_at', since)
+      .in('status', ['success', 'failed'])
+      .order('updated_at', { ascending: false })
+      .limit(20)
+  ])
+
+  return {
+    inbound: inboundResult.data || [],
+    outbound: outboundResult.data || [],
+  }
+}
+
 export async function markEventsAsViewed() {
   const supabase = createAdminClient()
 

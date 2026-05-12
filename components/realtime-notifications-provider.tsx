@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { getRecentEventsForNotifications } from '@/app/actions/integration-logs'
 import { toast } from 'sonner'
 import { ArrowDownCircle, ArrowUpCircle, Package, ShoppingCart, AlertTriangle } from 'lucide-react'
 
@@ -18,8 +18,6 @@ export function RealtimeNotificationsProvider() {
   const initializedRef = useRef(false)
 
   useEffect(() => {
-    const supabase = createClient()
-
     // Helper para iconos según tipo de evento
     const getEventLabel = (tipo: string): { label: string; icon: any } => {
       const t = (tipo || '').toLowerCase()
@@ -59,20 +57,24 @@ export function RealtimeNotificationsProvider() {
           description = `${event.payload.items.length} productos actualizados • ${new Date(event.created_at).toLocaleTimeString('es-AR')}`
         }
 
+        console.log(`🔔 Showing SUCCESS toast for ${event.tipo_evento}`)
         toast.success(`📥 ${label}`, {
           description,
           icon,
-          duration: 5000,
+          duration: 8000,
+          className: 'text-base',
           action: {
             label: 'Ver logs',
             onClick: () => router.push('/admin/logs'),
           },
         })
       } else {
+        console.log(`🔔 Showing ERROR toast for ${event.tipo_evento}`)
         toast.error(`⚠️ Error procesando: ${label}`, {
           description: event.errors?.join('; ') || 'Error desconocido',
           icon: <AlertTriangle className="w-5 h-5 text-red-500" />,
-          duration: 10000,
+          duration: 15000,
+          className: 'text-base',
           action: {
             label: 'Ver logs',
             onClick: () => router.push('/admin/logs'),
@@ -86,98 +88,77 @@ export function RealtimeNotificationsProvider() {
       }
     }
 
-    const inboundChannel = supabase
-      .channel('global-inbound-events')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'evo_events' },
-        (payload) => {
-          console.log('[Realtime] evo_events INSERT:', payload.new)
-          handleInboundEvent(payload.new)
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'evo_events' },
-        (payload) => {
-          console.log('[Realtime] evo_events UPDATE:', payload.new)
-          handleInboundEvent(payload.new)
-        }
-      )
-      .subscribe((status, err) => {
-        console.log('[Realtime] inbound channel status:', status, err || '')
-      })
+    // Handler para eventos de salida (outbound)
+    const handleOutboundEvent = (event: any) => {
+      const dedupKey = `out_${event.id}_${event.status}`
+      if (seenEventIds.current.has(dedupKey)) return
+      seenEventIds.current.add(dedupKey)
+
+      if (event.status === 'success') {
+        console.log(`🔔 Showing OUTBOUND SUCCESS toast for ${event.event_type}`)
+        toast.success(`📤 Enviado a RAM: ${event.event_type}`, {
+          description: `Confirmado correctamente`,
+          icon: <ArrowUpCircle className="w-5 h-5 text-purple-500" />,
+          duration: 5000,
+          className: 'text-base',
+        })
+      } else if (event.status === 'failed') {
+        console.log(`🔔 Showing OUTBOUND ERROR toast for ${event.event_type}`)
+        toast.error(`❌ Falló envío a RAM: ${event.event_type}`, {
+          description: event.error_message || 'Error en el envío',
+          icon: <AlertTriangle className="w-5 h-5 text-red-500" />,
+          duration: 12000,
+          className: 'text-base',
+          action: {
+            label: 'Reintentar',
+            onClick: () => router.push('/admin/logs'),
+          },
+        })
+      }
+    }
 
     // ============================================
-    // SALIDA: Eventos hacia RAM (outbound_events)
-    // ============================================
-    const outboundChannel = supabase
-      .channel('global-outbound-events')
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'outbound_events' },
-        (payload) => {
-          const event = payload.new as any
-          const oldEvent = payload.old as any
-
-          // Solo notificar cuando cambia el estado
-          if (event.status === oldEvent.status) return
-
-          if (event.status === 'success') {
-            toast.success(`📤 Enviado a RAM: ${event.event_type}`, {
-              description: `Confirmado correctamente`,
-              icon: <ArrowUpCircle className="w-5 h-5 text-purple-500" />,
-              duration: 4000,
-            })
-          } else if (event.status === 'failed') {
-            toast.error(`❌ Falló envío a RAM: ${event.event_type}`, {
-              description: event.error_message || 'Error en el envío',
-              icon: <AlertTriangle className="w-5 h-5 text-red-500" />,
-              duration: 10000,
-              action: {
-                label: 'Reintentar',
-                onClick: () => router.push('/admin/logs'),
-              },
-            })
-          }
-        }
-      )
-      .subscribe()
-
-    // ============================================
-    // FALLBACK: Polling cada 8s por si Realtime falla
+    // Polling vía server action (bypassa RLS)
     // ============================================
     const pollEvents = async () => {
       try {
-        // Inicializar: marcar todos los eventos existentes como vistos en el primer poll
-        const since = new Date(Date.now() - 5 * 60 * 1000).toISOString() // últimos 5 min
-
-        const { data, error } = await supabase
-          .from('evo_events')
-          .select('id, tipo_evento, success, errors, payload, created_at, processed_at')
-          .gte('processed_at', since)
-          .not('success', 'is', null)
-          .order('processed_at', { ascending: false })
-          .limit(20)
-
-        if (error) {
-          console.warn('[Polling] Error fetching events:', error)
-          return
-        }
+        const { inbound, outbound } = await getRecentEventsForNotifications()
 
         if (!initializedRef.current) {
-          // Primera vez: solo marcar como vistos sin notificar
-          for (const event of data || []) {
+          // Primera vez: marcar todos los eventos existentes como vistos sin notificar
+          for (const event of inbound) {
             seenEventIds.current.add(`${event.id}_${event.success}`)
           }
+          for (const event of outbound) {
+            seenEventIds.current.add(`out_${event.id}_${event.status}`)
+          }
           initializedRef.current = true
-          console.log(`[Polling] Initialized with ${data?.length || 0} existing events`)
+          console.log(`[Polling] Initialized with ${inbound.length} inbound + ${outbound.length} outbound events`)
           return
         }
 
-        // Procesar nuevos eventos
-        for (const event of data || []) {
-          handleInboundEvent(event)
+        // Procesar nuevos eventos inbound
+        const newInbound = inbound.filter((event: any) => {
+          const dedupKey = `${event.id}_${event.success}`
+          return !seenEventIds.current.has(dedupKey)
+        })
+        if (newInbound.length > 0) {
+          console.log(`[Polling] Found ${newInbound.length} new inbound events`)
+          for (const event of newInbound) {
+            handleInboundEvent(event)
+          }
+        }
+
+        // Procesar nuevos eventos outbound
+        const newOutbound = outbound.filter((event: any) => {
+          const dedupKey = `out_${event.id}_${event.status}`
+          return !seenEventIds.current.has(dedupKey)
+        })
+        if (newOutbound.length > 0) {
+          console.log(`[Polling] Found ${newOutbound.length} new outbound events`)
+          for (const event of newOutbound) {
+            handleOutboundEvent(event)
+          }
         }
       } catch (e) {
         console.warn('[Polling] Error:', e)
@@ -186,13 +167,11 @@ export function RealtimeNotificationsProvider() {
 
     // Primer poll inmediato (inicialización)
     pollEvents()
-    // Polling cada 8s
-    const pollInterval = setInterval(pollEvents, 8000)
+    // Polling cada 5s
+    const pollInterval = setInterval(pollEvents, 5000)
 
     return () => {
       clearInterval(pollInterval)
-      supabase.removeChannel(inboundChannel)
-      supabase.removeChannel(outboundChannel)
     }
   }, [router, pathname])
 

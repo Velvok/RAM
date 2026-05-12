@@ -2,19 +2,29 @@
 
 import { useState, useEffect, useMemo, Fragment as FragmentRow } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { getIntegrationLogs, retryOutboundEvent, sendTestEvent, type IntegrationLog, type LogsFilters } from '@/app/actions/integration-logs'
+import { getIntegrationLogs, getLogsStats, retryOutboundEvent, sendTestEvent, type IntegrationLog, type LogsFilters } from '@/app/actions/integration-logs'
 import { ArrowDownCircle, ArrowUpCircle, CheckCircle2, XCircle, Clock, RefreshCw, Search, ChevronDown, ChevronUp, Send } from 'lucide-react'
 import { toast } from 'sonner'
+
+interface LogsStats {
+  inbound_24h: number
+  outbound_24h: number
+  success_24h: number
+  failed_24h: number
+  pending: number
+}
 
 interface LogsClientProps {
   initialLogs: IntegrationLog[]
   totalLogs: number
   eventTypes: string[]
+  initialStats: LogsStats
 }
 
-export function LogsClient({ initialLogs, totalLogs, eventTypes }: LogsClientProps) {
+export function LogsClient({ initialLogs, totalLogs, eventTypes, initialStats }: LogsClientProps) {
   const [logs, setLogs] = useState<IntegrationLog[]>(initialLogs)
   const [total, setTotal] = useState(totalLogs)
+  const [stats, setStats] = useState<LogsStats>(initialStats)
   const [loading, setLoading] = useState(false)
   const [expandedRow, setExpandedRow] = useState<string | null>(null)
   const [newLogsCount, setNewLogsCount] = useState(0)
@@ -64,9 +74,13 @@ export function LogsClient({ initialLogs, totalLogs, eventTypes }: LogsClientPro
   const refreshLogs = async () => {
     setLoading(true)
     try {
-      const result = await getIntegrationLogs(filters)
+      const [result, newStats] = await Promise.all([
+        getIntegrationLogs(filters),
+        getLogsStats()
+      ])
       setLogs(result.logs)
       setTotal(result.total)
+      setStats(newStats)
       setNewLogsCount(0)
     } finally {
       setLoading(false)
@@ -141,9 +155,37 @@ export function LogsClient({ initialLogs, totalLogs, eventTypes }: LogsClientPro
   }
 
   return (
-    <div className="bg-white rounded-lg shadow">
-      {/* Filtros */}
-      <div className="p-4 border-b border-slate-200">
+    <>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="text-sm font-medium text-slate-600">Entrada 24h</div>
+          <div className="text-2xl font-bold text-blue-600 mt-1">{stats.inbound_24h}</div>
+          <div className="text-xs text-slate-500 mt-1">RAM → Velvok</div>
+        </div>
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="text-sm font-medium text-slate-600">Salida 24h</div>
+          <div className="text-2xl font-bold text-purple-600 mt-1">{stats.outbound_24h}</div>
+          <div className="text-xs text-slate-500 mt-1">Velvok → RAM</div>
+        </div>
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="text-sm font-medium text-slate-600">Exitosos 24h</div>
+          <div className="text-2xl font-bold text-green-600 mt-1">{stats.success_24h}</div>
+        </div>
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="text-sm font-medium text-slate-600">Errores 24h</div>
+          <div className="text-2xl font-bold text-red-600 mt-1">{stats.failed_24h}</div>
+        </div>
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="text-sm font-medium text-slate-600">Pendientes</div>
+          <div className="text-2xl font-bold text-yellow-600 mt-1">{stats.pending}</div>
+          <div className="text-xs text-slate-500 mt-1">Por reintentar</div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg shadow">
+        {/* Filtros */}
+        <div className="p-4 border-b border-slate-200">
         <div className="flex flex-wrap items-center gap-3">
           {/* Búsqueda */}
           <div className="flex-1 min-w-[250px] relative">
@@ -373,6 +415,7 @@ export function LogsClient({ initialLogs, totalLogs, eventTypes }: LogsClientPro
           </button>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   )
 }
