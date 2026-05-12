@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
   try {
     const headersList = await headers()
     const body = await request.text()
-    
+
     // Configuración de seguridad
     const webhookSecret = process.env.EVO_WEBHOOK_SECRET
     if (!webhookSecret) {
@@ -38,13 +38,13 @@ export async function POST(request: NextRequest) {
     })
 
     const verification = await verifyWebhook(headersList, body)
-    
+
     if (!verification.valid) {
       console.error('❌ Webhook authentication failed:', verification.error)
       return NextResponse.json(
-        { 
+        {
           error: 'Unauthorized',
-          details: verification.error 
+          details: verification.error
         },
         { status: 401 }
       )
@@ -64,12 +64,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Verificar idempotencia
+    // Verificar idempotencia (rápido, indexado)
     const { data: existingEvent } = await supabase
       .from('evo_events')
       .select('id')
       .eq('id_evento', payload.id_evento)
-      .single()
+      .maybeSingle()
 
     if (existingEvent) {
       return NextResponse.json({
@@ -79,121 +79,128 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    // Responder inmediatamente antes de procesar para evitar timeout de EVO
+    // Procesar en background
+    processStockUpdate(payload).catch(error => {
+      console.error('Error processing stock update in background:', error)
+    })
+
+    return NextResponse.json({
+      success: true,
+      message: 'Stock update accepted for processing',
+      id_evento: payload.id_evento,
+      version: payload.version
+    })
+
+  } catch (error) {
+    console.error('Stock webhook error:', error)
+    return NextResponse.json(
+      {
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      },
+      { status: 500 }
+    )
+  }
+}
+
+// Función auxiliar para procesar en background
+async function processStockUpdate(payload: StockActualizadoPayload) {
+  const supabase = createAdminClient()
+
+  try {
     // Obtener versión actual del stock
     const { data: lastSync } = await supabase
       .from('stock_sync_log')
       .select('version')
       .order('version', { ascending: false })
       .limit(1)
-      .single()
+      .maybeSingle()
 
     const currentVersion = lastSync?.version || 0
 
     // Solo procesar si la versión es superior
     if (payload.version <= currentVersion) {
-      return NextResponse.json({
-        success: true,
-        message: 'Older version, ignoring',
-        current_version: currentVersion,
-        received_version: payload.version
+      console.log(`Skipping older version: ${payload.version} <= ${currentVersion}`)
+      return
+    }
+
+    // Procesar actualizaciones de stock en batch (más eficiente)
+    const productUpdates: Array<{ id: string; nombre?: string; cantidad: number }> = []
+    const errors: string[] = []
+
+    // Primero, buscar o crear todos los productos
+    for (const item of payload.items) {
+      const productId = item.id_articulo
+
+      // Generar variaciones del ID
+      const searchVariations = [
+        productId,
+        productId.replace('*', ''),
+        productId.replace(/[^A-Z0-9,]/g, ''),
+        productId.replace(',', '.'),
+        productId.replace('*', '').replace(',', '.'),
+        productId.replace(/[^A-Z0-9]/g, ''),
+      ]
+
+      const { data: products } = await supabase
+        .from('products')
+        .select('id, code, name, evo_product_id')
+        .or(searchVariations.map(v => `code.eq.${v},evo_product_id.eq.${v}`).join(','))
+        .limit(1)
+
+      let product = products && products.length > 0 ? products[0] : null
+
+      // Si no existe el producto, crearlo
+      if (!product) {
+        const { data: newProduct, error: createError } = await supabase
+          .from('products')
+          .insert({
+            code: productId,
+            evo_product_id: productId,
+            name: item.nombre || `Producto ${productId}`,
+            category: 'chapa',
+            unit: 'kg',
+            is_active: true
+          })
+          .select('id, code, name, evo_product_id')
+          .single()
+
+        if (createError || !newProduct) {
+          errors.push(`Error creating product ${item.id_articulo}: ${createError?.message || 'Unknown'}`)
+          continue
+        }
+
+        product = newProduct
+      } else if (item.nombre && item.nombre !== product.name) {
+        // Actualizar nombre si es diferente
+        await supabase
+          .from('products')
+          .update({ name: item.nombre })
+          .eq('id', product.id)
+      }
+
+      productUpdates.push({
+        id: product.id,
+        cantidad: item.cantidad
       })
     }
 
-    // Procesar actualizaciones de stock
-    let updatedCount = 0
-    const errors: string[] = []
+    // Actualizar stock en batch (más eficiente)
+    for (const update of productUpdates) {
+      const { error: updateError } = await supabase
+        .from('inventory')
+        .upsert({
+          product_id: update.id,
+          stock_total: update.cantidad,
+          last_sync_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'product_id'
+        })
 
-    for (const item of payload.items) {
-      try {
-        // Normalizar ID de producto para buscar coincidencias
-        const productId = item.id_articulo
-        
-        // Generar variaciones del ID
-        const searchVariations = [
-          productId,                                        // Original: A*B25110.2,5
-          productId.replace('*', ''),                       // Sin asterisco: AB25110.2,5
-          productId.replace(/[^A-Z0-9,]/g, ''),            // Solo alfanumérico y coma: AB251102,5
-          productId.replace(',', '.'),                      // Coma por punto: A*B25110.2.5
-          productId.replace('*', '').replace(',', '.'),    // Sin asterisco y coma por punto: AB25110.2.5
-          productId.replace(/[^A-Z0-9]/g, ''),             // Solo alfanumérico: AB2511025
-        ]
-
-        console.log(`🔍 Searching for product: ${item.id_articulo}`)
-        
-        // Buscar con una sola consulta usando OR para todas las variaciones
-        const { data: products } = await supabase
-          .from('products')
-          .select('id, code, name, evo_product_id')
-          .or(searchVariations.map(v => `code.eq.${v},evo_product_id.eq.${v}`).join(','))
-          .limit(1)
-
-        let product = products && products.length > 0 ? products[0] : null
-
-        // Si no existe el producto, crearlo automáticamente
-        if (!product) {
-          console.log(`📦 Creating new product: ${item.id_articulo}`)
-
-          const { data: newProduct, error: createError } = await supabase
-            .from('products')
-            .insert({
-              code: productId,
-              evo_product_id: productId,
-              name: item.nombre || `Producto ${productId}`,
-              category: 'chapa',
-              unit: 'kg',
-              is_active: true
-            })
-            .select('id, code, name, evo_product_id')
-            .single()
-
-          if (createError || !newProduct) {
-            errors.push(`Error creating product ${item.id_articulo}: ${createError?.message || 'Unknown'}`)
-            console.log(`❌ Error creating product ${item.id_articulo}`)
-            continue
-          }
-
-          product = newProduct
-          console.log(`✅ Created product ${item.id_articulo}`)
-        } else {
-          console.log(`✅ Found product ${item.id_articulo} as ${product.code}`)
-
-          // Si viene un nombre en el payload y es diferente, actualizar el producto
-          if (item.nombre && item.nombre !== product.name) {
-            console.log(`📝 Updating product name: ${product.name} → ${item.nombre}`)
-            const { error: updateNameError } = await supabase
-              .from('products')
-              .update({ name: item.nombre })
-              .eq('id', product.id)
-
-            if (updateNameError) {
-              console.error(`❌ Error updating product name: ${updateNameError.message}`)
-            } else {
-              product.name = item.nombre
-              console.log(`✅ Updated product name`)
-            }
-          }
-        }
-
-        // Actualizar stock en inventory
-        const { error: updateError } = await supabase
-          .from('inventory')
-          .upsert({
-            product_id: product.id,
-            stock_total: item.cantidad,
-            last_sync_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          }, {
-            onConflict: 'product_id'
-          })
-
-        if (updateError) {
-          errors.push(`Error updating ${item.id_articulo}: ${updateError.message}`)
-        } else {
-          updatedCount++
-        }
-
-      } catch (error) {
-        errors.push(`Error processing ${item.id_articulo}: ${error instanceof Error ? error.message : 'Unknown'}`)
+      if (updateError) {
+        errors.push(`Error updating product ${update.id}: ${updateError.message}`)
       }
     }
 
@@ -217,29 +224,14 @@ export async function POST(request: NextRequest) {
         version: payload.version,
         timestamp: payload.timestamp,
         items_count: payload.items.length,
-        updated_count: updatedCount,
+        updated_count: productUpdates.length,
         errors_count: errors.length,
         errors: errors.length > 0 ? errors : null
       })
 
-    return NextResponse.json({
-      success: true,
-      message: 'Stock updated successfully',
-      id_evento: payload.id_evento,
-      version: payload.version,
-      updated_count: updatedCount,
-      errors_count: errors.length,
-      errors: errors.length > 0 ? errors : undefined
-    })
+    console.log(`✅ Stock update processed: ${productUpdates.length} items, ${errors.length} errors`)
 
   } catch (error) {
-    console.error('Stock webhook error:', error)
-    return NextResponse.json(
-      { 
-        error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error'
-      },
-      { status: 500 }
-    )
+    console.error('Error in background stock processing:', error)
   }
 }
