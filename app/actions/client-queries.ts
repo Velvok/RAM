@@ -13,7 +13,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 
 export async function getOrderById(orderId: string) {
   const supabase = createAdminClient()
-  
+
   const { data, error } = await supabase
     .from('orders')
     .select(`
@@ -23,11 +23,11 @@ export async function getOrderById(orderId: string) {
         *,
         product:products(*)
       ),
-      cut_orders(
+      cut_orders!cut_orders_order_id_fkey(
         *,
-        product:products(*),
-        assigned_inventory:inventory(*),
-        operator:users(id, name, email),
+        product:products!cut_orders_product_id_fkey(*),
+        material_base:products!cut_orders_material_base_id_fkey(*),
+        operator:users!cut_orders_assigned_to_fkey(id, full_name, email),
         cut_lines(*)
       ),
       preparation_items(
@@ -45,13 +45,13 @@ export async function getOrderById(orderId: string) {
 
 export async function getOrdersForPlanta() {
   const supabase = createAdminClient()
-  
+
   const { data, error } = await supabase
     .from('orders')
     .select(`
       *,
-      client:clients(name),
-      cut_orders(
+      client:clients(business_name),
+      cut_orders!cut_orders_order_id_fkey(
         id,
         status,
         quantity_requested,

@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
           quantity,
           product:products(evo_product_id, code, name)
         ),
-        cut_orders(
+        cut_orders!cut_orders_order_id_fkey(
           id,
           status,
           quantity_requested,
