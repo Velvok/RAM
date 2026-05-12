@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
@@ -14,6 +14,8 @@ import { ArrowDownCircle, ArrowUpCircle, Package, ShoppingCart, AlertTriangle } 
 export function RealtimeNotificationsProvider() {
   const router = useRouter()
   const pathname = usePathname()
+  const seenEventIds = useRef<Set<string>>(new Set())
+  const initializedRef = useRef(false)
 
   useEffect(() => {
     const supabase = createClient()
@@ -44,6 +46,11 @@ export function RealtimeNotificationsProvider() {
 
       // Solo mostrar notificación si el evento tiene resultado (success no es null)
       if (event.success === null) return
+
+      // Deduplicar por id+success (un evento puede entrar como INSERT y luego UPDATE)
+      const dedupKey = `${event.id}_${event.success}`
+      if (seenEventIds.current.has(dedupKey)) return
+      seenEventIds.current.add(dedupKey)
 
       if (event.success) {
         // Agregar información de items procesados si es stock_actualizado
@@ -84,14 +91,22 @@ export function RealtimeNotificationsProvider() {
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'evo_events' },
-        (payload) => handleInboundEvent(payload.new)
+        (payload) => {
+          console.log('[Realtime] evo_events INSERT:', payload.new)
+          handleInboundEvent(payload.new)
+        }
       )
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'evo_events' },
-        (payload) => handleInboundEvent(payload.new)
+        (payload) => {
+          console.log('[Realtime] evo_events UPDATE:', payload.new)
+          handleInboundEvent(payload.new)
+        }
       )
-      .subscribe()
+      .subscribe((status, err) => {
+        console.log('[Realtime] inbound channel status:', status, err || '')
+      })
 
     // ============================================
     // SALIDA: Eventos hacia RAM (outbound_events)
@@ -129,7 +144,53 @@ export function RealtimeNotificationsProvider() {
       )
       .subscribe()
 
+    // ============================================
+    // FALLBACK: Polling cada 8s por si Realtime falla
+    // ============================================
+    const pollEvents = async () => {
+      try {
+        // Inicializar: marcar todos los eventos existentes como vistos en el primer poll
+        const since = new Date(Date.now() - 5 * 60 * 1000).toISOString() // últimos 5 min
+
+        const { data, error } = await supabase
+          .from('evo_events')
+          .select('id, tipo_evento, success, errors, payload, created_at, processed_at')
+          .gte('processed_at', since)
+          .not('success', 'is', null)
+          .order('processed_at', { ascending: false })
+          .limit(20)
+
+        if (error) {
+          console.warn('[Polling] Error fetching events:', error)
+          return
+        }
+
+        if (!initializedRef.current) {
+          // Primera vez: solo marcar como vistos sin notificar
+          for (const event of data || []) {
+            seenEventIds.current.add(`${event.id}_${event.success}`)
+          }
+          initializedRef.current = true
+          console.log(`[Polling] Initialized with ${data?.length || 0} existing events`)
+          return
+        }
+
+        // Procesar nuevos eventos
+        for (const event of data || []) {
+          handleInboundEvent(event)
+        }
+      } catch (e) {
+        console.warn('[Polling] Error:', e)
+      }
+    }
+
+    // Primer poll inmediato (inicialización)
+    pollEvents()
+    // Polling cada 8s
+    const pollInterval = setInterval(pollEvents, 8000)
+
     return () => {
+      clearInterval(pollInterval)
       supabase.removeChannel(inboundChannel)
       supabase.removeChannel(outboundChannel)
     }

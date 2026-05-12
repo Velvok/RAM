@@ -144,17 +144,26 @@ async function processPedidoNuevo(payload: PedidoNuevoPayload) {
   const { ref_evo } = payload
 
   try {
-    // Verificar si el pedido ya existe
+    // Verificar si el pedido ya existe → MODIFICACIÓN DE PEDIDO
+    // RAM envía modificaciones con el mismo id_pedido. Hacemos rollback completo
+    // del pedido viejo (devolver stock, eliminar cuts/prep/lines) y creamos uno nuevo.
     const { data: existingOrder } = await supabase
       .from('orders')
-      .select('id')
+      .select('id, status')
       .eq('evo_order_id', payload.id_pedido)
       .maybeSingle()
 
     if (existingOrder) {
-      console.log(`⏭️ Order ${payload.id_pedido} already exists`)
-      await updateEventStatus(supabase, payload.id_evento, true, null, existingOrder.id)
-      return
+      console.log(`🔄 Order ${payload.id_pedido} already exists (status: ${existingOrder.status}). Rolling back to recreate as new...`)
+
+      const { data: rollbackResult, error: rollbackError } = await supabase
+        .rpc('rollback_order', { p_order_id: existingOrder.id })
+
+      if (rollbackError) {
+        throw new Error(`Error rolling back existing order: ${rollbackError.message}`)
+      }
+
+      console.log(`✅ Rollback complete:`, rollbackResult)
     }
 
     // Crear o obtener cliente

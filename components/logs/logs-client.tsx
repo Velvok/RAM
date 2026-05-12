@@ -27,38 +27,38 @@ export function LogsClient({ initialLogs, totalLogs, eventTypes }: LogsClientPro
     offset: 0,
   })
 
-  // Suscripción a Realtime para nuevos eventos
+  // Suscripción a Realtime + auto-refresh inmediato cuando llegan eventos
   useEffect(() => {
     const supabase = createClient()
+    let refreshTimeout: NodeJS.Timeout | null = null
+
+    const triggerRefresh = () => {
+      // Debounce: agrupar múltiples eventos en un único refresh
+      if (refreshTimeout) clearTimeout(refreshTimeout)
+      refreshTimeout = setTimeout(() => {
+        refreshLogs()
+      }, 800)
+    }
 
     const channel = supabase
       .channel('integration-logs-changes')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'evo_events' },
-        () => {
-          setNewLogsCount(prev => prev + 1)
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'outbound_events' },
-        () => {
-          setNewLogsCount(prev => prev + 1)
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'outbound_events' },
-        () => {
-          setNewLogsCount(prev => prev + 1)
-        }
-      )
-      .subscribe()
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'evo_events' }, triggerRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'outbound_events' }, triggerRefresh)
+      .subscribe((status) => {
+        console.log('[Logs] realtime status:', status)
+      })
+
+    // Fallback: polling cada 10s por si Realtime falla
+    const pollInterval = setInterval(() => {
+      refreshLogs()
+    }, 10000)
 
     return () => {
+      if (refreshTimeout) clearTimeout(refreshTimeout)
+      clearInterval(pollInterval)
       supabase.removeChannel(channel)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const refreshLogs = async () => {
