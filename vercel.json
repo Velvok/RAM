@@ -15,11 +15,5 @@
     "app/api/cron/process-outbound-queue/route.ts": {
       "maxDuration": 60
     }
-  },
-  "crons": [
-    {
-      "path": "/api/cron/process-outbound-queue",
-      "schedule": "* * * * *"
-    }
-  ]
+  }
 }
