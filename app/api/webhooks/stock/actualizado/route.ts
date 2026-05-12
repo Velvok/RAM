@@ -119,6 +119,7 @@ export async function POST(request: NextRequest) {
 
 // Función auxiliar para procesar en background
 async function processStockUpdate(payload: StockActualizadoPayload) {
+  console.log(`🔄 Starting background processing for ${payload.items.length} items...`)
   const supabase = createAdminClient()
 
   try {
@@ -131,10 +132,11 @@ async function processStockUpdate(payload: StockActualizadoPayload) {
       .maybeSingle()
 
     const currentVersion = lastSync?.version || 0
+    console.log(`📊 Current version: ${currentVersion}, Received version: ${payload.version}`)
 
     // Solo procesar si la versión es superior
     if (payload.version <= currentVersion) {
-      console.log(`Skipping older version: ${payload.version} <= ${currentVersion}`)
+      console.log(`⏭️ Skipping older version: ${payload.version} <= ${currentVersion}`)
       return
     }
 
@@ -142,9 +144,12 @@ async function processStockUpdate(payload: StockActualizadoPayload) {
     const productUpdates: Array<{ id: string; nombre?: string; cantidad: number }> = []
     const errors: string[] = []
 
+    console.log(`🔍 Processing ${payload.items.length} items...`)
+    
     // Primero, buscar o crear todos los productos
     for (const item of payload.items) {
       const productId = item.id_articulo
+      console.log(`\n📦 Processing item: ${productId} (${item.nombre}) - Cantidad: ${item.cantidad}`)
 
       // Generar variaciones del ID
       const searchVariations = [
@@ -156,16 +161,23 @@ async function processStockUpdate(payload: StockActualizadoPayload) {
         productId.replace(/[^A-Z0-9]/g, ''),
       ]
 
-      const { data: products } = await supabase
+      const { data: products, error: searchError } = await supabase
         .from('products')
         .select('id, code, name, evo_product_id')
         .or(searchVariations.map(v => `code.eq.${v},evo_product_id.eq.${v}`).join(','))
         .limit(1)
 
+      if (searchError) {
+        console.error(`❌ Error searching product ${productId}:`, searchError)
+        errors.push(`Error searching product ${item.id_articulo}: ${searchError.message}`)
+        continue
+      }
+
       let product = products && products.length > 0 ? products[0] : null
 
       // Si no existe el producto, crearlo
       if (!product) {
+        console.log(`   ➕ Creating new product: ${productId}`)
         const { data: newProduct, error: createError } = await supabase
           .from('products')
           .insert({
@@ -180,17 +192,29 @@ async function processStockUpdate(payload: StockActualizadoPayload) {
           .single()
 
         if (createError || !newProduct) {
+          console.error(`   ❌ Error creating product:`, createError)
           errors.push(`Error creating product ${item.id_articulo}: ${createError?.message || 'Unknown'}`)
           continue
         }
 
         product = newProduct
-      } else if (item.nombre && item.nombre !== product.name) {
-        // Actualizar nombre si es diferente
-        await supabase
-          .from('products')
-          .update({ name: item.nombre })
-          .eq('id', product.id)
+        console.log(`   ✅ Product created: ${product.id}`)
+      } else {
+        console.log(`   ✅ Product found: ${product.code} (${product.id})`)
+        
+        if (item.nombre && item.nombre !== product.name) {
+          console.log(`   📝 Updating name: "${product.name}" → "${item.nombre}"`)
+          const { error: updateNameError } = await supabase
+            .from('products')
+            .update({ name: item.nombre })
+            .eq('id', product.id)
+          
+          if (updateNameError) {
+            console.error(`   ❌ Error updating name:`, updateNameError)
+          } else {
+            console.log(`   ✅ Name updated`)
+          }
+        }
       }
 
       productUpdates.push({
@@ -199,8 +223,11 @@ async function processStockUpdate(payload: StockActualizadoPayload) {
       })
     }
 
+    console.log(`\n💾 Updating inventory for ${productUpdates.length} products...`)
+    
     // Actualizar stock en batch (más eficiente)
     for (const update of productUpdates) {
+      console.log(`   📊 Updating stock for product ${update.id}: ${update.cantidad}`)
       const { error: updateError } = await supabase
         .from('inventory')
         .upsert({
@@ -213,7 +240,10 @@ async function processStockUpdate(payload: StockActualizadoPayload) {
         })
 
       if (updateError) {
+        console.error(`   ❌ Error updating inventory:`, updateError)
         errors.push(`Error updating product ${update.id}: ${updateError.message}`)
+      } else {
+        console.log(`   ✅ Inventory updated`)
       }
     }
 
@@ -239,9 +269,26 @@ async function processStockUpdate(payload: StockActualizadoPayload) {
         errors: errors.length > 0 ? errors : null
       })
 
-    console.log(`✅ Stock update processed: ${productUpdates.length} items, ${errors.length} errors`)
+    console.log(`\n✅ Stock update processed: ${productUpdates.length} items, ${errors.length} errors`)
+    if (errors.length > 0) {
+      console.error('Errors:', errors)
+    }
 
   } catch (error) {
-    console.error('Error in background stock processing:', error)
+    console.error('❌ Error in background stock processing:', error)
+    
+    // Actualizar evento con error
+    try {
+      await supabase
+        .from('evo_events')
+        .update({
+          success: false,
+          errors: [error instanceof Error ? error.message : 'Unknown error'],
+          processed_at: new Date().toISOString()
+        })
+        .eq('id_evento', payload.id_evento)
+    } catch (updateError) {
+      console.error('Failed to update event with error:', updateError)
+    }
   }
 }
