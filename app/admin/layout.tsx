@@ -1,7 +1,9 @@
 'use client'
 
 import { useState } from 'react'
+import { Toaster } from 'sonner'
 import { AdminSidebar } from '@/components/admin-sidebar'
+import { RealtimeNotificationsProvider } from '@/components/realtime-notifications-provider'
 
 export default function AdminLayout({
   children,
@@ -13,6 +15,16 @@ export default function AdminLayout({
 
   return (
     <div className="min-h-screen bg-slate-50">
+      <RealtimeNotificationsProvider />
+      <Toaster
+        position="top-right"
+        richColors
+        closeButton
+        expand
+        toastOptions={{
+          duration: 5000,
+        }}
+      />
       <AdminSidebar 
         displayEmail={displayEmail} 
         isCollapsed={isCollapsed}

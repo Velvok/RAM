@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidateOrders, revalidateStock, revalidateOrderStatus } from '@/lib/revalidate'
+import { notifyPedidoCompletado } from '@/lib/ram-outbound'
 
 export async function getOrders() {
   const supabase = createAdminClient()
@@ -604,6 +605,46 @@ export async function markOrderAsDelivered(orderId: string) {
         stock_consumed_count: stockConsumed.length
       }
     })
+  }
+
+  // Notificar a RAM que el pedido fue entregado
+  try {
+    const { data: orderFull } = await supabase
+      .from('orders')
+      .select(`
+        id,
+        order_number,
+        evo_order_id,
+        ref_evo,
+        lines:order_lines(
+          quantity,
+          product:products(id, code, unit, evo_product_id)
+        )
+      `)
+      .eq('id', orderId)
+      .single()
+
+    if (orderFull) {
+      const items = (orderFull.lines || []).map((line: any) => {
+        const product = Array.isArray(line.product) ? line.product[0] : line.product
+        return {
+          product_id: product?.id,
+          product_code: product?.code,
+          evo_product_id: product?.evo_product_id,
+          quantity: line.quantity,
+          unit: product?.unit || 'm',
+        }
+      })
+
+      await notifyPedidoCompletado({
+        orderId,
+        orderNumber: orderFull.order_number,
+        evoOrderId: orderFull.evo_order_id || orderFull.ref_evo?.id_pedido,
+        items,
+      })
+    }
+  } catch (notifyError) {
+    console.error('Error notificando pedido completado a RAM:', notifyError)
   }
 
   // Revalidar pedidos y stock

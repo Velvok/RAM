@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidateInventory } from '@/lib/revalidate'
+import { enqueueOutboundEvent } from '@/lib/ram-outbound'
 
 export async function getInventory() {
   const supabase = createAdminClient()
@@ -182,6 +183,38 @@ export async function adjustStock(productId: string, newQuantity: number, notes:
         ? `${notes} (reducido ${Math.abs(difference)} unidades, ${Math.min(Math.abs(difference), generadoBefore)} de generado)`
         : `${notes} (añadido ${difference} unidades vírgenes)`,
     })
+
+  // Notificar a RAM del ajuste de stock
+  try {
+    const { data: product } = await supabase
+      .from('products')
+      .select('code, evo_product_id, unit')
+      .eq('id', productId)
+      .single()
+
+    if (product) {
+      await enqueueOutboundEvent({
+        eventType: 'stock_ajustado',
+        payload: {
+          timestamp: new Date().toISOString(),
+          product_id: productId,
+          product_code: product.code,
+          evo_product_id: product.evo_product_id,
+          stock_before: stockBefore,
+          stock_after: newQuantity,
+          difference,
+          unit: product.unit || 'm',
+          notes,
+          adjusted_by: user?.id,
+        },
+        relatedEntityType: 'product',
+        relatedEntityId: productId,
+      })
+    }
+  } catch (notifyError) {
+    console.error('Error notificando ajuste de stock a RAM:', notifyError)
+    // No bloquear el ajuste si falla la notificación (queda en la cola para reintentar)
+  }
 
   // Revalidar inventario
   revalidateInventory()

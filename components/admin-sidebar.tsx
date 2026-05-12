@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
+import { createClient } from '@/lib/supabase/client'
 
 interface AdminSidebarProps {
   displayEmail: string
@@ -12,6 +13,47 @@ interface AdminSidebarProps {
 
 export function AdminSidebar({ displayEmail, isCollapsed, setIsCollapsed }: AdminSidebarProps) {
   const pathname = usePathname()
+  const [pendingCount, setPendingCount] = useState(0)
+
+  // Contador de eventos pendientes (entrada sin procesar + salida fallida)
+  useEffect(() => {
+    const supabase = createClient()
+
+    const fetchPending = async () => {
+      const { count: failedOutbound } = await supabase
+        .from('outbound_events')
+        .select('*', { count: 'exact', head: true })
+        .in('status', ['pending', 'failed'])
+
+      const { count: failedInbound } = await supabase
+        .from('evo_events')
+        .select('*', { count: 'exact', head: true })
+        .eq('success', false)
+
+      setPendingCount((failedOutbound || 0) + (failedInbound || 0))
+    }
+
+    fetchPending()
+
+    // Suscripción a cambios para actualizar el contador en vivo
+    const channel = supabase
+      .channel('sidebar-pending-count')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'evo_events' },
+        () => fetchPending())
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'outbound_events' },
+        () => fetchPending())
+      .subscribe()
+
+    // Refrescar cada 30 segundos por si Realtime falla
+    const interval = setInterval(fetchPending, 30000)
+
+    return () => {
+      supabase.removeChannel(channel)
+      clearInterval(interval)
+    }
+  }, [])
 
   const isActive = (path: string) => {
     if (path === '/admin') {
@@ -104,6 +146,49 @@ export function AdminSidebar({ displayEmail, isCollapsed, setIsCollapsed }: Admi
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
             {!isCollapsed && 'Historial Anual'}
+          </a>
+          <a 
+            href="/admin/logs" 
+            className={`flex items-center ${isCollapsed ? 'justify-center px-2' : 'px-4'} py-3 rounded-lg transition-colors font-medium relative ${
+              isActive('/admin/logs')
+                ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600'
+                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+            }`}
+            title={isCollapsed ? `Logs RAM${pendingCount > 0 ? ` (${pendingCount} pendientes)` : ''}` : ''}
+          >
+            <svg className={`w-5 h-5 ${!isCollapsed && 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2 1 3 3 3h10c2 0 3-1 3-3V7c0-2-1-3-3-3H7C5 4 4 5 4 7z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9h8M8 13h8M8 17h5" />
+            </svg>
+            {!isCollapsed && (
+              <span className="flex-1 flex items-center justify-between">
+                <span>Logs RAM</span>
+                {pendingCount > 0 && (
+                  <span className="bg-red-500 text-white text-xs rounded-full px-2 py-0.5 font-bold animate-pulse">
+                    {pendingCount}
+                  </span>
+                )}
+              </span>
+            )}
+            {isCollapsed && pendingCount > 0 && (
+              <span className="absolute top-1 right-1 bg-red-500 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-bold">
+                {pendingCount > 9 ? '9+' : pendingCount}
+              </span>
+            )}
+          </a>
+          <a 
+            href="/admin/evo-monitoring" 
+            className={`flex items-center ${isCollapsed ? 'justify-center px-2' : 'px-4'} py-3 rounded-lg transition-colors font-medium ${
+              isActive('/admin/evo-monitoring')
+                ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600'
+                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+            }`}
+            title={isCollapsed ? 'EVO Monitoring' : ''}
+          >
+            <svg className={`w-5 h-5 ${!isCollapsed && 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            {!isCollapsed && 'EVO Monitoring'}
           </a>
         </div>
       </nav>

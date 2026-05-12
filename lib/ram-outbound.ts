@@ -1,0 +1,378 @@
+/**
+ * Sistema de envío de eventos hacia RAM (EVO)
+ *
+ * Funcionalidad:
+ * - Encola eventos en la tabla outbound_events
+ * - Reintentos automáticos con backoff exponencial
+ * - Idempotencia mediante ID único
+ * - Logs detallados de cada intento
+ */
+
+import { createAdminClient } from '@/lib/supabase/server'
+
+// ============================================
+// CONFIGURACIÓN
+// ============================================
+
+const RAM_BASE_URL = process.env.RAM_API_URL || ''
+const RAM_API_KEY = process.env.RAM_API_KEY || ''
+const RAM_TIMEOUT_MS = 30000
+
+// Tipos de eventos que enviamos a RAM
+export type OutboundEventType =
+  | 'producto_usado'      // Iniciamos un corte (descontamos material)
+  | 'stock_generado'      // Terminamos un corte (generamos producto)
+  | 'excedente_creado'    // Generamos un recorte reutilizable
+  | 'pedido_completado'   // Entregamos un pedido completo
+  | 'pedido_iniciado'     // Iniciamos preparación
+  | 'stock_ajustado'      // Ajuste manual de stock
+  | 'test_ping'           // Para health checks
+
+// Mapeo de tipo de evento → endpoint en RAM
+const ENDPOINT_MAP: Record<OutboundEventType, string> = {
+  producto_usado: '/api/velvok/producto-usado',
+  stock_generado: '/api/velvok/stock-generado',
+  excedente_creado: '/api/velvok/excedente',
+  pedido_completado: '/api/velvok/pedido-completado',
+  pedido_iniciado: '/api/velvok/pedido-iniciado',
+  stock_ajustado: '/api/velvok/stock-ajustado',
+  test_ping: '/api/velvok/ping',
+}
+
+// ============================================
+// ENCOLAR EVENTO
+// ============================================
+
+export interface EnqueueEventParams {
+  eventType: OutboundEventType
+  payload: Record<string, any>
+  relatedEntityType?: string
+  relatedEntityId?: string
+  customEndpoint?: string
+  maxAttempts?: number
+}
+
+/**
+ * Encola un evento para ser enviado a RAM.
+ * Retorna el ID del evento creado.
+ */
+export async function enqueueOutboundEvent({
+  eventType,
+  payload,
+  relatedEntityType,
+  relatedEntityId,
+  customEndpoint,
+  maxAttempts = 5,
+}: EnqueueEventParams): Promise<string> {
+  const supabase = createAdminClient()
+
+  const endpoint = customEndpoint || `${RAM_BASE_URL}${ENDPOINT_MAP[eventType]}`
+
+  const { data, error } = await supabase
+    .from('outbound_events')
+    .insert({
+      event_type: eventType,
+      endpoint,
+      payload,
+      status: 'pending',
+      max_attempts: maxAttempts,
+      related_entity_type: relatedEntityType,
+      related_entity_id: relatedEntityId,
+      next_retry_at: new Date().toISOString(),
+    })
+    .select('id')
+    .single()
+
+  if (error) {
+    console.error('Error encolando evento outbound:', error)
+    throw error
+  }
+
+  // Intentar procesarlo inmediatamente (fire and forget)
+  processOutboundEvent(data.id).catch(err => {
+    console.error('Error procesando evento inmediatamente:', err)
+  })
+
+  return data.id
+}
+
+// ============================================
+// PROCESAR EVENTO INDIVIDUAL
+// ============================================
+
+/**
+ * Procesa un evento outbound: envía a RAM y actualiza el estado.
+ * Implementa retry con backoff exponencial.
+ */
+export async function processOutboundEvent(eventId: string): Promise<{
+  success: boolean
+  status: number
+  error?: string
+}> {
+  const supabase = createAdminClient()
+
+  // 1. Obtener el evento
+  const { data: event, error: fetchError } = await supabase
+    .from('outbound_events')
+    .select('*')
+    .eq('id', eventId)
+    .single()
+
+  if (fetchError || !event) {
+    console.error('Evento no encontrado:', eventId)
+    return { success: false, status: 0, error: 'Evento no encontrado' }
+  }
+
+  // 2. Si ya está completado, no hacer nada
+  if (event.status === 'success') {
+    return { success: true, status: event.http_status || 200 }
+  }
+
+  // 3. Si superó max_attempts, marcar como permanently_failed
+  if (event.attempts >= event.max_attempts) {
+    await supabase
+      .from('outbound_events')
+      .update({ status: 'failed', completed_at: new Date().toISOString() })
+      .eq('id', eventId)
+    return { success: false, status: 0, error: 'Max attempts exceeded' }
+  }
+
+  // 4. Marcar como processing
+  const currentAttempt = event.attempts + 1
+  await supabase
+    .from('outbound_events')
+    .update({
+      status: 'processing',
+      attempts: currentAttempt,
+      last_attempt_at: new Date().toISOString(),
+    })
+    .eq('id', eventId)
+
+  // 5. Hacer el request HTTP
+  let httpStatus = 0
+  let responseBody: any = null
+  let errorMessage: string | null = null
+  let success = false
+
+  try {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), RAM_TIMEOUT_MS)
+
+    const response = await fetch(event.endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': RAM_API_KEY ? `Bearer ${RAM_API_KEY}` : '',
+        'X-Velvok-Event-Id': event.id,
+        'X-Velvok-Event-Type': event.event_type,
+        'X-Velvok-Attempt': String(currentAttempt),
+      },
+      body: JSON.stringify(event.payload),
+      signal: controller.signal,
+    })
+
+    clearTimeout(timeoutId)
+
+    httpStatus = response.status
+    const contentType = response.headers.get('content-type')
+    if (contentType?.includes('application/json')) {
+      responseBody = await response.json().catch(() => null)
+    } else {
+      responseBody = { raw: await response.text().catch(() => '') }
+    }
+
+    if (response.ok) {
+      success = true
+    } else {
+      errorMessage = `HTTP ${response.status}: ${responseBody?.error || responseBody?.message || 'Error desconocido'}`
+    }
+  } catch (err: any) {
+    errorMessage = err.name === 'AbortError'
+      ? `Timeout después de ${RAM_TIMEOUT_MS}ms`
+      : (err.message || 'Error de red')
+  }
+
+  // 6. Actualizar el evento con el resultado
+  const isLastAttempt = currentAttempt >= event.max_attempts
+  const nextStatus = success
+    ? 'success'
+    : (isLastAttempt ? 'failed' : 'failed') // 'failed' permite reintentos via cron
+  const nextRetryAt = success
+    ? null
+    : calculateNextRetryTime(currentAttempt)
+
+  await supabase
+    .from('outbound_events')
+    .update({
+      status: nextStatus,
+      http_status: httpStatus,
+      response_body: responseBody,
+      error_message: errorMessage,
+      next_retry_at: nextRetryAt,
+      completed_at: success || isLastAttempt ? new Date().toISOString() : null,
+    })
+    .eq('id', eventId)
+
+  return { success, status: httpStatus, error: errorMessage || undefined }
+}
+
+// ============================================
+// BACKOFF EXPONENCIAL
+// ============================================
+
+/**
+ * Calcula el próximo momento para reintentar.
+ * Backoff exponencial: 30s, 2min, 5min, 15min, 1h
+ */
+function calculateNextRetryTime(attemptNumber: number): string {
+  const delays = [30, 120, 300, 900, 3600] // segundos
+  const delaySeconds = delays[Math.min(attemptNumber - 1, delays.length - 1)]
+  return new Date(Date.now() + delaySeconds * 1000).toISOString()
+}
+
+// ============================================
+// PROCESAR COLA PENDIENTE (para cron)
+// ============================================
+
+export async function processPendingQueue(maxEvents = 20): Promise<{
+  processed: number
+  succeeded: number
+  failed: number
+}> {
+  const supabase = createAdminClient()
+
+  // Obtener eventos pendientes cuyo next_retry_at ya pasó
+  const { data: events } = await supabase
+    .from('outbound_events')
+    .select('id')
+    .in('status', ['pending', 'failed'])
+    .lte('next_retry_at', new Date().toISOString())
+    .order('next_retry_at', { ascending: true })
+    .limit(maxEvents)
+
+  if (!events || events.length === 0) {
+    return { processed: 0, succeeded: 0, failed: 0 }
+  }
+
+  let succeeded = 0
+  let failed = 0
+
+  for (const event of events) {
+    const result = await processOutboundEvent(event.id)
+    if (result.success) succeeded++
+    else failed++
+  }
+
+  return { processed: events.length, succeeded, failed }
+}
+
+// ============================================
+// HELPERS DE ALTO NIVEL
+// ============================================
+
+/**
+ * Notifica a RAM que un producto fue usado en un corte
+ */
+export async function notifyProductoUsado(params: {
+  cutOrderId: string
+  productId: string
+  productCode: string
+  quantityUsed: number
+  unit: string
+  orderId?: string
+}) {
+  return enqueueOutboundEvent({
+    eventType: 'producto_usado',
+    payload: {
+      timestamp: new Date().toISOString(),
+      cut_order_id: params.cutOrderId,
+      product_id: params.productId,
+      product_code: params.productCode,
+      quantity_used: params.quantityUsed,
+      unit: params.unit,
+      order_id: params.orderId,
+    },
+    relatedEntityType: 'cut_order',
+    relatedEntityId: params.cutOrderId,
+  })
+}
+
+/**
+ * Notifica a RAM que se generó stock nuevo (producto del corte)
+ */
+export async function notifyStockGenerado(params: {
+  cutOrderId: string
+  productId: string
+  productCode: string
+  quantityGenerated: number
+  unit: string
+}) {
+  return enqueueOutboundEvent({
+    eventType: 'stock_generado',
+    payload: {
+      timestamp: new Date().toISOString(),
+      cut_order_id: params.cutOrderId,
+      product_id: params.productId,
+      product_code: params.productCode,
+      quantity_generated: params.quantityGenerated,
+      unit: params.unit,
+    },
+    relatedEntityType: 'cut_order',
+    relatedEntityId: params.cutOrderId,
+  })
+}
+
+/**
+ * Notifica a RAM que se generó un excedente (recorte reutilizable)
+ */
+export async function notifyExcedente(params: {
+  cutOrderId: string
+  remnantId: string
+  productId: string
+  productCode: string
+  quantityRemnant: number
+  unit: string
+}) {
+  return enqueueOutboundEvent({
+    eventType: 'excedente_creado',
+    payload: {
+      timestamp: new Date().toISOString(),
+      cut_order_id: params.cutOrderId,
+      remnant_id: params.remnantId,
+      product_id: params.productId,
+      product_code: params.productCode,
+      quantity_remnant: params.quantityRemnant,
+      unit: params.unit,
+    },
+    relatedEntityType: 'remnant',
+    relatedEntityId: params.remnantId,
+  })
+}
+
+/**
+ * Notifica a RAM que un pedido fue completado/entregado
+ */
+export async function notifyPedidoCompletado(params: {
+  orderId: string
+  orderNumber: string
+  evoOrderId?: string
+  items: Array<{
+    product_id: string
+    product_code: string
+    quantity: number
+    unit: string
+  }>
+}) {
+  return enqueueOutboundEvent({
+    eventType: 'pedido_completado',
+    payload: {
+      timestamp: new Date().toISOString(),
+      order_id: params.orderId,
+      order_number: params.orderNumber,
+      evo_order_id: params.evoOrderId,
+      items: params.items,
+    },
+    relatedEntityType: 'order',
+    relatedEntityId: params.orderId,
+  })
+}
