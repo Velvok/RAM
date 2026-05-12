@@ -175,3 +175,21 @@ export async function sendTestEvent() {
 
   return { success: true, eventId }
 }
+
+export async function markEventsAsViewed() {
+  const supabase = createAdminClient()
+
+  // Marcar todos los eventos outbound fallidos como vistos
+  const { error } = await supabase
+    .from('outbound_events')
+    .update({ viewed_at: new Date().toISOString() })
+    .in('status', ['failed', 'pending'])
+    .is('viewed_at', null)
+
+  if (error) throw error
+
+  // Marcar eventos evo fallidos como vistos (no tienen columna viewed_at, usamos otro mecanismo)
+  // Por ahora, no hacemos nada con evo_events porque no tienen esa columna
+
+  return { success: true }
+}

@@ -1,4 +1,4 @@
-import { getIntegrationLogs, getLogsStats, getEventTypes } from '@/app/actions/integration-logs'
+import { getIntegrationLogs, getLogsStats, getEventTypes, markEventsAsViewed } from '@/app/actions/integration-logs'
 import { LogsClient } from '@/components/logs/logs-client'
 
 export const dynamic = 'force-dynamic'
@@ -6,6 +6,9 @@ export const revalidate = 0
 export const fetchCache = 'force-no-store'
 
 export default async function LogsPage() {
+  // Marcar eventos como vistos para limpiar el contador del sidebar
+  await markEventsAsViewed()
+
   const [logsResult, stats, eventTypes] = await Promise.all([
     getIntegrationLogs({ limit: 100 }),
     getLogsStats(),
