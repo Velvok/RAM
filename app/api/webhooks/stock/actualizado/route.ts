@@ -155,22 +155,30 @@ async function processStockUpdate(payload: StockActualizadoPayload) {
       return
     }
 
-    // 2. Obtener todos los productos existentes EN UNA SOLA QUERY
+    // 2. Obtener todos los productos existentes EN BATCHES (Supabase tiene límite de URL)
     const allEvoIds = payload.items.map(i => i.id_articulo)
-    console.log(`🔍 Fetching existing products...`)
+    console.log(`🔍 Fetching existing products in batches...`)
 
-    const { data: existingProducts, error: fetchError } = await supabase
-      .from('products')
-      .select('id, code, name, evo_product_id')
-      .in('evo_product_id', allEvoIds)
+    const existingByEvoId = new Map<string, { id: string; code: string; name: string; evo_product_id: string }>()
+    const FETCH_BATCH = 200
 
-    if (fetchError) {
-      throw new Error(`Error fetching products: ${fetchError.message}`)
+    for (let i = 0; i < allEvoIds.length; i += FETCH_BATCH) {
+      const batch = allEvoIds.slice(i, i + FETCH_BATCH)
+      const { data: existingProducts, error: fetchError } = await supabase
+        .from('products')
+        .select('id, code, name, evo_product_id')
+        .in('evo_product_id', batch)
+
+      if (fetchError) {
+        throw new Error(`Error fetching products batch ${i}: ${fetchError.message}`)
+      }
+
+      for (const p of existingProducts || []) {
+        if (p.evo_product_id) {
+          existingByEvoId.set(p.evo_product_id, p as any)
+        }
+      }
     }
-
-    const existingByEvoId = new Map(
-      (existingProducts || []).map(p => [p.evo_product_id, p])
-    )
     console.log(`   Found ${existingByEvoId.size} existing products`)
 
     // 3. Separar items en: crear nuevos vs actualizar existentes
