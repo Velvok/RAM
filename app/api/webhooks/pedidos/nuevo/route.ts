@@ -290,7 +290,7 @@ async function processPedidoNuevo(payload: PedidoNuevoPayload) {
           cut_number: `CUT-${payload.id_pedido}-${item.id_articulo}`,
           product_id: product.id,
           quantity_requested: item.cantidad,
-          status: 'generada',
+          status: 'pendiente',
           ref_evo: ref_evo
         })
       } else {
