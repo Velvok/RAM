@@ -14,12 +14,13 @@ import { createAdminClient } from '@/lib/supabase/server'
 // CONFIGURACIÓN
 // ============================================
 
-const RAM_BASE_URL = process.env.RAM_API_URL || ''
-const RAM_API_KEY = process.env.RAM_API_KEY || ''
+const RAM_BASE_URL = process.env.RAM_API_URL || process.env.EVO_API_URL || ''
+const RAM_API_KEY = process.env.RAM_API_KEY || process.env.EVO_API_KEY || ''
 const RAM_TIMEOUT_MS = 30000
 
-// Tipos de eventos que enviamos a RAM
+// Tipos de eventos que enviamos a RAM/EVO
 export type OutboundEventType =
+  | 'corte_realizado'     // Operario completó un corte (BAJA/ALTA en EVO)
   | 'producto_usado'      // Iniciamos un corte (descontamos material)
   | 'stock_generado'      // Terminamos un corte (generamos producto)
   | 'excedente_creado'    // Generamos un recorte reutilizable
@@ -28,8 +29,9 @@ export type OutboundEventType =
   | 'stock_ajustado'      // Ajuste manual de stock
   | 'test_ping'           // Para health checks
 
-// Mapeo de tipo de evento → endpoint en RAM
+// Mapeo de tipo de evento → endpoint en RAM/EVO
 const ENDPOINT_MAP: Record<OutboundEventType, string> = {
+  corte_realizado: '/api/v1/stock/movimientos',
   producto_usado: '/api/velvok/producto-usado',
   stock_generado: '/api/velvok/stock-generado',
   excedente_creado: '/api/velvok/excedente',
@@ -374,5 +376,40 @@ export async function notifyPedidoCompletado(params: {
     },
     relatedEntityType: 'order',
     relatedEntityId: params.orderId,
+  })
+}
+
+/**
+ * Notifica a EVO que se realizó un corte físico.
+ * Envía BAJA del material consumido y ALTA del/los producto(s) generado(s).
+ * Endpoint: /api/v1/stock/movimientos
+ */
+export interface CorteMovimiento {
+  tipo: 'BAJA' | 'ALTA'
+  nro_item?: number
+  id_articulo: string
+  cantidad: number
+}
+
+export async function notifyCorteRealizado(params: {
+  cutOrderId: string
+  orderId: string
+  idPedido: string                        // evo_order_id (e.g. "100042647")
+  refEvo: Record<string, any>             // ref_evo guardado del pedido original
+  operario: string                        // código/nombre del operario
+  movimientos: CorteMovimiento[]
+}) {
+  return enqueueOutboundEvent({
+    eventType: 'corte_realizado',
+    payload: {
+      id_evento: `corte_${params.cutOrderId}_${Date.now()}`,
+      tipo_evento: 'corte_realizado',
+      id_pedido: params.idPedido,
+      ref_evo: params.refEvo,
+      operario: params.operario,
+      movimientos: params.movimientos,
+    },
+    relatedEntityType: 'cut_order',
+    relatedEntityId: params.cutOrderId,
   })
 }

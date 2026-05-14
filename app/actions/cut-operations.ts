@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { generateRemnantStock, reserveStock } from './stock-management'
 import { finishCutOrder } from './cut-orders'
 import { updateOrderStatus } from './orders'
+import { notifyCorteRealizado, type CorteMovimiento } from '@/lib/ram-outbound'
 
 export async function processCutOrder(params: {
   cutOrderId: string
@@ -177,7 +178,7 @@ export async function processCutOrder(params: {
     
     const { data: usedProduct } = await supabase
       .from('products')
-      .select('code')
+      .select('code, evo_product_id')
       .eq('id', inventoryItem.product_id)
       .single()
     
@@ -315,6 +316,96 @@ export async function processCutOrder(params: {
     console.log(`   📈 Piezas cortadas: +${sheetsUsed} × ${productSize}m (generadas y reservadas)`)
     if (remnantPerSheet > 0) {
       console.log(`   📈 Remanentes: +${sheetsUsed} × ${remnantPerSheet}m (disponibles)`)
+    }
+
+    // ============================================
+    // 📤 NOTIFICAR A EVO: corte_realizado
+    // BAJA del material consumido + ALTA del/los producto(s) generado(s)
+    // ============================================
+    try {
+      const evoOrderId = cutOrder.order?.evo_order_id
+      const refEvo = cutOrder.ref_evo
+
+      if (!evoOrderId) {
+        console.log(`⏭️ Pedido sin evo_order_id, no se notifica a EVO`)
+      } else if (!refEvo) {
+        console.log(`⏭️ Cut order sin ref_evo, no se notifica a EVO`)
+      } else if (!usedProduct.evo_product_id) {
+        console.log(`⏭️ Material usado sin evo_product_id, no se notifica a EVO`)
+      } else if (!cutOrder.product?.evo_product_id) {
+        console.log(`⏭️ Producto cortado sin evo_product_id, no se notifica a EVO`)
+      } else {
+        const movimientos: CorteMovimiento[] = []
+
+        // BAJA del material consumido
+        movimientos.push({
+          tipo: 'BAJA',
+          nro_item: 1,
+          id_articulo: usedProduct.evo_product_id,
+          cantidad: sheetsUsed,
+        })
+
+        // ALTA del producto cortado (pieza solicitada)
+        movimientos.push({
+          tipo: 'ALTA',
+          id_articulo: cutOrder.product.evo_product_id,
+          cantidad: sheetsUsed,
+        })
+
+        // ALTA del remanente (si existe)
+        if (remnantPerSheet > 0) {
+          // Buscar el producto del remanente por código (mismo formato que generateRemnantStock)
+          const baseCode = usedProduct.code.match(/^([A-Z0-9]+)\./i)?.[1]
+          if (baseCode) {
+            const remnantCode = `${baseCode}.${remnantPerSheet.toFixed(1).replace('.', ',')}`
+            const { data: remnantProduct } = await supabase
+              .from('products')
+              .select('evo_product_id')
+              .eq('code', remnantCode)
+              .single()
+
+            if (remnantProduct?.evo_product_id) {
+              movimientos.push({
+                tipo: 'ALTA',
+                id_articulo: remnantProduct.evo_product_id,
+                cantidad: sheetsUsed,
+              })
+            } else {
+              console.warn(`⚠️ Producto del remanente (${remnantCode}) sin evo_product_id, no se incluye en notificación`)
+            }
+          }
+        }
+
+        // Obtener código del operario
+        const { data: opData } = await supabase
+          .from('plant_operators')
+          .select('name, code')
+          .eq('id', operatorId)
+          .single()
+
+        const operario = (opData as any)?.code || opData?.name || operatorId
+
+        console.log(`📤 Notificando a EVO corte_realizado:`, {
+          id_pedido: evoOrderId,
+          ref_evo: refEvo,
+          operario,
+          movimientos,
+        })
+
+        await notifyCorteRealizado({
+          cutOrderId,
+          orderId: cutOrder.order_id,
+          idPedido: evoOrderId,
+          refEvo,
+          operario,
+          movimientos,
+        })
+
+        console.log(`✅ Evento corte_realizado encolado para EVO`)
+      }
+    } catch (notifyError) {
+      // No bloqueamos el corte si falla la notificación; se reintenta por cron
+      console.error(`⚠️ Error notificando a EVO (no bloqueante):`, notifyError)
     }
   }
   
