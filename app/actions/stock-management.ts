@@ -3,7 +3,7 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { revalidateStock } from '@/lib/revalidate'
-import { extractBaseCode, extractSizeFromCode } from '@/lib/product-utils'
+import { extractFamilyCode, extractSizeFromCode } from '@/lib/product-utils'
 
 /**
  * Registrar actividad en el log de pedidos
@@ -68,9 +68,9 @@ export async function findBestStockMatch(
     return null
   }
 
-  // Extraer código base (ej: AC25110.0,5 → AC25110)
-  const baseCode = extractBaseCode(requestedProduct.code)
-  console.log(`🔍 Buscando stock para código base: ${baseCode}, tamaño: ${quantityNeeded}m`)
+  // Extraer código de familia (ej: AC25110.0,5 → AC25110)
+  const baseCode = extractFamilyCode(requestedProduct.code)
+  console.log(`🔍 Buscando stock para código de familia: ${baseCode}, tamaño: ${quantityNeeded}m`)
 
   // Obtener todas las piezas disponibles del mismo tipo de producto
   // Buscamos por código que empiece con el código base
@@ -495,8 +495,8 @@ export async function generateRemnantStock(
   const supabase = createAdminClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  // Extraer código base (ej: AC25110.5,0 → AC25110 o ACDD.1,1X10,0M → ACDD)
-  const baseCode = extractBaseCode(baseProductCode)
+  // Extraer código de familia (ej: AC25110.5,0 → AC25110 o ACDD.1,1X10,0M → ACDD.1,1)
+  const baseCode = extractFamilyCode(baseProductCode)
   
   if (!baseCode) {
     throw new Error(`Código de producto inválido: ${baseProductCode}`)

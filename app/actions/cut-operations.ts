@@ -2,7 +2,7 @@
 
 import { createAdminClient } from '@/lib/supabase/server'
 import { generateRemnantStock, reserveStock } from './stock-management'
-import { extractSizeFromCode, extractBaseCode } from '@/lib/product-utils'
+import { extractSizeFromCode, extractFamilyCode } from '@/lib/product-utils'
 import { finishCutOrder } from './cut-orders'
 import { updateOrderStatus } from './orders'
 import { notifyCorteRealizado, type CorteMovimiento } from '@/lib/ram-outbound'
@@ -356,7 +356,7 @@ export async function processCutOrder(params: {
         // ALTA del remanente (si existe)
         if (remnantPerSheet > 0) {
           // Buscar el producto del remanente por código (mismo formato que generateRemnantStock)
-          const baseCode = extractBaseCode(usedProduct.code)
+          const baseCode = extractFamilyCode(usedProduct.code)
           if (baseCode) {
             const remnantCode = `${baseCode}.${remnantPerSheet.toFixed(1).replace('.', ',')}`
             const { data: remnantProduct } = await supabase
