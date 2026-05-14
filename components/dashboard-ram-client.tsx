@@ -126,16 +126,30 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
   // Productividad de planta
   const [productivityGranularity, setProductivityGranularity] = useState<'day' | 'week' | 'month'>('day')
   const [selectedOperator, setSelectedOperator] = useState<string>('all')
-  const mockCutData = generateMockCutData()
-  const todayCuts = getTodayCuts(mockCutData)
-  const topOperator = getTopOperatorToday(mockCutData)
-  const cutDistribution = getCutDistribution(mockCutData)
-  const evolutionData = aggregateByGranularity(mockCutData, productivityGranularity, selectedOperator)
+  
+  // Generar datos mock SOLO en el cliente para evitar hydration mismatch
+  // (Math.random() produce valores distintos en server vs client)
+  const [mockCutData, setMockCutData] = useState<ReturnType<typeof generateMockCutData>>([])
+  const [isMounted, setIsMounted] = useState(false)
+
+  useEffect(() => {
+    setMockCutData(generateMockCutData())
+    setIsMounted(true)
+  }, [])
+
+  const todayCuts = useMemo(() => getTodayCuts(mockCutData), [mockCutData])
+  const topOperator = useMemo(() => getTopOperatorToday(mockCutData), [mockCutData])
+  const cutDistribution = useMemo(() => getCutDistribution(mockCutData), [mockCutData])
+  const evolutionData = useMemo(() => 
+    aggregateByGranularity(mockCutData, productivityGranularity, selectedOperator),
+    [mockCutData, productivityGranularity, selectedOperator]
+  )
   
   const categories = ['Total', 'Sincalum', 'Prepintado', 'Galvanizado', 'Perfiles']
   
-  // Generar datos mockeados por categoría y mes
-  const generateCategoryData = () => {
+  // Generar datos mockeados por categoría y mes (solo cliente para evitar hydration mismatch)
+  const categoryData = useMemo(() => {
+    if (!isMounted) return {}
     const baseData: Record<string, Record<string, number>> = {}
     
     last12Months.forEach(month => {
@@ -149,9 +163,8 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
     })
     
     return baseData
-  }
-  
-  const categoryData = generateCategoryData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMounted])
 
   // Función para obtener la cotización del dólar con caché inteligente
   const fetchDolarData = async () => {
