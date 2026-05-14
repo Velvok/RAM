@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidateOrders, revalidateStock, revalidateOrderStatus } from '@/lib/revalidate'
 import { notifyPedidoCompletado } from '@/lib/ram-outbound'
+import { extractSizeFromCode } from '@/lib/product-utils'
 
 export async function getOrders() {
   const supabase = createAdminClient()
@@ -127,9 +128,9 @@ export async function approveOrderOnHold(orderId: string) {
     const units = line.units || Math.ceil(line.quantity) || 1
     
     // Tamaño de cada pieza (extraído del código del producto)
-    const productSize = line.product?.length_meters || 
-                       parseFloat(line.product?.code?.match(/\.(\d+),(\d+)$/)?.[0]?.replace('.', '')?.replace(',', '.') || '0') ||
-                       line.length_meters || 
+    const productSize = line.product?.length_meters ||
+                       extractSizeFromCode(line.product?.code || '') ||
+                       line.length_meters ||
                        line.quantity
     
     console.log(`📋 Línea (CHAPA - EN PAUSA): ${line.product?.name}, Unidades: ${units}, Tamaño: ${productSize}m`)
@@ -238,8 +239,8 @@ export async function approveOrder(orderId: string) {
       console.log(`📋 Línea (CHAPA): ${line.product?.name}, Unidades: ${units}`)
       
       // Tamaño de cada pieza (extraído del código del producto)
-      const productSize = line.product?.length_meters || 
-                         parseFloat(line.product?.code?.match(/\.(\d+),(\d+)$/)?.[0]?.replace('.', '')?.replace(',', '.') || '0') ||
+      const productSize = line.product?.length_meters ||
+                         extractSizeFromCode(line.product?.code || '') ||
                          line.length_meters || 
                          line.quantity
       

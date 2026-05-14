@@ -233,8 +233,9 @@ async function processPedidoNuevo(payload: PedidoNuevoPayload) {
       return
     }
 
-    // Crear pedido
-    const initialStatus = payload.estado || 'pendiente'
+    // Crear pedido siempre con status 'nuevo'
+    // Las cut_orders se crean solo al aprobar el pedido
+    const initialStatus = 'nuevo'
     console.log(`➕ Creating order with status ${initialStatus}...`)
 
     const { data: order, error: orderError } = await supabase
@@ -283,26 +284,17 @@ async function processPedidoNuevo(payload: PedidoNuevoPayload) {
       console.log(`✅ Created ${orderLines.length} order lines`)
     }
 
-    // Crear cut_orders y preparation_items en bulk
-    const cutOrders: any[] = []
+    // NOTA: Las cut_orders se crean solo cuando se acepta el pedido, no al recibirlo
+    // Crear preparation_items en bulk (para accesorios)
     const preparationItems: any[] = []
 
     for (const item of payload.items) {
       const product = productIds.get(item.id_articulo)
       if (!product) continue
 
-      const requiresCut = product.category === 'chapa' || (product.category?.includes('chapa') ?? false)
+      const requiresPreparation = product.category === 'accesorios' || (product.category?.includes('accesorio') ?? false)
 
-      if (requiresCut) {
-        cutOrders.push({
-          order_id: order.id,
-          cut_number: `CUT-${payload.id_pedido}-${item.id_articulo}`,
-          product_id: product.id,
-          quantity_requested: item.cantidad,
-          status: 'pendiente',
-          ref_evo: ref_evo
-        })
-      } else {
+      if (requiresPreparation) {
         preparationItems.push({
           order_id: order.id,
           product_id: product.id,
@@ -310,19 +302,6 @@ async function processPedidoNuevo(payload: PedidoNuevoPayload) {
           status: 'pendiente',
           ref_evo: ref_evo
         })
-      }
-    }
-
-    if (cutOrders.length > 0) {
-      const { error: cutError } = await supabase
-        .from('cut_orders')
-        .insert(cutOrders)
-
-      if (cutError) {
-        console.error('Error creating cut_orders:', cutError)
-        errors.push(`Error creating cut_orders: ${cutError.message}`)
-      } else {
-        console.log(`✅ Created ${cutOrders.length} cut_orders`)
       }
     }
 

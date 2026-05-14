@@ -136,46 +136,8 @@ export async function POST(request: NextRequest) {
       throw new Error('Error creating order lines')
     }
 
-    for (const line of payload.order_lines) {
-      const productId = productIds.get(line.product_id)!
-      
-      const cutNumber = `CUT-${payload.order_number}-${line.product_code}`
-      
-      const { data: cutOrder, error: cutError } = await supabase
-        .from('cut_orders')
-        .insert({
-          order_id: order.id,
-          cut_number: cutNumber,
-          product_id: productId,
-          quantity_requested: line.quantity,
-          status: 'generada',
-        })
-        .select('id')
-        .single()
-
-      if (!cutError && cutOrder) {
-        await supabase
-          .from('stock_reservations')
-          .insert({
-            product_id: productId,
-            order_id: order.id,
-            cut_order_id: cutOrder.id,
-            quantity_reserved: line.quantity,
-            is_active: true,
-          })
-
-        await supabase
-          .from('stock_movements')
-          .insert({
-            product_id: productId,
-            movement_type: 'reserva',
-            quantity: line.quantity,
-            reference_id: order.id,
-            reference_type: 'order',
-            notes: `Reserva automática para pedido ${payload.order_number}`,
-          })
-      }
-    }
+    // NOTA: Las cut_orders se crean solo cuando se acepta el pedido, no al recibirlo
+    // Las stock_reservations y stock_movements también se manejan al aceptar
 
     return NextResponse.json({
       success: true,

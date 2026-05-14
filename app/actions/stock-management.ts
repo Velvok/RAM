@@ -2,6 +2,8 @@
 
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { revalidateStock } from '@/lib/revalidate'
+import { extractBaseCode, extractSizeFromCode } from '@/lib/product-utils'
 
 /**
  * Registrar actividad en el log de pedidos
@@ -36,34 +38,6 @@ async function logOrderActivity(
   
   // Revalidar la página del pedido
   revalidatePath(`/admin/pedidos/${orderId}`)
-}
-
-/**
- * Extraer código base del producto (sin el tamaño)
- * Ejemplo: AC25110.0,5 → AC25110
- * Ejemplo: AC25110.9,5 → AC25110
- */
-function extractBaseCode(code: string): string {
-  // Buscar el último punto seguido de números
-  // AC25110.0,5 → AC25110
-  const match = code.match(/^([A-Z0-9]+)\./i)
-  return match ? match[1] : code
-}
-
-/**
- * Extraer tamaño del código del producto
- * Ejemplo: AC25110.0,5 → 0.5
- * Ejemplo: AC25110.5,0 → 5.0
- * Ejemplo: AC25110.12,0 → 12.0
- */
-function extractSizeFromCode(code: string): number {
-  // Buscar el patrón después del punto: número,número
-  const match = code.match(/\.(\d+),(\d+)$/)
-  if (match) {
-    // Convertir "5,0" a 5.0
-    return parseFloat(`${match[1]}.${match[2]}`)
-  }
-  return 0
 }
 
 /**
@@ -521,8 +495,8 @@ export async function generateRemnantStock(
   const supabase = createAdminClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  // Extraer código base (ej: AC25110.5,0 → AC25110)
-  const baseCode = baseProductCode.match(/^([A-Z0-9]+)\./i)?.[1]
+  // Extraer código base (ej: AC25110.5,0 → AC25110 o ACDD.1,1X10,0M → ACDD)
+  const baseCode = extractBaseCode(baseProductCode)
   
   if (!baseCode) {
     throw new Error(`Código de producto inválido: ${baseProductCode}`)

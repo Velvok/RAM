@@ -2,6 +2,7 @@
 
 import { createAdminClient } from '@/lib/supabase/server'
 import { generateRemnantStock, reserveStock } from './stock-management'
+import { extractSizeFromCode, extractBaseCode } from '@/lib/product-utils'
 import { finishCutOrder } from './cut-orders'
 import { updateOrderStatus } from './orders'
 import { notifyCorteRealizado, type CorteMovimiento } from '@/lib/ram-outbound'
@@ -47,8 +48,8 @@ export async function processCutOrder(params: {
     quantity_requested: cutOrder.quantity_requested
   })
   
-  const productSize = cutOrder.product?.length_meters || 
-                     parseFloat(cutOrder.product?.code?.match(/\.(\d+),(\d+)$/)?.[0]?.replace('.', '')?.replace(',', '.') || '0') ||
+  const productSize = cutOrder.product?.length_meters ||
+                     extractSizeFromCode(cutOrder.product?.code || '') ||
                      cutOrder.quantity_requested
   
   // Determinar si es MATCH EXACTO o CORTE REAL
@@ -355,7 +356,7 @@ export async function processCutOrder(params: {
         // ALTA del remanente (si existe)
         if (remnantPerSheet > 0) {
           // Buscar el producto del remanente por código (mismo formato que generateRemnantStock)
-          const baseCode = usedProduct.code.match(/^([A-Z0-9]+)\./i)?.[1]
+          const baseCode = extractBaseCode(usedProduct.code)
           if (baseCode) {
             const remnantCode = `${baseCode}.${remnantPerSheet.toFixed(1).replace('.', ',')}`
             const { data: remnantProduct } = await supabase
