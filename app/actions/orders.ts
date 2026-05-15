@@ -128,8 +128,8 @@ export async function approveOrderOnHold(orderId: string) {
     const units = line.units || Math.ceil(line.quantity) || 1
     
     // Tamaño de cada pieza (extraído del código del producto)
-    const productSize = line.product?.length_meters ||
-                       extractSizeFromCode(line.product?.code || '') ||
+    const productSize = extractSizeFromCode(line.product?.code || '') ||
+                       line.product?.length_meters ||
                        line.length_meters ||
                        line.quantity
     
@@ -223,13 +223,19 @@ export async function approveOrder(orderId: string) {
   for (const line of order.order_lines) {
     // Cantidad de unidades que pide el cliente
     const units = line.units || Math.ceil(line.quantity) || 1
-    
-    // Identificar si es chapa (código empieza con "AC")
-    const isChapa = line.product?.code?.startsWith('AC') || false
-    
+
+    // Identificar si es chapa usando la función isChapaProduct
+    const { isChapaProduct } = await import('@/lib/product-utils')
+    const isChapa = isChapaProduct(
+      line.product?.code || '',
+      line.product?.category,
+      line.product?.name
+    )
+
     console.log(`\n🔍 Procesando línea:`, {
       product_name: line.product?.name,
       product_code: line.product?.code,
+      product_category: line.product?.category,
       isChapa,
       units
     })
@@ -239,9 +245,9 @@ export async function approveOrder(orderId: string) {
       console.log(`📋 Línea (CHAPA): ${line.product?.name}, Unidades: ${units}`)
       
       // Tamaño de cada pieza (extraído del código del producto)
-      const productSize = line.product?.length_meters ||
-                         extractSizeFromCode(line.product?.code || '') ||
-                         line.length_meters || 
+      const productSize = extractSizeFromCode(line.product?.code || '') ||
+                         line.product?.length_meters ||
+                         line.length_meters ||
                          line.quantity
       
       // Crear UNA orden de corte agrupada para todas las unidades
@@ -411,12 +417,12 @@ export async function updateOrderStatus(orderId: string) {
 
   if (completedItems === totalItems) {
     // Todos los items completados
-    newStatus = 'preparado'
+    newStatus = 'finalizado'
   } else if (completedItems > 0 || inProgressCutOrders > 0 || inProgressPrepItems > 0 || partialCuts > 0 || partialPreps > 0) {
     // Si hay algún item completado, en proceso, o parcial → está en corte
     newStatus = 'en_corte'
   }
-  
+
   console.log(`📊 Estado del pedido ${orderId}: ${completedItems}/${totalItems} completados (${completedCutOrders} cortes + ${completedPrepItems} preparados) → ${newStatus}`)
 
   // Actualizar estado del pedido

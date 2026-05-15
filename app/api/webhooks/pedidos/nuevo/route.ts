@@ -31,10 +31,62 @@ interface PedidoNuevoPayload {
   estado?: 'nuevo' | 'pendiente'
 }
 
+// Función para parsear formato PHP array (print_r)
+function parsePhpArrayFormat(text: string): PedidoNuevoPayload {
+  const result: Record<string, any> = {}
+  const lines = text.split('\n')
+  const stack: Array<{ obj: Record<string, any>, key: string | null }> = [{ obj: result, key: null }]
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim()
+
+    if (line === 'Array' || line === '(' || line === ')') {
+      if (line === 'Array') {
+        // Nueva array
+        const current = stack[stack.length - 1]
+        if (current.key !== null) {
+          const newArray: any[] = []
+          current.obj[current.key] = newArray
+          stack.push({ obj: newArray, key: null })
+        }
+      } else if (line === ')') {
+        // Cerrar array
+        stack.pop()
+      }
+      continue
+    }
+
+    // Parsear líneas tipo [key] => value
+    const match = line.match(/^\[([^\]]+)\]\s*=>\s*(.*)$/)
+    if (match) {
+      const key = match[1]
+      const value = match[2].trim()
+
+      const current = stack[stack.length - 1]
+
+      if (value === 'Array') {
+        // El valor es un array, se procesará en la siguiente línea
+        stack.push({ obj: current.obj, key })
+      } else {
+        // Valor simple
+        // Convertir a número si es posible
+        const numValue = parseFloat(value)
+        current.obj[key] = !isNaN(numValue) && value === numValue.toString() ? numValue : value
+      }
+    }
+  }
+
+  return result as PedidoNuevoPayload
+}
+
 export async function POST(request: NextRequest) {
   try {
     const headersList = await headers()
     const body = await request.text()
+    const contentType = headersList.get('content-type') || ''
+
+    console.log('📥 Webhook recibido, Content-Type:', contentType)
+    console.log('📥 Body recibido:', body.substring(0, 500))
 
     // Configuración de seguridad
     const webhookSecret = process.env.EVO_WEBHOOK_SECRET
@@ -61,7 +113,29 @@ export async function POST(request: NextRequest) {
 
     console.log('✅ Pedidos webhook authentication successful')
 
-    const payload: PedidoNuevoPayload = JSON.parse(body)
+    // Intentar parsear el payload: JSON o PHP array format
+    let payload: PedidoNuevoPayload
+
+    if (contentType.includes('application/json')) {
+      payload = JSON.parse(body)
+    } else {
+      // Intentar parsear como PHP array format (print_r)
+      try {
+        payload = parsePhpArrayFormat(body)
+      } catch (e) {
+        console.error('❌ Error parseando PHP array format:', e)
+        // Si falla, intentar como JSON por defecto
+        try {
+          payload = JSON.parse(body)
+        } catch (jsonError) {
+          console.error('❌ Error parseando JSON:', jsonError)
+          return NextResponse.json({ error: 'Invalid payload format' }, { status: 400 })
+        }
+      }
+    }
+
+    console.log('📦 Payload parseado:', JSON.stringify(payload, null, 2))
+
     const supabase = createAdminClient()
 
     // Validación

@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useError } from '@/components/error-modal'
 import { useCutSuccess } from '@/components/cut-success-modal'
 import { CheckCircle2, ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, Package, Clock, Truck } from 'lucide-react'
+import { extractSizeFromName, extractSizeFromCode } from '@/lib/product-utils'
 
 // Tipo para sugerencias (mock)
 interface MaterialSuggestion {
@@ -170,41 +171,41 @@ export default function PlantaPedidoDetallePage() {
 
     // Cargar sugerencias reales de stock
     if (!suggestions[cutOrderId]) {
+      console.log('🚀 Cargando sugerencias para cutOrderId:', cutOrderId)
       try {
+        const { getCutOrderWithAssignment } = await import('@/app/actions/get-cut-order-with-assignment')
         const supabase = createClient()
-        
-        // Obtener la orden de corte
-        const { data: cutOrder } = await supabase
-          .from('cut_orders')
-          .select(`
-            *,
-            product:products!cut_orders_product_id_fkey(*),
-            assigned_product:products!cut_orders_material_base_id_fkey(*)
-          `)
-          .eq('id', cutOrderId)
-          .single()
+
+        // Obtener la orden de corte con el stock asignado
+        const cutOrder = await getCutOrderWithAssignment(cutOrderId)
+
+        console.log('📋 CutOrder:', cutOrder)
 
         let bestSuggestion: MaterialSuggestion | null = null
         let alternatives: MaterialSuggestion[] = []
 
         // Si hay stock asignado, usarlo como sugerencia principal
         if (cutOrder?.material_base_id && cutOrder?.material_base_quantity) {
-          // Buscar el inventory item del producto asignado
-          const { data: assignedInventory } = await supabase
-            .from('inventory')
-            .select('*, product:products(*)')
-            .eq('product_id', cutOrder.material_base_id)
-            .gt('stock_disponible', 0)
-            .single()
+          console.log('🔍 Usando inventory item asignado:', cutOrder.assigned_inventory)
+          console.log('📏 Cálculo de desperdicio: material_base_quantity=', cutOrder.material_base_quantity, 'lengthNeeded=', lengthNeeded)
 
-          bestSuggestion = {
-            type: 'virgin' as const,
-            id: assignedInventory?.id || cutOrder.material_base_id,
-            name: `${cutOrder.assigned_product?.code || 'Stock'} (${cutOrder.material_base_quantity}m)`,
-            length: cutOrder.material_base_quantity,
-            waste: Math.max(0, cutOrder.material_base_quantity - lengthNeeded),
-            location: '✓ Asignado automáticamente',
-            priority: 1,
+          const assignedInventory = cutOrder.assigned_inventory
+
+          if (assignedInventory) {
+            const waste = Math.max(0, cutOrder.material_base_quantity - lengthNeeded)
+            console.log('✅ Desperdicio calculado:', waste)
+
+            bestSuggestion = {
+              type: 'virgin' as const,
+              id: assignedInventory?.id || cutOrder.material_base_id,
+              name: `${cutOrder.assigned_product?.code || 'Stock'} (${cutOrder.material_base_quantity}m)`,
+              length: cutOrder.material_base_quantity,
+              waste: waste,
+              location: '✓ Asignado automáticamente',
+              priority: 1,
+            }
+          } else {
+            console.warn('⚠️ No se encontró inventory item para material_base_id:', cutOrder.material_base_id)
           }
         }
 
@@ -772,7 +773,7 @@ export default function PlantaPedidoDetallePage() {
               >
                 {/* Header de la tarjeta */}
                 <button
-                  onClick={() => isPending && toggleCutOrder(cutOrder.id, cutOrder.product_id, cutOrder.product?.length_meters || 0)}
+                  onClick={() => isPending && toggleCutOrder(cutOrder.id, cutOrder.product_id, extractSizeFromName(cutOrder.product?.name || '') || extractSizeFromCode(cutOrder.product?.code || '') || 0)}
                   disabled={isCompleted}
                   className={`w-full p-6 ${
                     isPending ? 'cursor-pointer hover:bg-slate-700/50' : 'cursor-default'
@@ -1049,10 +1050,8 @@ export default function PlantaPedidoDetallePage() {
                             <div className="flex items-center gap-3">
                               <span className="text-3xl font-bold text-white">
                                 {(() => {
-                                  const quantityToCut = parseInt(quantityInputs[cutOrder.id] || '0')
-                                  const productSize = cutOrder.product?.length_meters || parseFloat(cutOrder.product?.code?.match(/\.(\d+),(\d+)$/)?.[0]?.replace('.', '')?.replace(',', '.') || '0') || cutOrder.quantity_requested
-                                  const totalNeeded = productSize * quantityToCut
-                                  return (remnantInputs[cutOrder.id] || Math.max(0, selectedMaterial.length - totalNeeded).toFixed(1))
+                                  const productSize = extractSizeFromName(cutOrder.product?.name || '') || extractSizeFromCode(cutOrder.product?.code || '') || cutOrder.quantity_requested
+                                  return (remnantInputs[cutOrder.id] || Math.max(0, selectedMaterial.length - productSize).toFixed(1))
                                 })()}m
                               </span>
                               <span className="text-xl text-white">{showRemnantAdjust[cutOrder.id] ? '▼' : '▶'}</span>
@@ -1071,10 +1070,8 @@ export default function PlantaPedidoDetallePage() {
                                 {/* Botón Menos */}
                                 <button
                                   onClick={() => {
-                                    const quantityToCut = parseInt(quantityInputs[cutOrder.id] || '0')
-                                    const productSize = cutOrder.product?.length_meters || parseFloat(cutOrder.product?.code?.match(/\.(\d+),(\d+)$/)?.[0]?.replace('.', '')?.replace(',', '.') || '0') || cutOrder.quantity_requested
-                                    const totalNeeded = productSize * quantityToCut
-                                    const current = parseFloat(remnantInputs[cutOrder.id] || Math.max(0, selectedMaterial.length - totalNeeded).toFixed(1))
+                                    const productSize = extractSizeFromName(cutOrder.product?.name || '') || extractSizeFromCode(cutOrder.product?.code || '') || cutOrder.quantity_requested
+                                    const current = parseFloat(remnantInputs[cutOrder.id] || Math.max(0, selectedMaterial.length - productSize).toFixed(1))
                                     const newValue = Math.max(0, current - 0.5)
                                     setRemnantInputs(prev => ({ ...prev, [cutOrder.id]: newValue.toFixed(1) }))
                                   }}
@@ -1082,26 +1079,21 @@ export default function PlantaPedidoDetallePage() {
                                 >
                                   −
                                 </button>
-                                
-                                {/* Display Central */}
-                                <div className="flex-1 h-14 bg-slate-950 border-y-2 border-slate-700 flex items-center justify-center">
+
+                                <div className="flex-1 flex items-center justify-center bg-slate-800 border-y-2 border-slate-700">
                                   <span className="text-4xl font-bold text-white">
                                     {(() => {
-                                      const quantityToCut = parseInt(quantityInputs[cutOrder.id] || '0')
-                                      const productSize = cutOrder.product?.length_meters || parseFloat(cutOrder.product?.code?.match(/\.(\d+),(\d+)$/)?.[0]?.replace('.', '')?.replace(',', '.') || '0') || cutOrder.quantity_requested
-                                      const totalNeeded = productSize * quantityToCut
-                                      return (remnantInputs[cutOrder.id] || Math.max(0, selectedMaterial.length - totalNeeded).toFixed(1))
+                                      const productSize = extractSizeFromName(cutOrder.product?.name || '') || extractSizeFromCode(cutOrder.product?.code || '') || cutOrder.quantity_requested
+                                      return (remnantInputs[cutOrder.id] || Math.max(0, selectedMaterial.length - productSize).toFixed(1))
                                     })()}m
                                   </span>
                                 </div>
-                                
+
                                 {/* Botón Más */}
                                 <button
                                   onClick={() => {
-                                    const quantityToCut = parseInt(quantityInputs[cutOrder.id] || '0')
-                                    const productSize = cutOrder.product?.length_meters || parseFloat(cutOrder.product?.code?.match(/\.(\d+),(\d+)$/)?.[0]?.replace('.', '')?.replace(',', '.') || '0') || cutOrder.quantity_requested
-                                    const totalNeeded = productSize * quantityToCut
-                                    const current = parseFloat(remnantInputs[cutOrder.id] || Math.max(0, selectedMaterial.length - totalNeeded).toFixed(1))
+                                    const productSize = extractSizeFromName(cutOrder.product?.name || '') || extractSizeFromCode(cutOrder.product?.code || '') || cutOrder.quantity_requested
+                                    const current = parseFloat(remnantInputs[cutOrder.id] || Math.max(0, selectedMaterial.length - productSize).toFixed(1))
                                     const newValue = current + 0.5
                                     setRemnantInputs(prev => ({ ...prev, [cutOrder.id]: newValue.toFixed(1) }))
                                   }}
@@ -1279,7 +1271,7 @@ export default function PlantaPedidoDetallePage() {
                           >
                             {/* Header de la suborden */}
                             <button
-                              onClick={() => isSubPending && toggleCutOrder(subOrder.id, subOrder.product_id, subOrder.product?.length_meters || 0)}
+                              onClick={() => isSubPending && toggleCutOrder(subOrder.id, subOrder.product_id, extractSizeFromName(subOrder.product?.name || '') || extractSizeFromCode(subOrder.product?.code || '') || 0)}
                               disabled={isSubCompleted}
                               className={`w-full p-4 ${
                                 isSubPending ? 'cursor-pointer hover:bg-slate-700/50' : 'cursor-default'

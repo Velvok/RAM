@@ -83,10 +83,8 @@ export async function createPreparationItem(
   console.log(`   ✅ Preparation_item insertado:`, prepItem)
 
   // 4. Reservar stock
-  console.log(`   → Reservando stock (${quantityRequested} unidades)...`)
   const { reserveStock } = await import('@/app/actions/stock-management')
   for (let i = 0; i < quantityRequested; i++) {
-    console.log(`      Reservando unidad ${i + 1}/${quantityRequested}...`)
     await reserveStock(selectedInventory.id)
   }
 

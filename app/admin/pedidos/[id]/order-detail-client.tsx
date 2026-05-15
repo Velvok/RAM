@@ -10,6 +10,7 @@ import OrderActions from './order-actions'
 import ReassignStockModal from '@/components/reassign-stock-modal'
 import { useSuccess } from '@/components/success-modal'
 import { useError } from '@/components/error-modal'
+import { extractSizeFromName, extractSizeFromCode } from '@/lib/product-utils'
 
 export default function OrderDetailClient({ initialOrder }: { initialOrder: any }) {
   const [order, setOrder] = useState(initialOrder)
@@ -396,7 +397,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                             Sin asignar
                           </span>
                         )}
-                        {cutOrder.status === 'pendiente' && (cutOrder.quantity_cut || 0) < cutOrder.quantity_requested && (
+                        {cutOrder.status === 'pendiente' && (
                           <button
                             onClick={() => {
                               setSelectedCutOrder(cutOrder)
@@ -405,7 +406,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                             className="ml-2 text-xs text-blue-600 hover:text-blue-800 underline"
                           >
                             {cutOrder.material_base_id ? 'Cambiar' : 'Asignar'}
-                            {(cutOrder.quantity_cut || 0) > 0 && ` (${cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)} restantes)`}
+                            {(cutOrder.quantity_cut || 0) < cutOrder.quantity_requested && ` (${cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)} restantes)`}
                           </button>
                         )}
                       </div>
@@ -654,79 +655,41 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
 
   async function loadAvailableStock() {
     try {
-      const { createClient } = await import('@/lib/supabase/client')
-      const supabase = createClient()
+      console.log('🚀 Iniciando loadAvailableStock...')
+      const { getAvailableStock } = await import('@/app/actions/get-available-stock')
+      const { extractSizeFromCode } = await import('@/lib/product-utils')
 
-      // Obtener el tamaño del producto solicitado
-      const productSize = cutOrder.product?.length_meters || cutOrder.quantity_requested
-      
-      // Extraer el código base del producto (sin el tamaño)
-      // Ejemplo: "AC25110.3,0" -> "AC25110"
       const productCode = cutOrder.product?.code || ''
-      const baseCode = productCode.split('.')[0] // Obtener solo "AC25110"
-      
-      console.log('Buscando stock para:', { productCode, baseCode, productSize })
+      const productSize = extractSizeFromCode(productCode)
+      console.log('🔍 Buscando stock para:', { productCode, productSize })
 
-      // Buscar TODO el stock disponible
-      const { data, error } = await supabase
-        .from('inventory')
-        .select('id, product_id, stock_disponible, stock_reservado, stock_total, product:products!inventory_product_id_fkey(id, code, name, length_meters)')
-        .gt('stock_disponible', 0)
+      const filtered = await getAvailableStock(productCode)
 
-      if (error) {
-        console.error('Error en consulta:', error)
-        throw error
-      }
-      
-      console.log('Stock total encontrado:', data?.length)
-      
-      // Filtrar por:
-      // 1. Mismo tipo de producto (mismo código base)
-      // 2. Tamaño >= solicitado
-      // 3. Incluir el stock actualmente asignado
-      // Y ordenar por tamaño (el actual primero)
-      const filtered = (data || [])
-        .filter(item => {
-          const product = Array.isArray(item.product) ? item.product[0] : item.product
-          if (!product) return false
-          
-          // Verificar que sea el mismo tipo de producto
-          const itemBaseCode = product.code?.split('.')[0]
-          const isSameProduct = itemBaseCode === baseCode
-          
-          // Verificar que sea de tamaño suficiente
-          const isSufficientSize = product.length_meters >= productSize
-          
-          return isSameProduct && isSufficientSize
-        })
-        .sort((a, b) => {
-          const prodA = Array.isArray(a.product) ? a.product[0] : a.product
-          const prodB = Array.isArray(b.product) ? b.product[0] : b.product
-          
-          // El stock actualmente asignado va primero
-          const aIsCurrent = a.product_id === cutOrder.material_base_id
-          const bIsCurrent = b.product_id === cutOrder.material_base_id
-          
-          if (aIsCurrent && !bIsCurrent) return -1
-          if (!aIsCurrent && bIsCurrent) return 1
-          
-          // Si ambos son actuales o ninguno es actual, ordenar por tamaño
-          return (prodA?.length_meters || 0) - (prodB?.length_meters || 0)
-        })
-      
-      console.log('Stock filtrado (mismo producto, tamaño suficiente, incluyendo actual como primera opción):', filtered.length, filtered)
-      setAvailableStock(filtered)
-      
+      // Ordenar para que el stock actualmente asignado vaya primero
+      const sorted = filtered.sort((a, b) => {
+        const aIsCurrent = a.product_id === cutOrder.material_base_id
+        const bIsCurrent = b.product_id === cutOrder.material_base_id
+
+        if (aIsCurrent && !bIsCurrent) return -1
+        if (!aIsCurrent && bIsCurrent) return 1
+
+        return 0
+      })
+
+      console.log('Stock filtrado (mismo producto, tamaño suficiente):', sorted.length)
+      setAvailableStock(sorted)
+
       // Pre-seleccionar el stock del tamaño exacto si está disponible
-      if (filtered.length > 0) {
+      if (sorted.length > 0) {
         // Buscar stock del tamaño exacto
-        const exactMatch = filtered.find(item => {
-          const product = Array.isArray(item.product) ? item.product[0] : item.product
-          return product?.length_meters === productSize
+        const exactMatch = sorted.find(item => {
+          const product = item.product
+          const itemSize = extractSizeFromCode(product?.code || '')
+          return itemSize === productSize
         })
-        
+
         // Si hay match exacto, seleccionarlo; si no, seleccionar el primero (más pequeño)
-        setSelectedStock(exactMatch || filtered[0])
+        setSelectedStock(exactMatch || sorted[0])
       }
     } catch (error) {
       console.error('Error loading stock:', error)
@@ -751,130 +714,31 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
 
     try {
       setLoading(true)
-      const { createClient } = await import('@/lib/supabase/client')
-      const supabase = createClient()
-
       const product = Array.isArray(selectedStock.product) ? selectedStock.product[0] : selectedStock.product
       if (!product) {
         alert('Error: producto no encontrado')
         return
       }
 
-      console.log('🔄 Reasignando material...')
-      console.log('   Material anterior:', cutOrder.material_base_id)
-      console.log('   Material nuevo:', product.id)
-      console.log('   Cantidad para nuevo material:', quantityForNewMaterial)
-      console.log('   Total de la orden:', cutOrder.quantity_requested)
+      const { reassignStock } = await import('@/app/actions/reassign-stock')
 
-      // Obtener inventory_id del stock original
-      const { data: oldInventory } = await supabase
-        .from('inventory')
-        .select('id')
-        .eq('product_id', cutOrder.material_base_id)
-        .single()
+      const result = await reassignStock(
+        cutOrder.id,
+        selectedStock.id,
+        product.id,
+        extractSizeFromCode(product.code || ''),
+        quantityForNewMaterial
+      )
 
-      const { reserveStock, unreserveStock } = await import('@/app/actions/stock-management')
-
-      // CASO 1: Reasignación COMPLETA (todas las unidades)
-      if (quantityForNewMaterial === cutOrder.quantity_requested) {
-        console.log('📋 REASIGNACIÓN COMPLETA - Actualizando material de la orden existente')
-        
-        // Liberar stock del material anterior
-        if (oldInventory) {
-          console.log(`📤 Liberando ${quantityForNewMaterial} reservas del material original...`)
-          await unreserveStock(oldInventory.id, quantityForNewMaterial)
-          console.log(`✅ Liberadas ${quantityForNewMaterial} reservas`)
-        }
-        
-        // Reservar stock del nuevo material
-        console.log(`📥 Reservando ${quantityForNewMaterial} unidades del nuevo material...`)
-        for (let i = 0; i < quantityForNewMaterial; i++) {
-          await reserveStock(selectedStock.id)
-        }
-        console.log(`✅ Reservadas ${quantityForNewMaterial} unidades`)
-        
-        // Actualizar la orden existente con el nuevo material
-        await supabase
-          .from('cut_orders')
-          .update({ 
-            material_base_id: product.id,
-            material_base_quantity: product.length_meters,
-            material_quantity: 1
-          })
-          .eq('id', cutOrder.id)
-        
-        console.log('✅ Material actualizado en la orden existente')
-        alert(`✅ Material actualizado\n\n${quantityForNewMaterial} unidades ahora con ${product.name}`)
-      } 
-      // CASO 2: Reasignación PARCIAL (solo algunas unidades)
-      else {
-        console.log('📋 REASIGNACIÓN PARCIAL - Dividiendo en 2 órdenes')
-        
-        // Liberar stock del material anterior (solo las unidades que se mueven)
-        if (oldInventory) {
-          console.log(`📤 Liberando ${quantityForNewMaterial} reservas del material original...`)
-          await unreserveStock(oldInventory.id, quantityForNewMaterial)
-          console.log(`✅ Liberadas ${quantityForNewMaterial} reservas`)
-        }
-        
-        // Reducir la cantidad de la orden original
-        const newQuantityOriginal = cutOrder.quantity_requested - quantityForNewMaterial
-        console.log(`📝 Reduciendo orden original a ${newQuantityOriginal} unidades...`)
-        await supabase
-          .from('cut_orders')
-          .update({ 
-            quantity_requested: newQuantityOriginal
-          })
-          .eq('id', cutOrder.id)
-        
-        // Reservar el nuevo stock
-        console.log(`📥 Reservando ${quantityForNewMaterial} unidades del nuevo material...`)
-        for (let i = 0; i < quantityForNewMaterial; i++) {
-          await reserveStock(selectedStock.id)
-        }
-        console.log(`✅ Reservadas ${quantityForNewMaterial} unidades`)
-        
-        // Generar número de corte manteniendo el prefijo de la orden principal
-        // Formato: CUT-[timestamp_original]-[sufijo_nuevo]
-        const originalCutNumber = cutOrder.cut_number
-        const cutPrefix = originalCutNumber.substring(0, originalCutNumber.lastIndexOf('-'))
-        const newSuffix = Math.random().toString(36).substr(2, 9)
-        const cutNumber = `${cutPrefix}-${newSuffix}`
-        
-        console.log(`📋 Número de corte generado: ${cutNumber} (basado en ${originalCutNumber})`)
-        
-        // Crear nueva suborden de corte con el nuevo material
-        console.log('➕ Creando nueva suborden de corte...')
-        const { data: newCutOrder, error: createError } = await supabase
-          .from('cut_orders')
-          .insert({
-            order_id: cutOrder.order_id,
-            product_id: cutOrder.product_id,
-            cut_number: cutNumber,
-            parent_cut_order_id: cutOrder.id, // Relacionar con la orden principal
-            quantity_requested: quantityForNewMaterial,
-            quantity_cut: 0,
-            status: 'pendiente',
-            material_base_id: product.id,
-            material_base_quantity: product.length_meters,
-            material_quantity: 1
-          })
-          .select()
-          .single()
-
-        if (createError) {
-          throw createError
-        }
-
-        console.log('✅ Nueva suborden de corte creada:', newCutOrder.id)
-        alert(`✅ Nueva suborden creada\n\n${quantityForNewMaterial} unidades con ${product.name}\n\nLa orden original ahora tiene ${newQuantityOriginal} unidades`)
+      if (result.success) {
+        alert(result.message)
+        window.location.reload()
+      } else {
+        alert('Error reasignando stock')
       }
-      
-      onSuccess()
-      onClose()
     } catch (error: any) {
-      console.error('Error creating new cut order:', error)
-      alert(`Error al crear nueva orden: ${error.message}`)
+      console.error('Error reasignando stock:', error)
+      alert(`Error reasignando stock: ${error.message}`)
     } finally {
       setLoading(false)
     }
@@ -890,7 +754,7 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
             Orden: <strong>{cutOrder.cut_number}</strong> - {cutOrder.product?.name}
           </p>
           <p className="text-xs text-slate-500 mt-1">
-            Mostrando chapas de {cutOrder.product?.length_meters || cutOrder.quantity_requested}m o superiores
+            Mostrando chapas de {extractSizeFromCode(cutOrder.product?.code || '')}m o superiores
           </p>
         </div>
 
@@ -935,7 +799,7 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
                         <p className="text-sm text-slate-600">{product?.code}</p>
                       </div>
                       <span className="text-2xl font-bold text-blue-600">
-                        {product?.length_meters}m
+                        {extractSizeFromCode(product?.code || '')}m
                       </span>
                     </div>
                     
@@ -1007,7 +871,7 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
               disabled={!selectedStock || loading}
               className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors font-medium"
             >
-              {loading ? 'Cambiando...' : selectedStock ? `Asignar ${(Array.isArray(selectedStock.product) ? selectedStock.product[0] : selectedStock.product)?.length_meters}m` : 'Seleccionar Stock'}
+              {loading ? 'Cambiando...' : selectedStock ? `Asignar ${extractSizeFromName(selectedStock.product?.name || '')}m` : 'Seleccionar Stock'}
             </button>
           </div>
         </div>

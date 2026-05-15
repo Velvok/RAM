@@ -6,6 +6,7 @@ import { extractSizeFromCode, extractFamilyCode } from '@/lib/product-utils'
 import { finishCutOrder } from './cut-orders'
 import { updateOrderStatus } from './orders'
 import { notifyCorteRealizado, type CorteMovimiento } from '@/lib/ram-outbound'
+import { revalidatePath } from 'next/cache'
 
 export async function processCutOrder(params: {
   cutOrderId: string
@@ -122,11 +123,12 @@ export async function processCutOrder(params: {
   // Actualizar cantidad cortada
   const newQuantityCut = (cutOrder.quantity_cut || 0) + quantityToCut
   const isFullyCompleted = newQuantityCut >= cutOrder.quantity_requested
-  
+
   console.log(`📊 Progreso de corte: ${cutOrder.quantity_cut || 0} + ${quantityToCut} = ${newQuantityCut}/${cutOrder.quantity_requested}`)
-  
+  console.log(`📊 isFullyCompleted: ${isFullyCompleted}, nuevo estado: ${isFullyCompleted ? 'completada' : 'en_proceso'}`)
+
   // Actualizar cut_order directamente aquí en lugar de usar finishCutOrder
-  await supabase
+  const { error: updateError } = await supabase
     .from('cut_orders')
     .update({
       status: isFullyCompleted ? 'completada' : 'en_proceso',
@@ -134,6 +136,13 @@ export async function processCutOrder(params: {
       finished_at: isFullyCompleted ? new Date().toISOString() : null,
     })
     .eq('id', cutOrderId)
+
+  if (updateError) {
+    console.error('❌ Error actualizando cut_order:', updateError)
+    throw updateError
+  }
+
+  console.log(`✅ Cut_order actualizada: status=${isFullyCompleted ? 'completada' : 'en_proceso'}, quantity_cut=${newQuantityCut}`)
   
   // Registrar cut_line
   await supabase
@@ -236,35 +245,36 @@ export async function processCutOrder(params: {
           disponible: afterConsume?.stock_disponible
         })
         
-        // 2. Generar pieza cortada
+        // 2. Generar pieza cortada (usando el código del producto solicitado)
         console.log(`   🔍 Generando pieza cortada de ${productSize}m (ya reservada)...`)
-        
+
         const { data: beforeGenerate } = await supabase
           .from('inventory')
           .select('id, product_id, stock_total, stock_reservado, stock_generado, stock_disponible')
           .eq('product_id', cutOrder.product_id)
           .single()
-        
+
         console.log(`   📊 Stock ANTES de generar:`, {
           total: beforeGenerate?.stock_total || 0,
           reservado: beforeGenerate?.stock_reservado || 0,
           generado: beforeGenerate?.stock_generado || 0,
           disponible: beforeGenerate?.stock_disponible || 0
         })
-        
-        await generateRemnantStock(usedProduct.code, productSize)
-        
+
+        // Generar la pieza cortada usando el código del producto solicitado
+        await generateRemnantStock(cutOrder.product?.code || '', productSize)
+
         const { data: cutPieceInventory, error: inventoryError } = await supabase
           .from('inventory')
           .select('id, product_id, stock_total, stock_reservado, stock_generado, stock_disponible')
           .eq('product_id', cutOrder.product_id)
           .single()
-        
+
         if (inventoryError || !cutPieceInventory) {
           console.error(`   ❌ Error al buscar inventario:`, inventoryError)
           throw new Error(`No se encontró el inventario para el producto ${cutOrder.product_id}`)
         }
-        
+
         console.log(`   📊 Stock DESPUÉS de generar:`, {
           total: cutPieceInventory.stock_total,
           reservado: cutPieceInventory.stock_reservado,
@@ -272,7 +282,7 @@ export async function processCutOrder(params: {
           disponible: cutPieceInventory.stock_disponible
         })
         console.log(`   ✅ Cambios: total +${cutPieceInventory.stock_total - (beforeGenerate?.stock_total || 0)}, generado +${cutPieceInventory.stock_generado - (beforeGenerate?.stock_generado || 0)}`)
-        
+
         // 3. Reservar la pieza generada
         const { error: updateError } = await supabase
           .from('inventory')
@@ -280,18 +290,18 @@ export async function processCutOrder(params: {
             stock_reservado: cutPieceInventory.stock_reservado + 1
           })
           .eq('id', cutPieceInventory.id)
-        
+
         if (updateError) {
           console.error(`   ❌ Error al reservar pieza generada:`, updateError)
           throw updateError
         }
-        
+
         const { data: afterReserve } = await supabase
           .from('inventory')
           .select('stock_total, stock_reservado, stock_generado, stock_disponible')
           .eq('id', cutPieceInventory.id)
           .single()
-        
+
         console.log(`   ✅ Pieza generada y reservada: +1 de ${productSize}m`)
         console.log(`   📊 Stock final:`, {
           total: afterReserve?.stock_total,
@@ -299,7 +309,7 @@ export async function processCutOrder(params: {
           generado: afterReserve?.stock_generado,
           disponible: afterReserve?.stock_disponible
         })
-        
+
         // 4. Generar remanente (si existe)
         if (remnantPerSheet > 0) {
           await generateRemnantStock(usedProduct.code, remnantPerSheet)
@@ -321,44 +331,56 @@ export async function processCutOrder(params: {
 
     // ============================================
     // 📤 NOTIFICAR A EVO: corte_realizado
-    // BAJA del material consumido + ALTA del/los producto(s) generado(s)
+    // Solo cuando hay remanente (corte real)
     // ============================================
-    try {
-      const evoOrderId = cutOrder.order?.evo_order_id
-      const refEvo = cutOrder.ref_evo
+    if (remnantPerSheet > 0) {
+      try {
+        const evoOrderId = cutOrder.order?.evo_order_id
+        const refEvo = cutOrder.ref_evo || cutOrder.order?.ref_evo
 
-      if (!evoOrderId) {
-        console.log(`⏭️ Pedido sin evo_order_id, no se notifica a EVO`)
-      } else if (!refEvo) {
-        console.log(`⏭️ Cut order sin ref_evo, no se notifica a EVO`)
-      } else if (!usedProduct.evo_product_id) {
-        console.log(`⏭️ Material usado sin evo_product_id, no se notifica a EVO`)
-      } else if (!cutOrder.product?.evo_product_id) {
-        console.log(`⏭️ Producto cortado sin evo_product_id, no se notifica a EVO`)
-      } else {
-        const movimientos: CorteMovimiento[] = []
+        if (!evoOrderId) {
+          console.log(`⏭️ Pedido sin evo_order_id, no se notifica a EVO`)
+        } else if (!refEvo) {
+          console.log(`⏭️ Pedido sin ref_evo, no se notifica a EVO`)
+        } else if (!usedProduct.evo_product_id) {
+          console.log(`⏭️ Material usado sin evo_product_id, no se notifica a EVO`)
+        } else if (!cutOrder.product?.evo_product_id) {
+          console.log(`⏭️ Producto cortado sin evo_product_id, no se notifica a EVO`)
+        } else {
+          const movimientos: CorteMovimiento[] = []
 
-        // BAJA del material consumido
-        movimientos.push({
-          tipo: 'BAJA',
-          nro_item: 1,
-          id_articulo: usedProduct.evo_product_id,
-          cantidad: sheetsUsed,
-        })
+          // BAJA del material consumido
+          movimientos.push({
+            tipo: 'BAJA',
+            nro_item: 1,
+            id_articulo: usedProduct.evo_product_id,
+            cantidad: sheetsUsed,
+          })
 
-        // ALTA del producto cortado (pieza solicitada)
-        movimientos.push({
-          tipo: 'ALTA',
-          id_articulo: cutOrder.product.evo_product_id,
-          cantidad: sheetsUsed,
-        })
+          // ALTA del producto cortado (pieza solicitada)
+          movimientos.push({
+            tipo: 'ALTA',
+            id_articulo: cutOrder.product.evo_product_id,
+            cantidad: sheetsUsed,
+          })
 
-        // ALTA del remanente (si existe)
-        if (remnantPerSheet > 0) {
-          // Buscar el producto del remanente por código (mismo formato que generateRemnantStock)
-          const baseCode = extractFamilyCode(usedProduct.code)
-          if (baseCode) {
-            const remnantCode = `${baseCode}.${remnantPerSheet.toFixed(1).replace('.', ',')}`
+          // ALTA del remanente
+          // Usar el mismo formato que generateRemnantStock para Dach acanalada
+          let remnantCode = ''
+          const dachMatch = usedProduct.code.match(/^([A-Z0-9.,]+)X\d+[.,]\d+M$/i)
+          if (dachMatch) {
+            const baseCode = dachMatch[1]
+            const sizeStr = remnantPerSheet.toFixed(1)
+            const sizeFormatted = sizeStr.replace('.', ',')
+            remnantCode = `${baseCode}X${sizeFormatted}M`
+          } else {
+            const baseCode = extractFamilyCode(usedProduct.code)
+            if (baseCode) {
+              remnantCode = `${baseCode}.${remnantPerSheet.toFixed(1).replace('.', ',')}`
+            }
+          }
+
+          if (remnantCode) {
             const { data: remnantProduct } = await supabase
               .from('products')
               .select('evo_product_id')
@@ -375,38 +397,40 @@ export async function processCutOrder(params: {
               console.warn(`⚠️ Producto del remanente (${remnantCode}) sin evo_product_id, no se incluye en notificación`)
             }
           }
+
+          // Obtener código del operario
+          const { data: opData } = await supabase
+            .from('plant_operators')
+            .select('name, code')
+            .eq('id', operatorId)
+            .single()
+
+          const operario = (opData as any)?.code || opData?.name || operatorId
+
+          console.log(`📤 Notificando a EVO corte_realizado:`, {
+            id_pedido: evoOrderId,
+            ref_evo: refEvo,
+            operario,
+            movimientos,
+          })
+
+          await notifyCorteRealizado({
+            cutOrderId,
+            orderId: cutOrder.order_id,
+            idPedido: evoOrderId,
+            refEvo,
+            operario,
+            movimientos,
+          })
+
+          console.log(`✅ Evento corte_realizado encolado para EVO`)
         }
-
-        // Obtener código del operario
-        const { data: opData } = await supabase
-          .from('plant_operators')
-          .select('name, code')
-          .eq('id', operatorId)
-          .single()
-
-        const operario = (opData as any)?.code || opData?.name || operatorId
-
-        console.log(`📤 Notificando a EVO corte_realizado:`, {
-          id_pedido: evoOrderId,
-          ref_evo: refEvo,
-          operario,
-          movimientos,
-        })
-
-        await notifyCorteRealizado({
-          cutOrderId,
-          orderId: cutOrder.order_id,
-          idPedido: evoOrderId,
-          refEvo,
-          operario,
-          movimientos,
-        })
-
-        console.log(`✅ Evento corte_realizado encolado para EVO`)
+      } catch (notifyError) {
+        // No bloqueamos el corte si falla la notificación; se reintenta por cron
+        console.error(`⚠️ Error notificando a EVO (no bloqueante):`, notifyError)
       }
-    } catch (notifyError) {
-      // No bloqueamos el corte si falla la notificación; se reintenta por cron
-      console.error(`⚠️ Error notificando a EVO (no bloqueante):`, notifyError)
+    } else {
+      console.log(`⏭️ Sin remanente (match exacto), no se notifica a EVO`)
     }
   }
   
@@ -443,7 +467,12 @@ export async function processCutOrder(params: {
   })
   
   console.log(`📝 Actividad registrada en el historial`)
-  
+
+  // Revalidar rutas para actualizar la UI
+  revalidatePath('/admin/pedidos', 'layout')
+  revalidatePath('/admin/pedidos/[id]', 'page')
+  revalidatePath('/planta/pedidos/[id]', 'page')
+
   return {
     success: true,
     isFullyCompleted,

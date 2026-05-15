@@ -162,7 +162,7 @@ export async function assignStockToCutOrder(
 
   const { data, error } = await supabase
     .from('cut_orders')
-    .update({ 
+    .update({
       material_base_id: productId,  // ID del producto (ej: AC25110.5,0)
       material_base_quantity: quantity  // Tamaño de la pieza (ej: 5m)
     })
@@ -266,30 +266,26 @@ export async function reserveStock(inventoryId: string) {
   const stockBefore = current.stock_reservado || 0
   const stockAfter = stockBefore + 1 // Reservamos 1 unidad (la pieza completa)
 
-  console.log(`🔒 Reservando stock:`)
-  console.log(`   Producto: ${current.product?.code}`)
-  console.log(`   Stock total: ${current.stock_total} (sin cambios)`)
-  console.log(`   Stock reservado: ${stockBefore} → ${stockAfter}`)
-  console.log(`   Stock disponible: ${current.stock_disponible} → ${current.stock_disponible - 1}`)
-
-  // Usar RPC para reservar (NO disminuye stock_total)
-  const { error } = await supabase.rpc('reserve_stock', {
-    p_inventory_id: inventoryId
-  })
+  const { error } = await supabase
+    .from('inventory')
+    .update({
+      stock_reservado: stockAfter,
+      stock_disponible: current.stock_total - stockAfter
+    })
+    .eq('id', inventoryId)
+    .select()
+    .single()
 
   if (error) {
     console.error(`❌ Error reservando stock:`, error)
     throw error
   }
 
-  // Obtener datos actualizados
   const { data } = await supabase
     .from('inventory')
     .select()
     .eq('id', inventoryId)
     .single()
-
-  console.log(`✅ Stock reservado correctamente`)
 
   // Registrar movimiento
   await supabase.from('stock_movements').insert({
@@ -495,35 +491,41 @@ export async function generateRemnantStock(
   const supabase = createAdminClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  // Extraer código de familia (ej: AC25110.5,0 → AC25110 o ACDD.1,1X10,0M → ACDD.1,1)
-  const baseCode = extractFamilyCode(baseProductCode)
-  
-  if (!baseCode) {
-    throw new Error(`Código de producto inválido: ${baseProductCode}`)
+  console.log(`🔍 generateRemnantStock llamado con: baseProductCode=${baseProductCode}, remnantSize=${remnantSize}`)
+
+  // Detectar formato Dach acanalada (ej: ACDD.1,1X12,0M → ACDD.1,1X2,0M)
+  const dachMatch = baseProductCode.match(/^([A-Z0-9.,]+)X\d+[.,]\d+M$/i)
+  let productCode = ''
+
+  if (dachMatch) {
+    const baseCode = dachMatch[1]
+    const sizeStr = remnantSize.toFixed(1)
+    const sizeFormatted = sizeStr.replace('.', ',')
+    productCode = `${baseCode}X${sizeFormatted}M`
+    console.log(`✅ Formato Dach detectado, generando: ${productCode}`)
+  } else {
+    const baseCode = extractFamilyCode(baseProductCode)
+    if (!baseCode) {
+      throw new Error(`No se pudo extraer el código base de ${baseProductCode}`)
+    }
+    const sizeStr = remnantSize.toFixed(1).replace('.', ',')
+    productCode = `${baseCode}.${sizeStr}`
+    console.log(`📦 Generando código de producto: ${productCode}`)
   }
 
-  // Formatear el tamaño del recorte (ej: 4.5 → 4,5 o 4.0 → 4,0)
-  // Asegurar que siempre tenga un decimal
-  const sizeStr = remnantSize.toFixed(1) // 4.5 → "4.5" o 4 → "4.0"
-  const sizeFormatted = sizeStr.replace('.', ',') // "4.5" → "4,5" o "4.0" → "4,0"
-  const remnantProductCode = `${baseCode}.${sizeFormatted}`
-
-  console.log(`🔍 Buscando producto para recorte: ${remnantProductCode} (${remnantSize}m)`)
-
-  // Buscar el producto del tamaño del recorte
+  // Buscar el producto
   const { data: product, error: productError } = await supabase
     .from('products')
-    .select('id, code, name')
-    .eq('code', remnantProductCode)
+    .select('*')
+    .eq('code', productCode)
     .single()
 
   if (productError || !product) {
-    throw new Error(
-      `❌ No existe el producto ${remnantProductCode} para el recorte de ${remnantSize}m. ` +
-      `Debe crear el producto primero en el catálogo.`
-    )
+    console.error(`❌ Producto remanente no encontrado: ${productCode}`)
+    throw new Error(`Producto remanente no encontrado (${productCode}). Por favor, contacta con RAM para crear este nuevo producto en caso de querer.`)
   }
 
+  console.log(`🔍 Buscando producto para recorte: ${productCode} (${remnantSize}m)`)
   console.log(`✅ Producto encontrado: ${product.name}`)
 
   // Buscar o crear el registro de inventory para este producto

@@ -26,7 +26,7 @@ export async function getOrderById(orderId: string) {
       cut_orders!cut_orders_order_id_fkey(
         *,
         product:products!cut_orders_product_id_fkey(*),
-        material_base:products!cut_orders_material_base_id_fkey(*),
+        material_base:products!cut_orders_material_base_id_fkey(id, code, name),
         operator:users!cut_orders_assigned_to_fkey(id, full_name, email),
         cut_lines(*)
       ),

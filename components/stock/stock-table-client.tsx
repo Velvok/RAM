@@ -9,7 +9,7 @@ interface StockTableClientProps {
   inventory: any[]
 }
 
-type SortField = 'stock_total' | 'stock_reservado' | 'stock_generado' | 'stock_disponible' | null
+type SortField = 'code' | 'name' | 'stock_total' | 'stock_reservado' | 'stock_generado' | 'stock_disponible' | null
 type SortDirection = 'asc' | 'desc' | null
 
 export function StockTableClient({ inventory }: StockTableClientProps) {
@@ -113,13 +113,24 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
     if (!sortField || !sortDirection) return filteredInventory
 
     return [...filteredInventory].sort((a, b) => {
-      const aValue = a[sortField] || 0
-      const bValue = b[sortField] || 0
-      
-      if (sortDirection === 'asc') {
-        return aValue - bValue
+      let aValue: any
+      let bValue: any
+
+      if (sortField === 'code') {
+        aValue = a.product?.code || ''
+        bValue = b.product?.code || ''
+      } else if (sortField === 'name') {
+        aValue = a.product?.name || ''
+        bValue = b.product?.name || ''
       } else {
-        return bValue - aValue
+        aValue = a[sortField] || 0
+        bValue = b[sortField] || 0
+      }
+
+      if (sortDirection === 'asc') {
+        return aValue < bValue ? -1 : aValue > bValue ? 1 : 0
+      } else {
+        return aValue > bValue ? -1 : aValue < bValue ? 1 : 0
       }
     })
   }, [filteredInventory, sortField, sortDirection])
@@ -157,11 +168,31 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
         <table className="w-full divide-y divide-slate-200">
           <thead className="bg-slate-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                Código
+              <th 
+                className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors"
+                onClick={() => handleSort('code')}
+              >
+                <div className="flex items-center gap-2">
+                  Código
+                  {sortField === 'code' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />
+                  ) : (
+                    <ArrowUpDown className="w-4 h-4 opacity-30" />
+                  )}
+                </div>
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                Producto
+              <th 
+                className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors"
+                onClick={() => handleSort('name')}
+              >
+                <div className="flex items-center gap-2">
+                  Producto
+                  {sortField === 'name' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />
+                  ) : (
+                    <ArrowUpDown className="w-4 h-4 opacity-30" />
+                  )}
+                </div>
               </th>
               <th 
                 className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors"

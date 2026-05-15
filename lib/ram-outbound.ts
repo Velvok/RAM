@@ -160,6 +160,11 @@ export async function processOutboundEvent(eventId: string): Promise<{
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), RAM_TIMEOUT_MS)
 
+    console.log(`\n=== ENVIANDO A EVO ===`)
+    console.log(`Endpoint: ${event.endpoint}`)
+    console.log(`Evento: ${event.event_type}`)
+    console.log(`Payload enviado:`, JSON.stringify(event.payload, null, 2))
+
     const response = await fetch(event.endpoint, {
       method: 'POST',
       headers: {
@@ -183,6 +188,10 @@ export async function processOutboundEvent(eventId: string): Promise<{
       responseBody = { raw: await response.text().catch(() => '') }
     }
 
+    console.log(`Respuesta de EVO:`, JSON.stringify(responseBody, null, 2))
+    console.log(`HTTP Status: ${httpStatus}`)
+    console.log(`=== FIN COMUNICACION EVO ===\n`)
+
     if (response.ok) {
       success = true
     } else {
@@ -192,6 +201,7 @@ export async function processOutboundEvent(eventId: string): Promise<{
     errorMessage = err.name === 'AbortError'
       ? `Timeout después de ${RAM_TIMEOUT_MS}ms`
       : (err.message || 'Error de red')
+    console.error(`Error en comunicacion con EVO:`, errorMessage)
   }
 
   // 6. Actualizar el evento con el resultado

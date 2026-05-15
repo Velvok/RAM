@@ -63,23 +63,42 @@ export async function generateTestOrder(status: string = 'nuevo', numLines: numb
     return { error: 'No hay productos disponibles en stock' }
   }
 
-  // Separar chapas y artículos normales
-  const chapas = uniqueProducts.filter(p => p.code?.startsWith('AC'))
-  const articulos = uniqueProducts.filter(p => !p.code?.startsWith('AC'))
+  // Separar chapas y artículos normales usando isChapaProduct
+  const { isChapaProduct } = await import('@/lib/product-utils')
+  const chapas = uniqueProducts.filter(p => isChapaProduct(p.code || '', p.category, p.name))
+  const articulos = uniqueProducts.filter(p => !isChapaProduct(p.code || '', p.category, p.name))
 
   console.log(`✅ Productos disponibles: ${uniqueProducts.length} (${chapas.length} chapas, ${articulos.length} artículos)`)
 
   // Seleccionar productos aleatorios (sin repetir)
   const selectedProducts = []
   const availableProducts = [...uniqueProducts]
-  
+
   for (let i = 0; i < Math.min(numLines, availableProducts.length); i++) {
     const randomIndex = Math.floor(Math.random() * availableProducts.length)
     selectedProducts.push(availableProducts[randomIndex])
     availableProducts.splice(randomIndex, 1) // Eliminar para no repetir
   }
 
-  const products = selectedProducts
+  // Obtener stock disponible de cada producto seleccionado
+  const productsWithStock = []
+  for (const product of selectedProducts) {
+    const { data: inventory } = await supabase
+      .from('inventory')
+      .select('stock_disponible')
+      .eq('product_id', product.id)
+      .gt('stock_disponible', 0)
+      .limit(1)
+
+    if (inventory && inventory.length > 0) {
+      productsWithStock.push({
+        ...product,
+        stock_disponible: parseFloat(inventory[0].stock_disponible)
+      })
+    }
+  }
+
+  const products = productsWithStock
 
   // Generar número de pedido único
   const orderNumber = `PED-TEST-${Date.now()}`
@@ -89,17 +108,19 @@ export async function generateTestOrder(status: string = 'nuevo', numLines: numb
   const orderLines = []
   
   for (const product of products) {
-    const isChapa = product.code?.startsWith('AC')
-    
+    const isChapa = isChapaProduct(product.code || '', product.category, product.name)
+    const stockDisponible = product.stock_disponible || 1
+
     if (isChapa) {
       // CHAPAS: Extraer longitud del nombre del producto
       const lengthMatch = product.name.match(/(\d+)m/)
       const lengthPerUnit = lengthMatch ? parseInt(lengthMatch[1]) : 6
-      
-      // Generar cantidad de unidades (entre 1 y 10)
-      const units = Math.floor(Math.random() * 10) + 1
+
+      // Generar cantidad de unidades (no exceder stock disponible)
+      const maxUnits = Math.min(Math.floor(stockDisponible), 10)
+      const units = Math.floor(Math.random() * maxUnits) + 1
       const quantity = units * lengthPerUnit // Total en metros (para cálculos de precio)
-      
+
       const unitPrice = Math.floor(Math.random() * 2000) + 1000 // Entre 1000 y 3000 por metro
       totalAmount += quantity * unitPrice
       orderLines.push({
@@ -111,11 +132,12 @@ export async function generateTestOrder(status: string = 'nuevo', numLines: numb
         subtotal: quantity * unitPrice
       })
     } else {
-      // ARTÍCULOS NORMALES: Solo cantidad de unidades
-      const units = Math.floor(Math.random() * 20) + 1 // Entre 1 y 20 unidades
+      // ARTÍCULOS NORMALES: Solo cantidad de unidades (no exceder stock disponible)
+      const maxUnits = Math.floor(stockDisponible)
+      const units = Math.floor(Math.random() * maxUnits) + 1 // Entre 1 y stock disponible
       const unitPrice = Math.floor(Math.random() * 5000) + 500 // Entre 500 y 5500 por unidad
       const quantity = units // Para artículos normales, quantity = units
-      
+
       totalAmount += quantity * unitPrice
       orderLines.push({
         product_id: product.id,
