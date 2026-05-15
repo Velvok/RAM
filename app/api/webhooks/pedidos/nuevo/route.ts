@@ -242,31 +242,64 @@ async function processPedidoNuevo(payload: PedidoNuevoPayload) {
 
     // Crear o obtener cliente
     let clientId: string
-    const { data: existingClient } = await supabase
-      .from('clients')
-      .select('id')
-      .eq('evo_client_id', payload.cliente.id_cliente)
-      .maybeSingle()
 
-    if (existingClient) {
-      clientId = existingClient.id
-      console.log(`✅ Found existing client: ${clientId}`)
-    } else {
-      const { data: newClient, error: clientError } = await supabase
+    // Si EVO envía datos del cliente, usarlos
+    if (payload.cliente.id_cliente) {
+      const { data: existingClient } = await supabase
         .from('clients')
-        .insert({
-          evo_client_id: payload.cliente.id_cliente,
-          business_name: payload.cliente.nombre,
-          is_active: true
-        })
         .select('id')
-        .single()
+        .eq('evo_client_id', payload.cliente.id_cliente)
+        .maybeSingle()
 
-      if (clientError || !newClient) {
-        throw new Error(`Error creating client: ${clientError?.message}`)
+      if (existingClient) {
+        clientId = existingClient.id
+        console.log(`✅ Found existing client by evo_client_id: ${clientId}`)
+      } else {
+        const clientName = payload.cliente.nombre || `Cliente ${ref_evo.codter}`
+        const { data: newClient, error: clientError } = await supabase
+          .from('clients')
+          .insert({
+            evo_client_id: payload.cliente.id_cliente,
+            business_name: clientName,
+            is_active: true
+          })
+          .select('id')
+          .single()
+
+        if (clientError || !newClient) {
+          throw new Error(`Error creating client: ${clientError?.message}`)
+        }
+        clientId = newClient.id
+        console.log(`➕ Created new client: ${clientId}`)
       }
-      clientId = newClient.id
-      console.log(`➕ Created new client: ${clientId}`)
+    } else {
+      // Si EVO no envía datos del cliente, usar el código de tercero
+      const { data: existingClient } = await supabase
+        .from('clients')
+        .select('id')
+        .eq('evo_client_id', ref_evo.codter)
+        .maybeSingle()
+
+      if (existingClient) {
+        clientId = existingClient.id
+        console.log(`✅ Found existing client by codter: ${clientId}`)
+      } else {
+        const { data: newClient, error: clientError } = await supabase
+          .from('clients')
+          .insert({
+            evo_client_id: ref_evo.codter,
+            business_name: `Cliente ${ref_evo.codter}`,
+            is_active: true
+          })
+          .select('id')
+          .single()
+
+        if (clientError || !newClient) {
+          throw new Error(`Error creating client: ${clientError?.message}`)
+        }
+        clientId = newClient.id
+        console.log(`➕ Created new client from codter: ${clientId}`)
+      }
     }
 
     // Mapear productos en bulk
