@@ -74,10 +74,11 @@ export async function findBestStockMatch(
 
   // Obtener todas las piezas disponibles del mismo tipo de producto
   // Buscamos por código que empiece con el código base
+  // Usamos OR para manejar códigos con y sin espacios (ej: "CP T101.11.0" y "CPT101.11.0")
   const { data: allProducts } = await supabase
     .from('products')
     .select('id, code, name')
-    .ilike('code', `${baseCode}.%`)
+    .or(`code.ilike.${baseCode}.%,code.ilike.${baseCode.replace(/\s/g, '')}.%`)
 
   if (!allProducts || allProducts.length === 0) {
     console.log(`⚠️ No se encontraron productos con código base ${baseCode}`)

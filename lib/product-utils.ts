@@ -74,14 +74,15 @@ export function extractFamilyCode(code: string): string {
     return dachMatch[1]
   }
 
-  // Patrón estándar: AC25110.0,5 → AC25110
-  const standardMatch = code.match(/^([A-Z0-9*]+)\./i)
+  // Patrón estándar: AC25110.0,5 → AC25110, CP T101.11.0 → CP T101
+  const standardMatch = code.match(/^([A-Z0-9*\s]+)\./i)
   if (standardMatch) {
-    const base = standardMatch[1]
+    const base = standardMatch[1].trim() // Trim para eliminar espacios al final
     // Para patrones tipo ACPOLI.BL.2.00, la familia es ACPOLI.BL
     // Para patrones tipo AC25110.0,5, la familia es AC25110
     // Para patrones tipo A*B25110.0,5, la familia es A*B25110
     // Para patrones tipo TRPOLIDD.B.0,5, la familia es TRPOLIDD.B
+    // Para patrones tipo CP T101.11.0, la familia es CP T101
     return base
   }
 
