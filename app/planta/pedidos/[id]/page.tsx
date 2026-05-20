@@ -40,6 +40,7 @@ export default function PlantaPedidoDetallePage() {
   const [selectedStock, setSelectedStock] = useState<Record<string, any>>({})
   const [quantityToChange, setQuantityToChange] = useState<Record<string, number>>({})
   const [loadingStock, setLoadingStock] = useState<Record<string, boolean>>({})
+  const [loadingSuggestions, setLoadingSuggestions] = useState<Record<string, boolean>>({})
   const [markingAsDelivered, setMarkingAsDelivered] = useState(false)
   const [undoingDelivery, setUndoingDelivery] = useState(false)
 
@@ -278,6 +279,7 @@ export default function PlantaPedidoDetallePage() {
     // Cargar sugerencias reales de stock
     if (!suggestions[cutOrderId]) {
       console.log('🚀 Cargando sugerencias para cutOrderId:', cutOrderId)
+      setLoadingSuggestions(prev => ({ ...prev, [cutOrderId]: true }))
       try {
         const { getCutOrderWithAssignment } = await import('@/app/actions/get-cut-order-with-assignment')
         const supabase = createClient()
@@ -375,6 +377,8 @@ export default function PlantaPedidoDetallePage() {
         }
       } catch (error) {
         console.error('Error loading stock suggestions:', error)
+      } finally {
+        setLoadingSuggestions(prev => ({ ...prev, [cutOrderId]: false }))
       }
     }
   }
@@ -942,17 +946,29 @@ export default function PlantaPedidoDetallePage() {
                 {/* Contenido expandido */}
                 {isExpanded && isPending && (
                   <div className="px-6 pb-6 space-y-6 border-t border-slate-700 pt-6">
-                    {/* Mensaje cuando no hay stock asignado */}
-                    {!cutSuggestions?.best && (!cutSuggestions?.alternatives || cutSuggestions.alternatives.length === 0) && (
-                      <div className="bg-red-900/30 border-2 border-red-500 rounded-2xl p-6">
-                        <div className="flex items-center gap-3 mb-3">
-                          <AlertTriangle className="w-6 h-6 text-red-400" />
-                          <h4 className="text-lg font-bold text-red-400 uppercase">Sin Stock Disponible</h4>
+                    {/* Estado de carga de sugerencias */}
+                    {loadingSuggestions[cutOrder.id] ? (
+                      <div className="bg-slate-800/50 border-2 border-slate-600 rounded-2xl p-6">
+                        <div className="flex items-center justify-center gap-3">
+                          <div className="w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                          <p className="text-white text-lg">Cargando stock disponible...</p>
                         </div>
-                        <p className="text-white">
-                          No hay stock asignado ni disponible para este producto. Por favor, contacta con el administrador.
-                        </p>
                       </div>
+                    ) : (
+                      <>
+                        {/* Mensaje cuando no hay stock asignado */}
+                        {!cutSuggestions?.best && (!cutSuggestions?.alternatives || cutSuggestions.alternatives.length === 0) && (
+                          <div className="bg-red-900/30 border-2 border-red-500 rounded-2xl p-6">
+                            <div className="flex items-center gap-3 mb-3">
+                              <AlertTriangle className="w-6 h-6 text-red-400" />
+                              <h4 className="text-lg font-bold text-red-400 uppercase">Sin Stock Disponible</h4>
+                            </div>
+                            <p className="text-white">
+                              No hay stock asignado ni disponible para este producto. Por favor, contacta con el administrador.
+                            </p>
+                          </div>
+                        )}
+                      </>
                     )}
 
                     {/* BLOQUE A: Sugerencia del Sistema (Happy Path) */}
@@ -1020,75 +1036,15 @@ export default function PlantaPedidoDetallePage() {
                           <div className="px-6 pb-6 space-y-6 animate-in slide-in-from-top duration-300">
                             {/* Botón para cambiar stock asignado */}
                             <button
-                              onClick={() => {
-                                loadAvailableStockForCutOrder(cutOrder.id, cutOrder)
+                              onClick={async () => {
+                                // Cargar stock antes de abrir el modal
+                                await loadAvailableStockForCutOrder(cutOrder.id, cutOrder)
                                 setShowChangeStockModal(prev => ({ ...prev, [cutOrder.id]: true }))
                               }}
                               className="w-full h-14 bg-amber-600 hover:bg-amber-500 border-2 border-amber-500 rounded-xl text-lg font-bold text-white transition-all flex items-center justify-center gap-3"
                             >
                               <span>🔄 Cambiar Stock Asignado</span>
                             </button>
-
-                            {/* Grid de 3 alternativas */}
-                            {cutSuggestions?.alternatives && cutSuggestions.alternatives.length > 0 && (
-                              <div className="grid grid-cols-3 gap-4">
-                                {cutSuggestions.alternatives.slice(0, 3).map((alt: MaterialSuggestion) => (
-                                  <button
-                                    key={alt.id}
-                                    onClick={() => setSelectedMaterials(prev => ({ ...prev, [cutOrder.id]: alt }))}
-                                    className={`p-6 rounded-xl border-2 transition-all transform active:scale-95 ${
-                                      selectedMaterial?.id === alt.id
-                                        ? 'bg-blue-600 border-blue-500 shadow-lg shadow-blue-500/30'
-                                        : 'bg-slate-800 border-slate-700 hover:bg-slate-700 hover:border-slate-600'
-                                    }`}
-                                  >
-                                    <div className="text-center space-y-2">
-                                      <div className="text-2xl font-bold text-white">{alt.length}m</div>
-                                      <div className="text-sm text-slate-400">Desp: {alt.waste.toFixed(2)}m</div>
-                                      <div className="text-xs text-slate-500 truncate">{alt.name}</div>
-                                    </div>
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-
-                            {/* Selector Manual Colapsable */}
-                            {cutSuggestions?.all && cutSuggestions.all.length > 0 && (
-                              <div className="border-t border-slate-700 pt-4">
-                                <button
-                                  onClick={() => {
-                                    setShowManualSelector(prev => ({ ...prev, [cutOrder.id]: !prev[cutOrder.id] }))
-                                  }}
-                                  className="w-full h-16 bg-slate-700 border-2 border-slate-600 rounded-xl text-lg font-bold text-white hover:bg-slate-600 transition-all flex items-center justify-center gap-3"
-                                >
-                                  <span>Seleccionar Otro Material</span>
-                                  <span className="text-xl">{showManualSelector[cutOrder.id] ? '▼' : '▶'}</span>
-                                </button>
-                                
-                                {showManualSelector[cutOrder.id] && (
-                                  <div className="mt-4 space-y-3 animate-in slide-in-from-top duration-300">
-                                    <select 
-                                      id={`manual-select-${cutOrder.id}`}
-                                      className="w-full p-4 bg-slate-900 border-2 border-slate-700 rounded-xl text-white text-base"
-                                      value={selectedMaterial?.id || ''}
-                                      onChange={(e) => {
-                                        const selected = cutSuggestions?.all.find((s: MaterialSuggestion) => s.id === e.target.value)
-                                        if (selected) {
-                                          setSelectedMaterials(prev => ({ ...prev, [cutOrder.id]: selected }))
-                                        }
-                                      }}
-                                    >
-                                      <option value="">Seleccionar material...</option>
-                                      {cutSuggestions?.all.map((s: MaterialSuggestion) => (
-                                        <option key={s.id} value={s.id}>
-                                          {s.name} - {s.length}m (desp: {s.waste.toFixed(2)}m)
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                )}
-                              </div>
-                            )}
                           </div>
                         )}
                       </div>
