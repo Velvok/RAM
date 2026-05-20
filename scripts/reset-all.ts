@@ -21,7 +21,7 @@ const supabase = createClient(
   envVars.SUPABASE_SERVICE_ROLE_KEY!,
 )
 
-async function createTestOrder(orderNumber: string): Promise<boolean> {
+async function createTestOrder(orderNumber: string, preSelectedProducts?: any[]): Promise<boolean> {
   try {
     console.log(`   🎲 Creando pedido ${orderNumber}...`)
     
@@ -38,65 +38,72 @@ async function createTestOrder(orderNumber: string): Promise<boolean> {
     
     const client = clientData[0]
     
-    // Obtener productos con stock disponible
-    const { data: inventoryItems, error: invError } = await supabase
-      .from('inventory')
-      .select(`
-        id,
-        stock_disponible,
-        product:products(id, name, code, category)
-      `)
-      .gt('stock_disponible', 0)
-      .limit(100)
+    let productsWithStock: any[] = []
     
-    if (invError || !inventoryItems || inventoryItems.length === 0) {
-      console.error(`   ❌ No hay productos con stock disponible`)
-      return false
-    }
-    
-    // Extraer productos únicos
-    const uniqueProducts = Array.from(
-      new Map(
-        inventoryItems
-          .map(item => Array.isArray(item.product) ? item.product[0] : item.product)
-          .filter(p => p != null)
-          .map(p => [p.id, p])
-      ).values()
-    )
-    
-    if (uniqueProducts.length === 0) {
-      console.error(`   ❌ No hay productos disponibles`)
-      return false
-    }
-    
-    console.log(`   📦 Found ${uniqueProducts.length} unique products`)
-    
-    // Seleccionar entre 2 y 5 productos aleatorios
-    const numLines = Math.floor(Math.random() * 4) + 2 // 2-5 líneas
-    const selectedProducts = []
-    const availableProducts = [...uniqueProducts]
-    
-    for (let i = 0; i < Math.min(numLines, availableProducts.length); i++) {
-      const randomIndex = Math.floor(Math.random() * availableProducts.length)
-      selectedProducts.push(availableProducts[randomIndex])
-      availableProducts.splice(randomIndex, 1)
-    }
-    
-    // Obtener stock de cada producto seleccionado
-    const productsWithStock = []
-    for (const product of selectedProducts) {
-      const { data: inventory } = await supabase
+    if (preSelectedProducts && preSelectedProducts.length > 0) {
+      // Usar productos preseleccionados
+      console.log(`   📦 Using ${preSelectedProducts.length} pre-selected products`)
+      productsWithStock = preSelectedProducts
+    } else {
+      // Obtener productos con stock disponible
+      const { data: inventoryItems, error: invError } = await supabase
         .from('inventory')
-        .select('stock_disponible')
-        .eq('product_id', product.id)
+        .select(`
+          id,
+          stock_disponible,
+          product:products(id, name, code, category)
+        `)
         .gt('stock_disponible', 0)
-        .limit(1)
+        .limit(100)
       
-      if (inventory && inventory.length > 0) {
-        productsWithStock.push({
-          ...product,
-          stock_disponible: parseFloat(inventory[0].stock_disponible)
-        })
+      if (invError || !inventoryItems || inventoryItems.length === 0) {
+        console.error(`   ❌ No hay productos con stock disponible`)
+        return false
+      }
+      
+      // Extraer productos únicos
+      const uniqueProducts = Array.from(
+        new Map(
+          inventoryItems
+            .map(item => Array.isArray(item.product) ? item.product[0] : item.product)
+            .filter(p => p != null)
+            .map(p => [p.id, p])
+        ).values()
+      )
+      
+      if (uniqueProducts.length === 0) {
+        console.error(`   ❌ No hay productos disponibles`)
+        return false
+      }
+      
+      console.log(`   📦 Found ${uniqueProducts.length} unique products`)
+      
+      // Seleccionar entre 2 y 5 productos aleatorios
+      const numLines = Math.floor(Math.random() * 4) + 2 // 2-5 líneas
+      const selectedProducts = []
+      const availableProducts = [...uniqueProducts]
+      
+      for (let i = 0; i < Math.min(numLines, availableProducts.length); i++) {
+        const randomIndex = Math.floor(Math.random() * availableProducts.length)
+        selectedProducts.push(availableProducts[randomIndex])
+        availableProducts.splice(randomIndex, 1)
+      }
+      
+      // Obtener stock de cada producto seleccionado
+      for (const product of selectedProducts) {
+        const { data: inventory } = await supabase
+          .from('inventory')
+          .select('stock_disponible')
+          .eq('product_id', product.id)
+          .gt('stock_disponible', 0)
+          .limit(1)
+        
+        if (inventory && inventory.length > 0) {
+          productsWithStock.push({
+            ...product,
+            stock_disponible: parseFloat(inventory[0].stock_disponible)
+          })
+        }
       }
     }
     
@@ -156,6 +163,71 @@ async function resetAll() {
 
   const testOrderNumbers = ['PED-TEST-1779180554506', 'PED-TEST-1779180755902']
 
+  // Seleccionar productos una vez para usar en ambos pedidos
+  console.log('\n🎲 Seleccionando productos para los pedidos...')
+  const { data: inventoryItems, error: invError } = await supabase
+    .from('inventory')
+    .select(`
+      id,
+      stock_disponible,
+      product:products(id, name, code, category)
+    `)
+    .gt('stock_disponible', 0)
+    .limit(100)
+
+  if (invError || !inventoryItems || inventoryItems.length === 0) {
+    console.error('❌ No hay productos con stock disponible')
+    return
+  }
+
+  // Extraer productos únicos
+  const uniqueProducts = Array.from(
+    new Map(
+      inventoryItems
+        .map(item => Array.isArray(item.product) ? item.product[0] : item.product)
+        .filter(p => p != null)
+        .map(p => [p.id, p])
+    ).values()
+  )
+
+  if (uniqueProducts.length === 0) {
+    console.error('❌ No hay productos disponibles')
+    return
+  }
+
+  console.log(`📦 Found ${uniqueProducts.length} unique products`)
+
+  // Seleccionar entre 2 y 5 productos aleatorios
+  const numLines = Math.floor(Math.random() * 4) + 2 // 2-5 líneas
+  const selectedProducts = []
+  const availableProducts = [...uniqueProducts]
+
+  for (let i = 0; i < Math.min(numLines, availableProducts.length); i++) {
+    const randomIndex = Math.floor(Math.random() * availableProducts.length)
+    selectedProducts.push(availableProducts[randomIndex])
+    availableProducts.splice(randomIndex, 1)
+  }
+
+  // Obtener stock de cada producto seleccionado
+  const productsWithStock: any[] = []
+  for (const product of selectedProducts) {
+    const { data: inventory } = await supabase
+      .from('inventory')
+      .select('stock_disponible')
+      .eq('product_id', product.id)
+      .gt('stock_disponible', 0)
+      .limit(1)
+
+    if (inventory && inventory.length > 0) {
+      productsWithStock.push({
+        ...product,
+        stock_disponible: parseFloat(inventory[0].stock_disponible)
+      })
+    }
+  }
+
+  console.log(`✅ Selected ${productsWithStock.length} products for both orders`)
+
   for (const orderNumber of testOrderNumbers) {
     console.log(`\n📦 Procesando ${orderNumber}...`)
 
@@ -171,8 +243,8 @@ async function resetAll() {
     if (fetchError || !order) {
       console.log(`   ⚠️  Pedido no encontrado, creando...`)
       
-      // Crear el pedido si no existe
-      const created = await createTestOrder(orderNumber)
+      // Crear el pedido si no existe con los productos preseleccionados
+      const created = await createTestOrder(orderNumber, productsWithStock)
       if (!created) {
         console.error(`❌ Error creando pedido ${orderNumber}`)
         continue
