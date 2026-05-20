@@ -294,22 +294,21 @@ async function resetAll() {
       console.log(`   ✅ Delivery_history eliminado`)
     }
 
-    // 10. Resetear stock de inventarios asociados a 60
+    // 10. Resetear stock de inventarios asociados (solo reservado/generado/en_proceso)
     if (inventoryIds.size > 0) {
-      console.log(`   🔄 Reseteando stock de ${inventoryIds.size} inventarios a 60...`)
+      console.log(`   🔄 Reseteando stock de ${inventoryIds.size} inventarios (reservado/generado/en_proceso)...`)
       
       for (const invId of inventoryIds) {
         await supabase
           .from('inventory')
           .update({
-            stock_total: 60,
             stock_generado: 0,
             stock_reservado: 0,
             stock_en_proceso: 0
           })
           .eq('id', invId)
       }
-      console.log(`   ✅ Stock reseteado a 60`)
+      console.log(`   ✅ Stock reseteado (stock_total sin cambios)`)
     }
 
     // 11. Actualizar estado del pedido a 'nuevo'
