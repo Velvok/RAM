@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { generateCutOrders } from '@/app/actions/orders'
 import { Package, Calendar, User, DollarSign, CheckCircle, Clock, AlertCircle, Loader2, Filter, LayoutGrid, List, ChevronLeft, ChevronRight } from 'lucide-react'
@@ -13,23 +13,24 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
   const [loading, setLoading] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>('todos')
   const [searchQuery, setSearchQuery] = useState('')
-  const [viewMode, setViewMode] = useState<'cards' | 'rows'>(() => {
-    if (typeof window !== 'undefined') {
-      return (localStorage.getItem('pedidos-view-mode') as 'cards' | 'rows') || 'cards'
-    }
-    return 'cards'
-  })
+  const [viewMode, setViewMode] = useState<'cards' | 'rows'>('cards')
   const [currentPage, setCurrentPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(25)
   const [groupByClient, setGroupByClient] = useState(false)
   const router = useRouter()
 
+  // Cargar preferencia de vista desde localStorage solo en el cliente
+  useEffect(() => {
+    const savedMode = localStorage.getItem('pedidos-view-mode') as 'cards' | 'rows'
+    if (savedMode) {
+      setViewMode(savedMode)
+    }
+  }, [])
+
   // Guardar preferencia de vista en localStorage
   const handleViewModeChange = (mode: 'cards' | 'rows') => {
     setViewMode(mode)
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('pedidos-view-mode', mode)
-    }
+    localStorage.setItem('pedidos-view-mode', mode)
   }
 
 

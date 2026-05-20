@@ -138,7 +138,16 @@ export async function getAvailableOperators() {
 export async function getAvailableOrdersForReassignment(productId: string, minLength?: number) {
   const supabase = createAdminClient()
   
-  const { data } = await supabase
+  // Primero obtener TODOS los pedidos para ver qué hay
+  const { data: allOrders } = await supabase
+    .from('orders')
+    .select('id, order_number, status')
+    .order('created_at', { ascending: false })
+    .limit(20)
+  
+  console.log(`📊 Todos los pedidos recientes:`, allOrders?.map(o => ({ number: o.order_number, status: o.status })))
+  
+  const { data, error } = await supabase
     .from('orders')
     .select(`
       id,
@@ -149,25 +158,64 @@ export async function getAvailableOrdersForReassignment(productId: string, minLe
         status,
         quantity_requested,
         quantity_cut,
-        product:products(code, name)
+        product:products!cut_orders_product_id_fkey(code, name)
       )
     `)
-    .in('status', ['aprobado', 'en_corte'])
+    .in('status', ['aprobado', 'en_corte', 'finalizado'])
     .order('created_at', { ascending: false })
+
+  if (error) {
+    console.error('❌ Error fetching orders:', error)
+  }
+
+  console.log(`🔍 Buscando órdenes para reasignación:`, {
+    productId: productId || 'cualquiera',
+    minLength: minLength || 'cualquiera',
+    ordersFound: data?.length || 0,
+    ordersWithCuts: data?.filter(o => o.cut_orders && o.cut_orders.length > 0).length || 0
+  })
 
   // Filtrar por producto y longitud si se especifica
   const filteredOrders = data?.filter(order => {
-    if (!order.cut_orders || order.cut_orders.length === 0) return false
+    if (!order.cut_orders || order.cut_orders.length === 0) {
+      console.log(`   ⏭️  Orden ${order.order_number}: sin cut_orders`)
+      return false
+    }
     
-    return order.cut_orders.some((cutOrder: any) => {
+    const hasMatch = order.cut_orders.some((cutOrder: any) => {
       const product = Array.isArray(cutOrder.product) ? cutOrder.product[0] : cutOrder.product
-      const hasMatchingProduct = product?.code === productId
-      const hasEnoughLength = !minLength || (cutOrder.quantity_cut || 0) >= minLength
-      const isCompletedOrPartial = cutOrder.status === 'finalizado' || (cutOrder.quantity_cut || 0) > 0
       
-      return hasMatchingProduct && hasEnoughLength && isCompletedOrPartial
+      // Si se especifica productId, debe coincidir
+      const hasMatchingProduct = !productId || product?.code === productId
+      
+      // Debe tener unidades cortadas disponibles
+      const hasCutUnits = (cutOrder.quantity_cut || 0) > 0
+      
+      // Debe estar completada o parcialmente completada
+      const isAvailable = cutOrder.status === 'completada' || hasCutUnits
+      
+      // NOTA: No filtramos por minLength aquí, permitimos cualquier cantidad disponible
+      // El usuario puede reasignar la cantidad que necesite desde el modal
+      const matches = hasMatchingProduct && hasCutUnits && isAvailable
+      
+      console.log(`   🔍 Evaluando ${order.order_number} - ${cutOrder.cut_number}:`, {
+        product: product?.code,
+        productMatch: hasMatchingProduct,
+        hasCutUnits,
+        isAvailable,
+        status: cutOrder.status,
+        cut: cutOrder.quantity_cut,
+        requested: cutOrder.quantity_requested,
+        MATCHES: matches
+      })
+      
+      return matches
     })
+    
+    return hasMatch
   })
+
+  console.log(`   Total órdenes disponibles: ${filteredOrders?.length || 0}`)
 
   return filteredOrders || []
 }

@@ -40,7 +40,7 @@ export async function getOrderById(id: string) {
       preparation_items(
         *,
         product:products(*),
-        assigned_inventory:inventory(*),
+        assigned_inventory:inventory(*, product:products(*)),
         assigned_operator:users(*)
       )
     `)
@@ -116,55 +116,89 @@ export async function approveOrderOnHold(orderId: string) {
     throw new Error('Solo se pueden aprobar pedidos en estado "nuevo"')
   }
 
-  // Crear órdenes de corte SIN asignar stock
+  const errors: string[] = []
+
+  // Crear órdenes de corte para CHAPAS y preparation_items para ARTÍCULOS NORMALES (SIN asignar stock)
   for (const line of order.order_lines) {
-    // FILTRO: Solo procesar chapas
-    if (line.product?.category !== 'chapas') {
-      console.log(`⏭️ Saltando ${line.product?.name} - No es una chapa (categoría: ${line.product?.category})`)
-      continue
-    }
-    
     // Cantidad de unidades que pide el cliente
     const units = line.units || Math.ceil(line.quantity) || 1
-    
-    // Tamaño de cada pieza (extraído del código del producto)
-    const productSize = extractSizeFromCode(line.product?.code || '') ||
-                       line.product?.length_meters ||
-                       line.length_meters ||
-                       line.quantity
-    
-    console.log(`📋 Línea (CHAPA - EN PAUSA): ${line.product?.name}, Unidades: ${units}, Tamaño: ${productSize}m`)
-    
-    // Crear UNA orden de corte agrupada para todas las unidades
-    const cutNumber = `CUT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-    
-    // Crear la orden de corte AGRUPADA (SIN STOCK ASIGNADO)
-    const { data: cutOrderData, error: cutError } = await supabase
-      .from('cut_orders')
-      .insert({
-        cut_number: cutNumber,
-        order_id: orderId,
-        product_id: line.product_id,
-        quantity_requested: units,
-        quantity_cut: 0,
-        status: 'pendiente',
-        // NO asignamos material_base_id ni material_base_quantity
-      })
-      .select()
-    
-    if (cutError) {
-      console.error(`Error creando orden de corte: ${cutError.message}`)
-      continue
-    }
 
-    console.log(`✅ Orden de corte creada EN PAUSA: ${cutNumber} - ${units} unidades de ${productSize}m (sin stock asignado)`)
+    // Identificar si es chapa usando la función isChapaProduct
+    const { isChapaProduct } = await import('@/lib/product-utils')
+    const isChapa = isChapaProduct(
+      line.product?.code || '',
+      line.product?.category,
+      line.product?.name
+    )
+
+    console.log(`\n🔍 Procesando línea (EN PAUSA):`, {
+      product_name: line.product?.name,
+      product_code: line.product?.code,
+      product_category: line.product?.category,
+      isChapa,
+      units
+    })
+    
+    if (isChapa) {
+      // ========== CHAPAS: Crear orden de corte SIN asignar stock ==========
+      console.log(`📋 Línea (CHAPA - EN PAUSA): ${line.product?.name}, Unidades: ${units}`)
+      
+      // Tamaño de cada pieza (extraído del código del producto)
+      const productSize = extractSizeFromCode(line.product?.code || '') ||
+                         line.product?.length_meters ||
+                         line.length_meters ||
+                         line.quantity
+      
+      // Crear UNA orden de corte agrupada para todas las unidades
+      const cutNumber = `CUT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+      
+      // Crear la orden de corte AGRUPADA (SIN STOCK ASIGNADO)
+      const { data: cutOrderData, error: cutError } = await supabase
+        .from('cut_orders')
+        .insert({
+          cut_number: cutNumber,
+          order_id: orderId,
+          product_id: line.product_id,
+          quantity_requested: units,
+          quantity_cut: 0,
+          status: 'pendiente',
+          // NO asignamos material_base_id ni material_base_quantity
+        })
+        .select()
+      
+      if (cutError) {
+        console.error('Error creando orden de corte:', cutError)
+        errors.push(`Error creando orden de corte: ${cutError.message}`)
+        continue
+      }
+
+      console.log(`✅ Orden de corte creada EN PAUSA: ${cutNumber} - ${units} unidades de ${productSize}m (sin stock asignado)`)
+      
+    } else {
+      // ========== ARTÍCULOS NORMALES: Crear preparation_item SIN reservar stock ==========
+      console.log(`📦 Línea (ARTÍCULO NORMAL - EN PAUSA): ${line.product?.name}, Unidades: ${units}`)
+      console.log(`   → Código: ${line.product?.code}`)
+      console.log(`   → Product ID: ${line.product_id}`)
+      console.log(`   → Order Line ID: ${line.id}`)
+      
+      try {
+        const { createPreparationItem } = await import('./preparation')
+        console.log(`   → Llamando a createPreparationItem...`)
+        const result = await createPreparationItem(orderId, line.id, line.product_id, units, false) // false = no reservar stock
+        console.log(`✅ Preparation item creado (sin stock reservado):`, result)
+      } catch (prepError: any) {
+        console.error('❌ Error creando preparation_item:', prepError)
+        console.error('   Stack:', prepError.stack)
+        errors.push(`Error creando preparation_item para ${line.product?.name}: ${prepError.message}`)
+      }
+    }
     
     // Pequeño delay para evitar duplicados en el timestamp
     await new Promise(resolve => setTimeout(resolve, 10))
   }
 
   // Actualizar estado del pedido a "aprobado_en_pausa"
-  const { error: updateError } = await supabase
+  await supabase
     .from('orders')
     .update({ 
       status: 'aprobado_en_pausa',
@@ -173,14 +207,7 @@ export async function approveOrderOnHold(orderId: string) {
     })
     .eq('id', orderId)
 
-  if (updateError) {
-    console.error('Error actualizando estado del pedido:', updateError)
-    throw new Error(`No se pudo actualizar el estado del pedido: ${updateError.message}`)
-  }
-
-  console.log(`✅ Pedido ${orderId} actualizado a estado 'aprobado_en_pausa'`)
-
-  // Revalidar rutas de pedidos de forma agresiva
+  // Revalidar rutas de pedidos y stock
   revalidatePath('/admin', 'layout')
   revalidatePath('/admin/pedidos', 'layout')
   revalidatePath(`/admin/pedidos/${orderId}`)
@@ -299,10 +326,30 @@ export async function approveOrder(orderId: string) {
             bestMatch.quantity     // Tamaño de la pieza
           )
           
-          // Reservar tantas unidades como se solicitan
-          for (let i = 0; i < units; i++) {
-            await reserveStock(bestMatch.inventory_id)
-          }
+          // Reservar stock (optimizado - una sola query)
+          const { data: currentStock } = await supabase
+            .from('inventory')
+            .select('stock_reservado')
+            .eq('id', bestMatch.inventory_id)
+            .single()
+
+          const newReservado = (currentStock?.stock_reservado || 0) + units
+
+          await supabase
+            .from('inventory')
+            .update({ stock_reservado: newReservado })
+            .eq('id', bestMatch.inventory_id)
+
+          // Registrar movimiento único
+          await supabase.from('stock_movements').insert({
+            product_id: bestMatch.product_id,
+            movement_type: 'reserva',
+            quantity: units,
+            stock_before: currentStock?.stock_reservado || 0,
+            stock_after: newReservado,
+            user_id: user?.id,
+            notes: `Reserva de ${units} unidades de ${bestMatch.product_code}`,
+          })
           
           console.log(`✅ Stock asignado: ${bestMatch.product_code} ${bestMatch.quantity}m × ${units} unidades (${bestMatch.isExact ? 'exacto' : 'aproximado'})`)
         } else {

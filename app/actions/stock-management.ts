@@ -92,7 +92,7 @@ export async function findBestStockMatch(
     .from('inventory')
     .select('*, product:products(*)')
     .in('product_id', productIds)
-    .gt('stock_disponible', 0)
+    .gt('stock_total', 0)
     .order('stock_total', { ascending: true })
 
   if (error) throw error
@@ -112,11 +112,11 @@ export async function findBestStockMatch(
 
   // Buscar pieza exacta del tamaño solicitado
   const exactMatch = inventoryWithSize.find(
-    (item) => item.size === quantityNeeded && item.stock_disponible > 0
+    (item) => item.size === quantityNeeded && item.stock_total > 0
   )
   if (exactMatch) {
     console.log(`✅ Match exacto: ${exactMatch.product?.code} (${exactMatch.size}m)`)
-    return {
+    const result = {
       inventory_id: exactMatch.id,
       product_id: exactMatch.product_id,
       product_code: exactMatch.product?.code,
@@ -124,11 +124,13 @@ export async function findBestStockMatch(
       quantity: exactMatch.size,
       isExact: true,
     }
+    console.log(`📤 Devolviendo:`, result)
+    return result
   }
 
   // Buscar la más pequeña que sea mayor
   const nextBigger = inventoryWithSize
-    .filter(item => item.size > quantityNeeded && item.stock_disponible > 0)
+    .filter(item => item.size > quantityNeeded && item.stock_total > 0)
     .sort((a, b) => a.size - b.size)[0]
     
   if (nextBigger) {
@@ -161,6 +163,12 @@ export async function assignStockToCutOrder(
 ) {
   const supabase = createAdminClient()
 
+  console.log(`📝 assignStockToCutOrder llamado:`)
+  console.log(`   cutOrderId: ${cutOrderId}`)
+  console.log(`   inventoryId: ${inventoryId}`)
+  console.log(`   productId: ${productId}`)
+  console.log(`   quantity: ${quantity}`)
+
   const { data, error } = await supabase
     .from('cut_orders')
     .update({
@@ -172,6 +180,10 @@ export async function assignStockToCutOrder(
     .single()
 
   if (error) throw error
+  
+  console.log(`✅ Stock asignado correctamente:`)
+  console.log(`   material_base_id: ${data.material_base_id}`)
+  console.log(`   material_base_quantity: ${data.material_base_quantity}`)
   
   // Si el pedido está en pausa, verificar si todas las órdenes tienen stock asignado
   if (data.order?.status === 'aprobado_en_pausa') {
@@ -270,8 +282,7 @@ export async function reserveStock(inventoryId: string) {
   const { error } = await supabase
     .from('inventory')
     .update({
-      stock_reservado: stockAfter,
-      stock_disponible: current.stock_total - stockAfter
+      stock_reservado: stockAfter
     })
     .eq('id', inventoryId)
     .select()
@@ -564,7 +575,8 @@ export async function generateRemnantStock(
       notes: `Recorte generado de ${remnantSize}m`,
     })
 
-    console.log(`✅ Stock generado: ${product.code} +1 unidad (total: ${newTotal})`)
+    console.log(`✅ Stock generado: ${product.code} +1 unidad`)
+    console.log(`   📊 Nuevo estado: total=${newTotal}, generado=${newGenerado}`)
     
     // Revalidar todas las rutas relevantes
     revalidatePath('/admin', 'page')
@@ -725,26 +737,13 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
   const fromOrderData = Array.isArray(fromOrder.order) ? fromOrder.order[0] : fromOrder.order
   const toOrderData = Array.isArray(toOrder.order) ? toOrder.order[0] : toOrder.order
 
-  // 2. NUEVO: Decrementar quantity_cut de la orden origen (reasignamos N unidades)
-  const newQuantityCut = (fromOrder.quantity_cut || 0) - quantityToReassign
-  const isNowPending = newQuantityCut < fromOrder.quantity_requested
+  // 2. IMPORTANTE: NO decrementar quantity_cut de la orden origen
+  // La orden origen se mantiene "completada" hasta que el operario confirme
+  // que recogió la pieza reasignada
+  console.log(`📊 Orden origen: ${fromOrder.quantity_cut}/${fromOrder.quantity_requested} (se mantiene completada hasta confirmación del operario)`)
   
-  console.log(`📊 Orden origen: ${fromOrder.quantity_cut}/${fromOrder.quantity_requested} → ${newQuantityCut}/${fromOrder.quantity_requested} (reasignando ${quantityToReassign})`)
-  
-  const { error: updateFromError } = await supabase
-    .from('cut_orders')
-    .update({
-      quantity_cut: newQuantityCut,
-      // Si ya no está completada, vuelve a pendiente
-      status: newQuantityCut >= fromOrder.quantity_requested ? 'completada' : 'pendiente',
-      // Si vuelve a pendiente, quitar finished_at
-      finished_at: newQuantityCut >= fromOrder.quantity_requested ? fromOrder.finished_at : null
-    })
-    .eq('id', fromCutOrderId)
-
-  if (updateFromError) throw updateFromError
-  
-  console.log(`✅ Orden origen actualizada: estado = ${newQuantityCut >= fromOrder.quantity_requested ? 'completada' : 'pendiente'}`)
+  // NO hacemos nada con la orden origen por ahora
+  // Cuando el operario confirme, se decrementará quantity_cut
 
   // 3. Asignar a la orden destino (el stock sigue reservado, solo cambia de orden)
   console.log(`📥 Asignando a orden destino...`)
@@ -770,10 +769,10 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
 
   if (completeError) throw completeError
 
-  // 5. NUEVO: La orden origen mantiene su asignación (solo decrementamos quantity_cut)
-  // El stock sigue reservado para las unidades restantes
-  // Solo movemos la reserva de 1 unidad al pedido destino
-  console.log(`📌 Orden origen mantiene su stock asignado para las ${fromOrder.quantity_requested - newQuantityCut} unidades restantes`)
+  // 5. NUEVO: La orden origen mantiene su asignación y quantity_cut
+  // El stock sigue reservado para todas las unidades
+  // Solo movemos la asignación de stock al pedido destino
+  console.log(`📌 Orden origen mantiene su stock asignado y estado "completada" (${fromOrder.quantity_cut} unidades)`)
 
   // 8. Actualizar estados de ambos pedidos
   // (fromOrderData y toOrderData ya declarados arriba)

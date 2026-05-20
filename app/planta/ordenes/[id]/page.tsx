@@ -3,8 +3,6 @@
 import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { getCutOrderById, startCutOrder, pauseCutOrder } from '@/app/actions/cut-orders'
-import { useSuccess } from '@/components/success-modal'
-import { useError } from '@/components/error-modal'
 
 export default function OrdenDetallePage() {
   const router = useRouter()
@@ -13,8 +11,6 @@ export default function OrdenDetallePage() {
   const [operator, setOperator] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
-  const { showSuccess, SuccessDialog } = useSuccess()
-  const { showError, ErrorDialog } = useError()
 
   useEffect(() => {
     // Obtener operario del localStorage
@@ -40,7 +36,7 @@ export default function OrdenDetallePage() {
 
   async function handleStart() {
     if (!operator) {
-      showError('No se pudo identificar al operario', 'Error de Sesión')
+      alert('Error: No se pudo identificar al operario')
       return
     }
 
@@ -48,14 +44,9 @@ export default function OrdenDetallePage() {
     try {
       // Pasar el ID del operario para asignación automática
       await startCutOrder(order.id, operator.id)
-      await loadOrder()
-      showSuccess(
-        'Orden iniciada y asignada correctamente',
-        '¡Corte Iniciado!'
-      )
+      alert('✅ Orden iniciada correctamente')
     } catch (error: any) {
-      console.error('Error starting order:', error)
-      showError(error?.message || 'No se pudo iniciar la orden', 'Error al Iniciar')
+      alert('Error: ' + (error?.message || 'No se pudo iniciar la orden'))
     } finally {
       setProcessing(false)
     }
@@ -65,10 +56,9 @@ export default function OrdenDetallePage() {
     setProcessing(true)
     try {
       await pauseCutOrder(order.id)
-      await loadOrder()
+      alert('✅ Orden pausada correctamente')
     } catch (error: any) {
-      console.error('Error pausing order:', error)
-      showError(error?.message || 'No se pudo pausar la orden', 'Error al Pausar')
+      alert('Error: ' + (error?.message || 'No se pudo pausar la orden'))
     } finally {
       setProcessing(false)
     }
@@ -93,8 +83,6 @@ export default function OrdenDetallePage() {
 
   return (
     <>
-      <SuccessDialog />
-      <ErrorDialog />
       <div className="min-h-screen p-6">
         <div className="max-w-4xl mx-auto space-y-6">
           <div className="flex items-center justify-between">

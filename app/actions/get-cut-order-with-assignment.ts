@@ -18,16 +18,20 @@ export async function getCutOrderWithAssignment(cutOrderId: string) {
   if (error) throw error
 
   // Buscar el inventory item del producto asignado
+  // IMPORTANTE: material_base_id es un PRODUCT_ID
   let assignedInventory = null
   if (cutOrder?.material_base_id) {
-    const { data: inventory, error: inventoryError } = await supabase
+    const { data: inventories, error: inventoryError } = await supabase
       .from('inventory')
       .select('*, product:products(*)')
       .eq('product_id', cutOrder.material_base_id)
-      .single()
+      .gt('stock_disponible', 0)
+      .limit(1)
 
-    if (!inventoryError) {
-      assignedInventory = inventory
+    if (!inventoryError && inventories && inventories.length > 0) {
+      assignedInventory = inventories[0]
+    } else {
+      console.warn('⚠️ No se encontró inventory disponible para material_base_id (product_id):', cutOrder.material_base_id, inventoryError)
     }
   }
 

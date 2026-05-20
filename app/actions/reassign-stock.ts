@@ -1,7 +1,6 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/server'
-import { extractSizeFromName } from '@/lib/product-utils'
 import { revalidatePath } from 'next/cache'
 
 export async function reassignStock(
@@ -47,17 +46,38 @@ export async function reassignStock(
       await unreserveStock(oldInventory.id, quantityForNewMaterial)
     }
 
-    // Reservar stock del nuevo material
-    for (let i = 0; i < quantityForNewMaterial; i++) {
-      await reserveStock(inventoryId)
-    }
+    // Reservar stock del nuevo material (optimizado - una sola query)
+    const { data: currentStock } = await supabase
+      .from('inventory')
+      .select('stock_reservado')
+      .eq('id', inventoryId)
+      .single()
+
+    const newReservado = (currentStock?.stock_reservado || 0) + quantityForNewMaterial
+
+    await supabase
+      .from('inventory')
+      .update({ stock_reservado: newReservado })
+      .eq('id', inventoryId)
+
+    // Registrar movimiento único
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from('stock_movements').insert({
+      product_id: productId,
+      movement_type: 'reserva',
+      quantity: quantityForNewMaterial,
+      stock_before: currentStock?.stock_reservado || 0,
+      stock_after: newReservado,
+      user_id: user?.id,
+      notes: `Reserva de ${quantityForNewMaterial} unidades al reasignar stock`,
+    })
 
     // Actualizar la orden existente con el nuevo material
     await supabase
       .from('cut_orders')
       .update({
         material_base_id: productId,
-        material_base_quantity: extractSizeFromName(product.name || ''),
+        material_base_quantity: quantity,  // Usar el parámetro quantity que ya tiene el tamaño correcto
         material_quantity: 1
       })
       .eq('id', cutOrderId)
@@ -74,10 +94,31 @@ export async function reassignStock(
       await unreserveStock(oldInventory.id, quantityForNewMaterial)
     }
 
-    // Reservar stock del nuevo material
-    for (let i = 0; i < quantityForNewMaterial; i++) {
-      await reserveStock(inventoryId)
-    }
+    // Reservar stock del nuevo material (optimizado - una sola query)
+    const { data: currentStock } = await supabase
+      .from('inventory')
+      .select('stock_reservado')
+      .eq('id', inventoryId)
+      .single()
+
+    const newReservado = (currentStock?.stock_reservado || 0) + quantityForNewMaterial
+
+    await supabase
+      .from('inventory')
+      .update({ stock_reservado: newReservado })
+      .eq('id', inventoryId)
+
+    // Registrar movimiento único
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from('stock_movements').insert({
+      product_id: productId,
+      movement_type: 'reserva',
+      quantity: quantityForNewMaterial,
+      stock_before: currentStock?.stock_reservado || 0,
+      stock_after: newReservado,
+      user_id: user?.id,
+      notes: `Reserva de ${quantityForNewMaterial} unidades al reasignar stock (parcial)`,
+    })
 
     // Crear nueva orden de corte para las unidades que se mueven
     const newCutNumber = `CUT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
@@ -92,7 +133,7 @@ export async function reassignStock(
         quantity_cut: 0,
         status: 'pendiente',
         material_base_id: productId,
-        material_base_quantity: extractSizeFromName(product.name || ''),
+        material_base_quantity: quantity,  // Usar el parámetro quantity que ya tiene el tamaño correcto
         material_quantity: 1
       })
       .select()

@@ -5,12 +5,14 @@ import { revalidateOrders, revalidateStock } from '@/lib/revalidate'
 
 /**
  * Crear preparation_item para un artículo que no requiere corte
+ * @param reserveStock - Si es false, crea el item sin reservar stock (para aprobación en pausa)
  */
 export async function createPreparationItem(
   orderId: string,
   orderLineId: string,
   productId: string,
-  quantityRequested: number
+  quantityRequested: number,
+  reserveStock: boolean = true
 ) {
   // Usar admin client para bypass RLS
   const { createAdminClient } = await import('@/lib/supabase/server')
@@ -21,43 +23,48 @@ export async function createPreparationItem(
   console.log(`   Order Line ID: ${orderLineId}`)
   console.log(`   Product ID: ${productId}`)
   console.log(`   Quantity Requested: ${quantityRequested}`)
+  console.log(`   Reserve Stock: ${reserveStock}`)
 
-  // 1. Buscar stock exacto del producto (match por product_id)
-  console.log(`   → Buscando stock disponible...`)
-  const { data: inventory, error: inventoryError } = await supabase
-    .from('inventory')
-    .select('id, product_id, stock_disponible')
-    .eq('product_id', productId)
-    .gt('stock_disponible', 0)
-    .limit(1)
-  
-  console.log(`   → Resultado búsqueda:`, { inventory, inventoryError })
+  let selectedInventory: any = null
 
-  if (inventoryError || !inventory || inventory.length === 0) {
-    const { data: product } = await supabase
-      .from('products')
-      .select('name, code')
-      .eq('id', productId)
-      .single()
+  if (reserveStock) {
+    // 1. Buscar stock exacto del producto (match por product_id)
+    console.log(`   → Buscando stock disponible...`)
+    const { data: inventory, error: inventoryError } = await supabase
+      .from('inventory')
+      .select('id, product_id, stock_disponible')
+      .eq('product_id', productId)
+      .gt('stock_disponible', 0)
+      .limit(1)
     
-    throw new Error(`No hay stock disponible de ${product?.name || productId}`)
-  }
+    console.log(`   → Resultado búsqueda:`, { inventory, inventoryError })
 
-  const selectedInventory = inventory[0]
-  console.log(`   → Inventario seleccionado:`, selectedInventory)
+    if (inventoryError || !inventory || inventory.length === 0) {
+      const { data: product } = await supabase
+        .from('products')
+        .select('name, code')
+        .eq('id', productId)
+        .single()
+      
+      throw new Error(`No hay stock disponible de ${product?.name || productId}`)
+    }
 
-  // 2. Verificar que hay suficiente stock
-  console.log(`   → Verificando stock suficiente (${selectedInventory.stock_disponible} >= ${quantityRequested})...`)
-  if (selectedInventory.stock_disponible < quantityRequested) {
-    const { data: product } = await supabase
-      .from('products')
-      .select('name')
-      .eq('id', productId)
-      .single()
-    
-    throw new Error(
-      `Stock insuficiente de ${product?.name}. Disponible: ${selectedInventory.stock_disponible}, Solicitado: ${quantityRequested}`
-    )
+    selectedInventory = inventory[0]
+    console.log(`   → Inventario seleccionado:`, selectedInventory)
+
+    // 2. Verificar que hay suficiente stock
+    console.log(`   → Verificando stock suficiente (${selectedInventory.stock_disponible} >= ${quantityRequested})...`)
+    if (selectedInventory.stock_disponible < quantityRequested) {
+      const { data: product } = await supabase
+        .from('products')
+        .select('name')
+        .eq('id', productId)
+        .single()
+      
+      throw new Error(
+        `Stock insuficiente de ${product?.name}. Disponible: ${selectedInventory.stock_disponible}, Solicitado: ${quantityRequested}`
+      )
+    }
   }
 
   // 3. Crear preparation_item
@@ -69,7 +76,7 @@ export async function createPreparationItem(
       order_line_id: orderLineId,
       product_id: productId,
       quantity_requested: quantityRequested,
-      assigned_inventory_id: selectedInventory.id,
+      assigned_inventory_id: selectedInventory?.id || null,
       status: 'pendiente'
     })
     .select()
@@ -82,15 +89,19 @@ export async function createPreparationItem(
   
   console.log(`   ✅ Preparation_item insertado:`, prepItem)
 
-  // 4. Reservar stock
-  const { reserveStock } = await import('@/app/actions/stock-management')
-  for (let i = 0; i < quantityRequested; i++) {
-    await reserveStock(selectedInventory.id)
+  // 4. Reservar stock solo si reserveStock es true
+  if (reserveStock && selectedInventory) {
+    const { reserveStock: reserveStockFn } = await import('@/app/actions/stock-management')
+    for (let i = 0; i < quantityRequested; i++) {
+      await reserveStockFn(selectedInventory.id)
+    }
+    console.log(`   ✅ Stock reservado: ${quantityRequested} unidades`)
+  } else {
+    console.log(`   ⏭️ Stock NO reservado (modo pausa)`)
   }
 
   console.log(`✅ === PREPARATION_ITEM COMPLETADO ===`)
-  console.log(`   ID: ${prepItem.id}`)
-  console.log(`   Stock reservado: ${quantityRequested} unidades\n`)
+  console.log(`   ID: ${prepItem.id}\n`)
 
   return prepItem
 }
@@ -174,6 +185,111 @@ export async function prepareItem(
 }
 
 /**
+ * Asignar stock a un preparation_item (para aprobación en pausa)
+ */
+export async function assignStockToPreparationItem(
+  itemId: string,
+  inventoryId: string,
+  quantityToReserve: number
+) {
+  const supabase = createAdminClient()
+
+  console.log(`\n📦 === ASIGNANDO STOCK A PREPARATION_ITEM ===`)
+  console.log(`   Item ID: ${itemId}`)
+  console.log(`   Inventory ID: ${inventoryId}`)
+  console.log(`   Quantity to Reserve: ${quantityToReserve}`)
+
+  // 1. Verificar que el item existe
+  const { data: item, error: itemError } = await supabase
+    .from('preparation_items')
+    .select('*, product:products(*)')
+    .eq('id', itemId)
+    .single()
+
+  if (itemError || !item) {
+    throw new Error('Preparation item no encontrado')
+  }
+
+  // 2. Verificar stock disponible
+  const { data: inventory, error: invError } = await supabase
+    .from('inventory')
+    .select('*, product:products(*)')
+    .eq('id', inventoryId)
+    .single()
+
+  if (invError || !inventory) {
+    throw new Error('Inventario no encontrado')
+  }
+
+  if (inventory.stock_disponible < quantityToReserve) {
+    throw new Error(
+      `Stock insuficiente. Disponible: ${inventory.stock_disponible}, Solicitado: ${quantityToReserve}`
+    )
+  }
+
+  // 3. Asignar inventario al item
+  const { error: updateError } = await supabase
+    .from('preparation_items')
+    .update({
+      assigned_inventory_id: inventoryId
+    })
+    .eq('id', itemId)
+
+  if (updateError) {
+    throw new Error(`Error asignando inventario: ${updateError.message}`)
+  }
+
+  // 4. Reservar stock (optimizado - una sola query)
+  const { data: currentStock } = await supabase
+    .from('inventory')
+    .select('stock_reservado')
+    .eq('id', inventoryId)
+    .single()
+
+  const newReservado = (currentStock?.stock_reservado || 0) + quantityToReserve
+
+  const { error: reserveError } = await supabase
+    .from('inventory')
+    .update({ stock_reservado: newReservado })
+    .eq('id', inventoryId)
+
+  if (reserveError) {
+    throw new Error(`Error reservando stock: ${reserveError.message}`)
+  }
+
+  // Registrar movimiento único
+  const { data: { user } } = await supabase.auth.getUser()
+  await supabase.from('stock_movements').insert({
+    product_id: inventory.product_id,
+    movement_type: 'reserva',
+    quantity: quantityToReserve,
+    stock_before: currentStock?.stock_reservado || 0,
+    stock_after: newReservado,
+    user_id: user?.id,
+    notes: `Reserva de ${quantityToReserve} unidades de ${inventory.product?.name || 'producto'}`,
+  })
+
+  console.log(`✅ Stock asignado y reservado: ${quantityToReserve} unidades (optimizado)`)
+
+  // 5. Registrar actividad
+  await supabase.from('order_activity_log').insert({
+    order_id: item.order_id,
+    activity_type: 'stock_assigned',
+    description: `Stock asignado manualmente: ${inventory.product?.code} para ${item.product?.name}`,
+    metadata: {
+      preparation_item_id: itemId,
+      inventory_id: inventoryId,
+      quantity: quantityToReserve
+    }
+  })
+
+  revalidateOrders(item.order_id)
+  revalidateStock()
+
+  return { success: true }
+}
+
+/**
  * Obtener preparation_items de un pedido
  */
 export async function getPreparationItemsByOrder(orderId: string) {
@@ -184,7 +300,7 @@ export async function getPreparationItemsByOrder(orderId: string) {
     .select(`
       *,
       product:products(*),
-      assigned_inventory:inventory(*),
+      assigned_inventory:inventory(*, product:products(*)),
       assigned_operator:users(*)
     `)
     .eq('order_id', orderId)

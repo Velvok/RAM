@@ -74,14 +74,20 @@ export function extractFamilyCode(code: string): string {
     return dachMatch[1]
   }
 
+  // Patrón ACPOLI/T101POLI/TRPOLIDD: Incluir el color/variante (segundo segmento)
+  // ACPOLI.BL.2.00 → ACPOLI.BL, ACPOLI.FU.10,0 → ACPOLI.FU
+  // T101POLI.B.10, → T101POLI.B, TRPOLIDD.B.0,5 → TRPOLIDD.B
+  const poliMatch = code.match(/^((?:ACPOLI|T101POLI|TRPOLIDD)\.[A-Z]+)\./i)
+  if (poliMatch) {
+    return poliMatch[1]
+  }
+
   // Patrón estándar: AC25110.0,5 → AC25110, CP T101.11.0 → CP T101
   const standardMatch = code.match(/^([A-Z0-9*\s]+)\./i)
   if (standardMatch) {
     const base = standardMatch[1].trim() // Trim para eliminar espacios al final
-    // Para patrones tipo ACPOLI.BL.2.00, la familia es ACPOLI.BL
     // Para patrones tipo AC25110.0,5, la familia es AC25110
     // Para patrones tipo A*B25110.0,5, la familia es A*B25110
-    // Para patrones tipo TRPOLIDD.B.0,5, la familia es TRPOLIDD.B
     // Para patrones tipo CP T101.11.0, la familia es CP T101
     return base
   }
@@ -138,13 +144,22 @@ export function extractSizeFromName(name: string): number {
  * 5. TRPOLIDD: TRPOLIDD.B.0,5 → 0.5, TRPOLIDD.B.10, → 10.0
  * 6. T101POLI: T101POLI.B.10, → 10.0, T101POLI.B.0,5 → 0.5
  * 7. Traveseños: TRAVESAÑOBX0,6 → 0.6, TRAVESAÑOBX1,2 → 1.2
+ * 8. Punto decimal: CP T101.11.0 → 11.0, CP T101.6,5 → 6.5
  */
 export function extractSizeFromCode(code: string): number {
-  // Patrón estándar: después del punto, número,número al final
+  // Patrón estándar: después del punto, número,número al final (coma como decimal)
   const standardMatch = code.match(/\.(\d+),(\d+)$/)
   if (standardMatch) {
     const integer = parseInt(standardMatch[1], 10)
     const decimal = parseInt(standardMatch[2], 10)
+    return parseFloat(`${integer}.${decimal}`)
+  }
+
+  // Patrón punto decimal: después del punto, número.número al final (punto como decimal)
+  const decimalPointMatch = code.match(/\.(\d+)\.(\d+)$/)
+  if (decimalPointMatch) {
+    const integer = parseInt(decimalPointMatch[1], 10)
+    const decimal = parseInt(decimalPointMatch[2], 10)
     return parseFloat(`${integer}.${decimal}`)
   }
 

@@ -18,6 +18,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
   const [reassignModalOpen, setReassignModalOpen] = useState(false)
   const [changeStockModalOpen, setChangeStockModalOpen] = useState(false)
   const [selectedCutOrder, setSelectedCutOrder] = useState<any>(null)
+  const [selectedPreparationItem, setSelectedPreparationItem] = useState<any>(null)
   const [activityLog, setActivityLog] = useState<any[]>([])
   const [loadingLog, setLoadingLog] = useState(false)
   const [showCutOrdersInfo, setShowCutOrdersInfo] = useState(false)
@@ -101,10 +102,8 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
       const { reassignStock } = await import('@/app/actions/stock-management')
       const result = await reassignStock(fromCutOrderId, selectedCutOrder.id, quantity)
       
-      showSuccess(
-        `Desde: ${result.fromOrder}\nA: ${result.toOrder}\nChapa: ${result.productCode}`,
-        'Chapa Reasignada'
-      )
+      // Usar alert nativo del navegador
+      alert(`✅ Producto reasignado correctamente\n\nDesde: ${result.fromOrder}\nA: ${result.toOrder}\nProducto: ${result.productCode}\nCantidad: ${quantity} unidad${quantity !== 1 ? 'es' : ''}`)
       
       setReassignModalOpen(false)
       
@@ -117,10 +116,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
       }, 500)
     } catch (error: any) {
       console.error('Error reassigning:', error)
-      showError(
-        error.message || 'Error desconocido al reasignar stock',
-        'Error al Reasignar'
-      )
+      alert(`❌ Error al reasignar\n\n${error.message || 'Error desconocido al reasignar stock'}`)
       throw error
     }
   }
@@ -382,9 +378,14 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                       <div className="flex items-center gap-2">
                         {cutOrder.material_base_id ? (
                           <>
-                            <span className="text-green-600 font-medium">
-                              ✓ {cutOrder.material_base_quantity}m
-                            </span>
+                            {(() => {
+                              const size = Number(cutOrder.material_base_quantity || 0)
+                              return (
+                                <span className="text-green-600 font-medium">
+                                  ✓ {size > 0 ? `${size.toFixed(1)}m` : cutOrder.material_base?.code || 'Stock asignado'}
+                                </span>
+                              )
+                            })()}
                             {cutOrder.stock_disponible < 0 && (
                               <span className="inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">
                                 <AlertTriangle className="w-3 h-3 mr-1" />
@@ -499,15 +500,29 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      {item.assigned_inventory ? (
-                        <span className="text-green-600 flex items-center gap-1">
-                          <CheckCircle2 className="w-4 h-4" />
-                          Stock asignado
-                        </span>
-                      ) : (
-                        <span className="text-slate-400">Sin asignar</span>
-                      )}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                      <div className="flex items-center gap-2">
+                        {item.assigned_inventory ? (
+                          <span className="text-green-600 font-medium">
+                            ✓ {item.assigned_inventory.product?.code || 'Stock asignado'}
+                          </span>
+                        ) : (
+                          <span className="text-yellow-600">
+                            Sin asignar
+                          </span>
+                        )}
+                        {item.status === 'pendiente' && (
+                          <button
+                            onClick={() => {
+                              setSelectedPreparationItem(item)
+                              setChangeStockModalOpen(true)
+                            }}
+                            className="ml-2 text-xs text-blue-600 hover:text-blue-800 underline"
+                          >
+                            {item.assigned_inventory ? 'Cambiar' : 'Asignar'}
+                          </button>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
@@ -611,6 +626,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
         <ReassignStockModal
           isOpen={reassignModalOpen}
           cutOrderId={selectedCutOrder.id}
+          productCode={selectedCutOrder.product?.code || ''}
           productSize={selectedCutOrder.product?.length_meters || selectedCutOrder.quantity_requested}
           currentOrderId={order.id}
           onClose={() => setReassignModalOpen(false)}
@@ -619,16 +635,19 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
       )}
 
       {/* Modal de Cambio de Stock */}
-      {changeStockModalOpen && selectedCutOrder && (
+      {changeStockModalOpen && (selectedCutOrder || selectedPreparationItem) && (
         <ChangeStockModal
           cutOrder={selectedCutOrder}
+          preparationItem={selectedPreparationItem}
           onClose={() => {
             setChangeStockModalOpen(false)
             setSelectedCutOrder(null)
+            setSelectedPreparationItem(null)
           }}
           onSuccess={async () => {
             setChangeStockModalOpen(false)
             setSelectedCutOrder(null)
+            setSelectedPreparationItem(null)
             await reloadOrder()
             showSuccess('Stock actualizado correctamente', 'Stock Cambiado')
           }}
@@ -643,11 +662,14 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
 }
 
 // Modal completo para cambiar stock (tipo grid como /stock)
-function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
+function ChangeStockModal({ cutOrder, preparationItem, onClose, onSuccess }: any) {
   const [availableStock, setAvailableStock] = useState<any[]>([])
   const [selectedStock, setSelectedStock] = useState<any>(null)
   const [quantityForNewMaterial, setQuantityForNewMaterial] = useState<number>(1)
   const [loading, setLoading] = useState(true)
+
+  const item = cutOrder || preparationItem
+  const isCutOrder = !!cutOrder
 
   useEffect(() => {
     loadAvailableStock()
@@ -659,16 +681,17 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
       const { getAvailableStock } = await import('@/app/actions/get-available-stock')
       const { extractSizeFromCode } = await import('@/lib/product-utils')
 
-      const productCode = cutOrder.product?.code || ''
+      const productCode = item.product?.code || ''
       const productSize = extractSizeFromCode(productCode)
-      console.log('🔍 Buscando stock para:', { productCode, productSize })
+      console.log('🔍 Buscando stock para:', { productCode, productSize, isCutOrder })
 
       const filtered = await getAvailableStock(productCode)
 
       // Ordenar para que el stock actualmente asignado vaya primero
       const sorted = filtered.sort((a, b) => {
-        const aIsCurrent = a.product_id === cutOrder.material_base_id
-        const bIsCurrent = b.product_id === cutOrder.material_base_id
+        const currentId = isCutOrder ? cutOrder.material_base_id : preparationItem.assigned_inventory_id
+        const aIsCurrent = a.product_id === currentId
+        const bIsCurrent = b.product_id === currentId
 
         if (aIsCurrent && !bIsCurrent) return -1
         if (!aIsCurrent && bIsCurrent) return 1
@@ -679,17 +702,26 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
       console.log('Stock filtrado (mismo producto, tamaño suficiente):', sorted.length)
       setAvailableStock(sorted)
 
-      // Pre-seleccionar el stock del tamaño exacto si está disponible
+      // Pre-seleccionar el stock del producto exacto
       if (sorted.length > 0) {
-        // Buscar stock del tamaño exacto
-        const exactMatch = sorted.find(item => {
-          const product = item.product
-          const itemSize = extractSizeFromCode(product?.code || '')
-          return itemSize === productSize
-        })
+        // Primero buscar por product_id exacto (para artículos normales)
+        const exactProductMatch = sorted.find(stockItem => 
+          stockItem.product_id === item.product_id
+        )
 
-        // Si hay match exacto, seleccionarlo; si no, seleccionar el primero (más pequeño)
-        setSelectedStock(exactMatch || sorted[0])
+        if (exactProductMatch) {
+          setSelectedStock(exactProductMatch)
+        } else {
+          // Si no hay match exacto de producto, buscar por tamaño exacto (para chapas)
+          const exactSizeMatch = sorted.find(stockItem => {
+            const product = stockItem.product
+            const itemSize = extractSizeFromCode(product?.code || '')
+            return itemSize === productSize
+          })
+
+          // Si hay match de tamaño, seleccionarlo; si no, seleccionar el primero
+          setSelectedStock(exactSizeMatch || sorted[0])
+        }
       }
     } catch (error) {
       console.error('Error loading stock:', error)
@@ -707,8 +739,9 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
       return
     }
 
-    if (quantityForNewMaterial > cutOrder.quantity_requested) {
-      alert(`La cantidad no puede exceder lo solicitado (${cutOrder.quantity_requested})`)
+    const quantityRequested = isCutOrder ? cutOrder.quantity_requested : preparationItem.quantity_requested
+    if (quantityForNewMaterial > quantityRequested) {
+      alert(`La cantidad no puede exceder lo solicitado (${quantityRequested})`)
       return
     }
 
@@ -720,25 +753,40 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
         return
       }
 
-      const { reassignStock } = await import('@/app/actions/reassign-stock')
+      if (isCutOrder) {
+        // Asignar stock a cut_order
+        const { reassignStock } = await import('@/app/actions/reassign-stock')
 
-      const result = await reassignStock(
-        cutOrder.id,
-        selectedStock.id,
-        product.id,
-        extractSizeFromCode(product.code || ''),
-        quantityForNewMaterial
-      )
+        const result = await reassignStock(
+          cutOrder.id,
+          selectedStock.id,
+          product.id,
+          extractSizeFromCode(product.code || ''),
+          quantityForNewMaterial
+        )
 
-      if (result.success) {
-        alert(result.message)
-        window.location.reload()
+        if (result.success) {
+          alert(result.message)
+          onSuccess()
+        } else {
+          alert('Error reasignando stock')
+        }
       } else {
-        alert('Error reasignando stock')
+        // Asignar stock a preparation_item
+        const { assignStockToPreparationItem } = await import('@/app/actions/preparation')
+
+        await assignStockToPreparationItem(
+          preparationItem.id,
+          selectedStock.id,
+          quantityForNewMaterial
+        )
+
+        alert('Stock asignado correctamente')
+        onSuccess()
       }
     } catch (error: any) {
-      console.error('Error reasignando stock:', error)
-      alert(`Error reasignando stock: ${error.message}`)
+      console.error('Error asignando stock:', error)
+      alert(`Error asignando stock: ${error.message}`)
     } finally {
       setLoading(false)
     }
@@ -751,10 +799,14 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
         <div className="p-6 border-b">
           <h3 className="text-xl font-bold mb-2">Seleccionar Stock</h3>
           <p className="text-sm text-slate-600">
-            Orden: <strong>{cutOrder.cut_number}</strong> - {cutOrder.product?.name}
+            {isCutOrder ? (
+              <>Orden: <strong>{cutOrder.cut_number}</strong> - {cutOrder.product?.name}</>
+            ) : (
+              <>Artículo: <strong>{preparationItem.product?.name}</strong></>
+            )}
           </p>
           <p className="text-xs text-slate-500 mt-1">
-            Mostrando chapas de {extractSizeFromCode(cutOrder.product?.code || '')}m o superiores
+            Mostrando stock disponible de {item.product?.code}
           </p>
         </div>
 
@@ -779,7 +831,8 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
               {availableStock.map((item) => {
                 const product = Array.isArray(item.product) ? item.product[0] : item.product
                 const isSelected = selectedStock?.id === item.id
-                const isCurrentlyAssigned = item.product_id === cutOrder.material_base_id
+                const currentId = isCutOrder ? cutOrder?.material_base_id : preparationItem?.assigned_inventory_id
+                const isCurrentlyAssigned = item.product_id === currentId
                 
                 return (
                   <button
@@ -798,9 +851,14 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
                         <h4 className="font-bold text-slate-900">{product?.name}</h4>
                         <p className="text-sm text-slate-600">{product?.code}</p>
                       </div>
-                      <span className="text-2xl font-bold text-blue-600">
-                        {extractSizeFromCode(product?.code || '')}m
-                      </span>
+                      {(() => {
+                        const size = extractSizeFromCode(product?.code || '')
+                        return size > 0 ? (
+                          <span className="text-2xl font-bold text-blue-600">
+                            {size}m
+                          </span>
+                        ) : null
+                      })()}
                     </div>
                     
                     <div className="grid grid-cols-3 gap-2 mt-3 text-xs">
@@ -842,19 +900,22 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
           {selectedStock && (
             <div className="mb-4 p-4 bg-white border border-slate-200 rounded-lg">
               <label className="block text-sm font-medium text-slate-700 mb-2">
-                ¿Cuántas unidades vas a cortar con este material?
+                {isCutOrder ? '¿Cuántas unidades vas a cortar con este material?' : '¿Cuántas unidades asignar?'}
               </label>
               <input
                 type="number"
                 min="1"
-                max={cutOrder.quantity_requested}
+                max={item.quantity_requested}
                 value={quantityForNewMaterial}
                 onChange={(e) => setQuantityForNewMaterial(parseInt(e.target.value) || 1)}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 placeholder="1"
               />
               <p className="text-xs text-slate-500 mt-1">
-                Se creará una nueva orden de corte con esta cantidad. La orden original se reducirá.
+                {isCutOrder 
+                  ? 'Se creará una nueva orden de corte con esta cantidad. La orden original se reducirá.'
+                  : `Máximo: ${item.quantity_requested} unidades solicitadas`
+                }
               </p>
             </div>
           )}
@@ -871,7 +932,10 @@ function ChangeStockModal({ cutOrder, onClose, onSuccess }: any) {
               disabled={!selectedStock || loading}
               className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors font-medium"
             >
-              {loading ? 'Cambiando...' : selectedStock ? `Asignar ${extractSizeFromName(selectedStock.product?.name || '')}m` : 'Seleccionar Stock'}
+              {loading ? 'Cambiando...' : selectedStock ? (() => {
+                const size = extractSizeFromCode(selectedStock.product?.code || '')
+                return size > 0 ? `Asignar ${size}m` : 'Asignar'
+              })() : 'Seleccionar Stock'}
             </button>
           </div>
         </div>

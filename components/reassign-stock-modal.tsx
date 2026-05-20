@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { X, Package, ArrowRight } from 'lucide-react'
+import { extractSizeFromCode } from '@/lib/product-utils'
 
 interface CompletedCutOrder {
   id: string
@@ -17,7 +18,7 @@ interface CompletedCutOrder {
       code: string
       name: string
     }
-  }
+  } | null
 }
 
 interface OrderWithCutOrders {
@@ -30,6 +31,7 @@ interface OrderWithCutOrders {
 interface ReassignStockModalProps {
   isOpen: boolean
   cutOrderId: string
+  productCode: string
   productSize: number
   currentOrderId: string
   onClose: () => void
@@ -39,6 +41,7 @@ interface ReassignStockModalProps {
 export default function ReassignStockModal({
   isOpen,
   cutOrderId,
+  productCode,
   productSize,
   currentOrderId,
   onClose,
@@ -57,92 +60,68 @@ export default function ReassignStockModal({
       setSelectedCutOrderId('')
       setExpandedOrderId('')
     }
-  }, [isOpen, productSize])
+  }, [isOpen, productCode, productSize])
 
   async function loadAvailableOrders() {
     setLoading(true)
     try {
       const { getAvailableOrdersForReassignment } = await import('@/app/actions/dashboard-data')
-      const orders = await getAvailableOrdersForReassignment('', productSize)
+      const orders = await getAvailableOrdersForReassignment(productCode, productSize)
 
-      console.log('Órdenes completadas encontradas:', orders?.length)
-      console.log('Buscando chapas para tamaño:', productSize)
+      console.log('📦 Órdenes recibidas:', orders?.length)
+      console.log('🔍 Buscando producto:', productCode, 'con tamaño:', productSize)
 
-      // Filtrar por tamaño de la CHAPA ASIGNADA (usando material_base)
-      const filtered = (orders || []).filter((co: any) => {
-        try {
-          // Obtener el producto de material_base
-          const materialBase = Array.isArray(co.material_base) 
-            ? co.material_base[0] 
-            : co.material_base
-          
-          if (!materialBase?.code) {
-            console.log(`  ⚠️ Orden ${co.cut_number}: Sin material_base`)
-            return false
-          }
-          
-          const chapaSize = extractSizeFromCode(materialBase.code)
-          console.log(`  - Orden ${co.cut_number}: Chapa ${materialBase.code} = ${chapaSize}m`)
-          return chapaSize >= productSize
-        } catch (err) {
-          console.error(`Error processing order ${co.cut_number}:`, err)
-          return false
-        }
-      })
+      // Procesar órdenes - ahora vienen como { id, order_number, status, cut_orders: [...] }
+      const processedOrders: OrderWithCutOrders[] = []
 
-      console.log('✅ Órdenes filtradas:', filtered.length)
+      for (const order of orders || []) {
+        // Filtrar cut_orders que:
+        // 1. Tengan unidades cortadas
+        // 2. Sean del MISMO producto (código exacto)
+        const validCutOrders = (order.cut_orders || [])
+          .filter((co: any) => {
+            const product = Array.isArray(co.product) ? co.product[0] : co.product
+            const hasCutUnits = (co.quantity_cut || 0) > 0
+            const isSameProduct = product?.code === productCode
+            
+            if (!isSameProduct) {
+              console.log(`   ⏭️  Ignorando cut_order: producto ${product?.code} != ${productCode}`)
+            }
+            
+            return hasCutUnits && isSameProduct
+          })
+          .map((co: any) => {
+            const product = Array.isArray(co.product) ? co.product[0] : co.product
+            
+            return {
+              id: co.id,
+              cut_number: `${order.order_number}-${co.id.substring(0, 8)}`,
+              quantity_requested: co.quantity_requested,
+              quantity_cut: co.quantity_cut || 0,
+              product: product,
+              assigned_inventory: null // No necesitamos material_base aquí
+            }
+          })
 
-      // Agrupar por pedido
-      const grouped: Record<string, OrderWithCutOrders> = {}
-      
-      filtered.forEach((co: any) => {
-        const order = Array.isArray(co.order) ? co.order[0] : co.order
-        const product = Array.isArray(co.product) ? co.product[0] : co.product
-        const materialBase = Array.isArray(co.material_base)
-          ? co.material_base[0]
-          : co.material_base
-
-        // Obtener client
-        const client = Array.isArray(order.client) ? order.client[0] : order.client
-        const customerName = client?.business_name || 'Cliente desconocido'
-
-        const orderId = order.id
-        if (!grouped[orderId]) {
-          grouped[orderId] = {
-            id: orderId,
+        if (validCutOrders.length > 0 && order.id !== currentOrderId) {
+          processedOrders.push({
+            id: order.id,
             order_number: order.order_number,
-            customer_name: customerName,
-            cut_orders: []
-          }
+            customer_name: 'Cliente', // No tenemos client en la query
+            cut_orders: validCutOrders
+          })
         }
-        grouped[orderId].cut_orders.push({
-          id: co.id,
-          cut_number: co.cut_number,
-          quantity_requested: co.quantity_requested,
-          quantity_cut: co.quantity_cut || 0,
-          product: product,
-          assigned_inventory: {
-            product: materialBase
-          }
-        })
-      })
+      }
 
-      // Filtrar para excluir el pedido actual
-      const filteredOrders = Object.values(grouped).filter(order => order.id !== currentOrderId)
-      setOrdersWithCutOrders(filteredOrders)
+      console.log('✅ Órdenes procesadas:', processedOrders.length)
+      console.log('   Cut orders disponibles:', processedOrders.reduce((sum, o) => sum + o.cut_orders.length, 0))
+
+      setOrdersWithCutOrders(processedOrders)
     } catch (error) {
       console.error('Error loading available orders:', error)
     } finally {
       setLoading(false)
     }
-  }
-
-  function extractSizeFromCode(code: string): number {
-    const match = code.match(/\.(\d+),(\d+)$/)
-    if (match) {
-      return parseFloat(`${match[1]}.${match[2]}`)
-    }
-    return 0
   }
 
   async function handleConfirm() {
@@ -175,8 +154,6 @@ export default function ReassignStockModal({
   if (!isOpen) return null
 
   const selectedCutOrder = getSelectedCutOrder()
-  const selectedSize = selectedCutOrder ? extractSizeFromCode(selectedCutOrder.assigned_inventory.product.code) : 0
-  const willGenerateRemnant = selectedSize > productSize
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
@@ -185,10 +162,10 @@ export default function ReassignStockModal({
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
           <div>
             <h3 className="text-xl font-bold text-slate-900">
-              Reasignar chapa de otro pedido
+              Reasignar producto de otro pedido
             </h3>
             <p className="text-sm text-slate-600 mt-1">
-              Necesita: {productSize}m • Mostrando chapas de {productSize}m o mayores
+              Producto: {productCode} • Solo se muestran unidades del mismo producto
             </p>
           </div>
           <button
@@ -212,8 +189,8 @@ export default function ReassignStockModal({
             <div className="flex-1 flex items-center justify-center text-slate-400">
               <div className="text-center">
                 <Package className="w-16 h-16 mx-auto mb-4 text-slate-300" />
-                <p className="text-lg font-medium">No hay chapas disponibles</p>
-                <p className="text-sm mt-2">No se encontraron órdenes completadas con chapas de {productSize}m o mayores</p>
+                <p className="text-lg font-medium">No hay unidades disponibles</p>
+                <p className="text-sm mt-2">No se encontraron órdenes completadas del producto {productCode}</p>
               </div>
             </div>
           ) : (
@@ -255,16 +232,12 @@ export default function ReassignStockModal({
                               <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Orden</th>
                               <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Producto</th>
                               <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Disponibles</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Chapa Asignada</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Tamaño</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Tipo</th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Código</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-200">
                             {order.cut_orders.map((cutOrder) => {
-                              const chapaSize = extractSizeFromCode(cutOrder.assigned_inventory.product.code)
-                              const isExact = chapaSize === productSize
-                              const isBigger = chapaSize > productSize
+                              const productCode = cutOrder.assigned_inventory?.product.code || cutOrder.product.code || ''
                               
                               return (
                                 <tr
@@ -295,21 +268,7 @@ export default function ReassignStockModal({
                                     {cutOrder.quantity_cut || 0} unidad{(cutOrder.quantity_cut || 0) !== 1 ? 'es' : ''}
                                   </td>
                                   <td className="px-4 py-3 text-sm text-slate-600 font-mono">
-                                    {cutOrder.assigned_inventory.product.code}
-                                  </td>
-                                  <td className="px-4 py-3 text-sm font-semibold text-slate-900">
-                                    {chapaSize}m
-                                  </td>
-                                  <td className="px-4 py-3">
-                                    {isExact ? (
-                                      <span className="inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                                        Exacta
-                                      </span>
-                                    ) : isBigger ? (
-                                      <span className="inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                                        Sobra {(chapaSize - productSize).toFixed(1)}m
-                                      </span>
-                                    ) : null}
+                                    {productCode}
                                   </td>
                                 </tr>
                               )
@@ -327,14 +286,6 @@ export default function ReassignStockModal({
 
         {/* Footer */}
         <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex-shrink-0">
-          {selectedCutOrder && willGenerateRemnant && (
-            <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <p className="text-sm text-yellow-800">
-                <strong>Chapa más grande seleccionada:</strong> Al cortar esta orden, se generará un recorte de {(selectedSize - productSize).toFixed(1)}m que se sumará al stock.
-              </p>
-            </div>
-          )}
-          
           {selectedCutOrder && (
             <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
               <label className="block text-sm font-semibold text-slate-700 mb-2">

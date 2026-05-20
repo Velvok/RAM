@@ -66,6 +66,35 @@ export async function confirmReassignmentPickup(cutOrderId: string) {
   
   console.log(`✅ Orden confirmada: ${newQuantityCut}/${cutOrder.quantity_requested} → estado: ${isCompleted ? 'completada' : 'pendiente'}`)
 
+  // IMPORTANTE: Decrementar quantity_cut de la orden origen
+  if (cutOrder.reassigned_from_cut_order_id) {
+    console.log(`📉 Decrementando quantity_cut de la orden origen...`)
+    
+    const { data: fromCutOrder } = await supabase
+      .from('cut_orders')
+      .select('quantity_cut, quantity_requested, finished_at')
+      .eq('id', cutOrder.reassigned_from_cut_order_id)
+      .single()
+    
+    if (fromCutOrder) {
+      const newFromQuantityCut = Math.max(0, (fromCutOrder.quantity_cut || 0) - quantityToAdd)
+      const fromIsCompleted = newFromQuantityCut >= fromCutOrder.quantity_requested
+      
+      console.log(`   Orden origen: ${fromCutOrder.quantity_cut} - ${quantityToAdd} = ${newFromQuantityCut}/${fromCutOrder.quantity_requested}`)
+      
+      await supabase
+        .from('cut_orders')
+        .update({
+          quantity_cut: newFromQuantityCut,
+          status: fromIsCompleted ? 'completada' : 'pendiente',
+          finished_at: fromIsCompleted ? fromCutOrder.finished_at : null
+        })
+        .eq('id', cutOrder.reassigned_from_cut_order_id)
+      
+      console.log(`   ✅ Orden origen actualizada: ${newFromQuantityCut}/${fromCutOrder.quantity_requested} → ${fromIsCompleted ? 'completada' : 'pendiente'}`)
+    }
+  }
+
   // NUEVO: Si la chapa es mayor, generar recorte
   if (remnantSize > 0) {
     console.log(`✂️ Generando recorte de ${remnantSize}m...`)
