@@ -13,9 +13,13 @@
 # production
 /build
 
-# misc
+# OS
 .DS_Store
 *.pem
+
+# Load Testing Agent
+scripts/load-testing-agent/output/
+scripts/load-testing-agent/snapshots/*.json
 
 # debug
 npm-debug.log*
