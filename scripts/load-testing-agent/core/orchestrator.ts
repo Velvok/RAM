@@ -2,6 +2,7 @@
  * Orchestrator - Coordinates the simulation execution
  */
 
+// @ts-ignore - TypeScript can't resolve @/ alias in this context
 import { createAdminClient } from '@/lib/supabase/server'
 import { createSnapshot, restoreSnapshot } from './snapshot'
 import { TransactionLogger } from './transaction-logger'
@@ -86,9 +87,12 @@ export async function runSimulation(
   
   try {
     // Import scenarios dynamically
-    const { runConcurrentOrders } = await import('../scenarios/concurrent-orders')
-    const { runComplexCuts } = await import('../scenarios/complex-cuts')
-    const { runEdgeCases } = await import('../scenarios/edge-cases')
+    // @ts-ignore - TypeScript can't resolve dynamic imports in this context
+    const { runConcurrentOrders } = await import('../scenarios/concurrent-orders.js')
+    // @ts-ignore - TypeScript can't resolve dynamic imports in this context
+    const { runComplexCuts } = await import('../scenarios/complex-cuts.js')
+    // @ts-ignore - TypeScript can't resolve dynamic imports in this context
+    const { runEdgeCases } = await import('../scenarios/edge-cases.js')
     
     // Run scenarios
     await runConcurrentOrders(context)
