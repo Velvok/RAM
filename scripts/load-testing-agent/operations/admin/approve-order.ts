@@ -1,8 +1,10 @@
 /**
  * Operation: Approve Order (Admin)
+ * Simula la aprobación de pedido y creación de órdenes de corte
  */
 
 import { SimulationContext } from '../../core/orchestrator'
+import { extractSizeFromCode, isChapaProduct } from '@/lib/product-utils'
 
 export async function approveOrder(
   context: SimulationContext,
@@ -13,24 +15,62 @@ export async function approveOrder(
   const startTime = Date.now()
   
   try {
-    // Get current order state
+    // Get current order state with lines
     const { data: beforeOrder } = await supabase
       .from('orders')
-      .select('*')
+      .select('*, order_lines(*, product:products(*))')
       .eq('id', orderId)
       .single()
     
-    // Approve the order
-    const { error } = await supabase
+    if (!beforeOrder) throw new Error('Order not found')
+    
+    // Update order status to 'aprobado'
+    const { error: updateError } = await supabase
       .from('orders')
       .update({ status: 'aprobado' })
       .eq('id', orderId)
     
-    if (error) throw error
+    if (updateError) throw updateError
     
-    // Generate cut orders automatically
-    const { generateCutOrders } = await import('@/app/actions/orders')
-    await generateCutOrders(orderId)
+    // Create cut_orders for each order line (chapas)
+    const cutOrderIds: string[] = []
+    
+    for (const line of beforeOrder.order_lines) {
+      const product = line.product
+      if (!product) continue
+      
+      // Check if it's a chapa product
+      const isChapa = isChapaProduct(product.code || '', product.category, product.name)
+      
+      if (isChapa) {
+        // Create cut order for chapa
+        const units = Math.ceil(line.quantity) || 1
+        const cutNumber = `CUT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+        
+        const { data: cutOrder, error: cutError } = await supabase
+          .from('cut_orders')
+          .insert({
+            cut_number: cutNumber,
+            order_id: orderId,
+            order_line_id: line.id,
+            product_id: line.product_id,
+            quantity_requested: units,
+            quantity_cut: 0,
+            status: 'pendiente'
+          })
+          .select('id')
+          .single()
+        
+        if (cutError) {
+          console.error('Error creating cut order:', cutError.message)
+          continue
+        }
+        
+        if (cutOrder) {
+          cutOrderIds.push(cutOrder.id)
+        }
+      }
+    }
     
     // Get after state
     const { data: afterOrder } = await supabase
@@ -48,12 +88,12 @@ export async function approveOrder(
       entityId: orderId,
       beforeState: beforeOrder,
       afterState: afterOrder,
-      payload: { orderId },
+      payload: { orderId, cutOrdersCreated: cutOrderIds.length },
       result: 'success',
       durationMs: duration,
       relatedEntities: {
         orders: [orderId],
-        cutOrders: afterOrder?.cut_orders?.map((co: any) => co.id) || []
+        cutOrders: cutOrderIds
       }
     })
     
@@ -75,6 +115,7 @@ export async function approveOrder(
       durationMs: duration
     })
     
+    console.error('   ❌ Failed to approve order:', error.message)
     return false
   }
 }
