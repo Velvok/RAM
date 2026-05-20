@@ -197,20 +197,16 @@ async function resetAll() {
 
   console.log(`📦 Found ${uniqueProducts.length} unique products`)
 
-  // Seleccionar entre 2 y 5 productos aleatorios
+  // Seleccionar entre 2 y 5 productos aleatorios con suficiente stock para ambos pedidos
   const numLines = Math.floor(Math.random() * 4) + 2 // 2-5 líneas
   const selectedProducts = []
   const availableProducts = [...uniqueProducts]
 
   for (let i = 0; i < Math.min(numLines, availableProducts.length); i++) {
     const randomIndex = Math.floor(Math.random() * availableProducts.length)
-    selectedProducts.push(availableProducts[randomIndex])
-    availableProducts.splice(randomIndex, 1)
-  }
-
-  // Obtener stock de cada producto seleccionado
-  const productsWithStock: any[] = []
-  for (const product of selectedProducts) {
+    const product = availableProducts[randomIndex]
+    
+    // Verificar stock disponible para este producto
     const { data: inventory } = await supabase
       .from('inventory')
       .select('stock_disponible')
@@ -219,12 +215,26 @@ async function resetAll() {
       .limit(1)
 
     if (inventory && inventory.length > 0) {
-      productsWithStock.push({
-        ...product,
-        stock_disponible: parseFloat(inventory[0].stock_disponible)
-      })
+      const stockDisponible = parseFloat(inventory[0].stock_disponible)
+      // Necesitamos al menos 2 unidades (1 para cada pedido)
+      if (stockDisponible >= 2) {
+        selectedProducts.push({
+          ...product,
+          stock_disponible: stockDisponible
+        })
+        availableProducts.splice(randomIndex, 1)
+      } else {
+        console.log(`   ⚠️  Producto ${product.code} solo tiene ${stockDisponible} unidades, omitiendo...`)
+        availableProducts.splice(randomIndex, 1)
+        i-- // Reintentar con otro producto
+      }
+    } else {
+      availableProducts.splice(randomIndex, 1)
+      i-- // Reintentar con otro producto
     }
   }
+
+  const productsWithStock = selectedProducts
 
   console.log(`✅ Selected ${productsWithStock.length} products for both orders`)
 
