@@ -264,7 +264,40 @@ async function resetAll() {
       
       orderId = newOrder.id
     } else {
-      orderId = order.id
+      // Pedido existe, borrarlo para recrearlo con los mismos productos
+      console.log(`   🗑️  Pedido existe, borrando para recrear con productos iguales...`)
+      
+      // Eliminar datos asociados al pedido
+      await supabase.from('order_activity_log').delete().eq('order_id', order.id)
+      await supabase.from('cut_orders').delete().eq('order_id', order.id)
+      await supabase.from('preparation_items').delete().eq('order_id', order.id)
+      await supabase.from('stock_reservations').delete().eq('order_id', order.id)
+      await supabase.from('delivery_history').delete().eq('order_id', order.id)
+      await supabase.from('order_lines').delete().eq('order_id', order.id)
+      await supabase.from('orders').delete().eq('id', order.id)
+      
+      console.log(`   ✅ Pedido borrado, recreando...`)
+      
+      // Crear el pedido de nuevo con los productos preseleccionados
+      const created = await createTestOrder(orderNumber, productsWithStock)
+      if (!created) {
+        console.error(`❌ Error recreando pedido ${orderNumber}`)
+        continue
+      }
+      
+      // Obtener el pedido recién creado
+      const { data: newOrder } = await supabase
+        .from('orders')
+        .select('id')
+        .eq('order_number', orderNumber)
+        .single()
+      
+      if (!newOrder) {
+        console.error(`❌ Error obteniendo pedido recreado ${orderNumber}`)
+        continue
+      }
+      
+      orderId = newOrder.id
     }
 
     console.log(`   ID: ${orderId}`)
