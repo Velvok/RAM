@@ -1,9 +1,9 @@
 # Informe de Simulación RAM - Resumen Ejecutivo
 
-**ID**: sim-2026-05-20T11-25-21-159Z  
-**Inicio**: 5/20/2026, 1:25:22 PM  
-**Fin**: 5/20/2026, 1:25:24 PM  
-**Duración**: 0.0 minutos
+**ID**: sim-2026-05-20T11-41-10-553Z  
+**Inicio**: 5/20/2026, 1:41:11 PM  
+**Fin**: 5/20/2026, 1:41:22 PM  
+**Duración**: 0.2 minutos
 
 ---
 
@@ -11,11 +11,11 @@
 
 | Métrica | Valor |
 |---------|-------|
-| **Transacciones totales** | 4 |
-| **Exitosas** | 2 ✅ |
-| **Fallidas** | 2 ❌ |
+| **Transacciones totales** | 35 |
+| **Exitosas** | 25 ✅ |
+| **Fallidas** | 10 ❌ |
 | **Lentas (>5s)** | 0 ⚠️ |
-| **Tiempo promedio** | 601ms |
+| **Tiempo promedio** | 423ms |
 
 ---
 
@@ -23,8 +23,9 @@
 
 | Operación | Cantidad | % del total |
 |-----------|----------|-------------|
-| CREATE_ORDER | 2 | 50.0% |
-| APPROVE_ORDER | 2 | 50.0% |
+| CREATE_ORDER | 20 | 57.1% |
+| APPROVE_ORDER | 5 | 14.3% |
+| COMPLETE_CUT | 10 | 28.6% |
 
 ---
 
@@ -32,10 +33,11 @@
 
 | # | Operación | Duración | ID |
 |---|-----------|----------|----|
-| 1 | CREATE_ORDER | 854ms | e2ca13f9-03e1-404a-98ad-b146b9165b0f |
-| 2 | CREATE_ORDER | 852ms | b16e217d-4215-4b3f-a26a-a07e9e523e10 |
-| 3 | APPROVE_ORDER | 447ms | b16e217d-4215-4b3f-a26a-a07e9e523e10 |
-| 4 | APPROVE_ORDER | 252ms | e2ca13f9-03e1-404a-98ad-b146b9165b0f |
+| 1 | CREATE_ORDER | 549ms | 8c2cb2e9-6517-4c43-a4f8-ae5da607163c |
+| 2 | CREATE_ORDER | 544ms | a655ed46-1b3b-4ff4-82be-549dcfa8a38a |
+| 3 | CREATE_ORDER | 531ms | 8c57bddd-edbe-4940-a0c3-cd61b92e67c2 |
+| 4 | COMPLETE_CUT | 509ms | 8bc3663c-c7fd-4936-9068-43af7e3e322d |
+| 5 | CREATE_ORDER | 499ms | be5a3bf2-0e76-4e91-8179-688d0da28a06 |
 
 ---
 
@@ -43,7 +45,7 @@
 
 **Estado**: ✅ Completado exitosamente
 
-⚠️ Se detectaron 2 errores.
+⚠️ Se detectaron 10 errores.
 
 ✅ Todas las transacciones completadas en menos de 5 segundos.
 
@@ -57,4 +59,4 @@
 
 ---
 
-*Generado el 5/20/2026, 1:25:25 PM*
+*Generado el 5/20/2026, 1:41:23 PM*

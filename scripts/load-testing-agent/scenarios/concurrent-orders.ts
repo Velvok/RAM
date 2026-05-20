@@ -50,51 +50,69 @@ export async function runConcurrentOrders(context: SimulationContext): Promise<v
     console.log(`   [Order ${i + 1}/${ordersToProcess}] Approving...`)
     await approveOrder(context, orderId)
     
-    // Step 2: Complete cuts (simplified - would need actual cut flow)
+    // Step 2: Complete cuts
     console.log(`   [Order ${i + 1}/${ordersToProcess}] Processing cuts...`)
     
-    // Get cut orders for this order
-    const { data: cutOrders } = await supabase
+    // Small delay for Supabase consistency
+    await new Promise(resolve => setTimeout(resolve, 200))
+    
+    // Get cut orders for this order (fresh query)
+    const { data: cutOrders, error: cutError } = await supabase
       .from('cut_orders')
-      .select('*')
+      .select('*, product:products!cut_orders_product_id_fkey(*)')
       .eq('order_id', orderId)
     
+    if (cutError) {
+      console.error(`      Error fetching cut orders: ${cutError.message}`)
+      continue
+    }
+    
     if (cutOrders && cutOrders.length > 0) {
-      // Complete first cut order partially
       const { completeCut } = await import('../operations/operator/complete-cut')
       
-      // Find available stock for this cut
-      const cutOrder = cutOrders[0]
-      const { data: inventory } = await supabase
-        .from('inventory')
-        .select('*, product:products(*)')
-        .eq('product_id', cutOrder.material_base_id)
-        .gt('stock_disponible', 0)
-        .limit(1)
-        .single()
-      
-      if (inventory) {
-        const quantityToCut = Math.min(5, cutOrder.quantity_requested)
-        await completeCut(context, cutOrder.id, quantityToCut, {
-          id: inventory.id,
-          quantity: inventory.stock_total
-        })
+      for (const cutOrder of cutOrders.slice(0, 2)) { // Process up to 2 cut orders
+        // Find stock for this product
+        const { data: inventoryItems } = await supabase
+          .from('inventory')
+          .select('*, product:products(*)')
+          .eq('product_id', cutOrder.product_id)
+          .gt('stock_disponible', 0)
+          .limit(5)
         
-        // Step 3: Partial delivery
-        console.log(`   [Order ${i + 1}/${ordersToProcess}] Delivering...`)
-        
-        // Get preparation items
-        const { data: prepItems } = await supabase
-          .from('preparation_items')
-          .select('*')
-          .eq('cut_order_id', cutOrder.id)
-        
-        if (prepItems && prepItems.length > 0) {
-          const deliverQty = Math.min(2, prepItems.length)
-          await partialDelivery(context, orderId, [{
-            cutOrderId: cutOrder.id,
-            quantity: deliverQty
-          }])
+        if (inventoryItems && inventoryItems.length > 0) {
+          // Use first available inventory
+          const inventory = inventoryItems[0]
+          
+          // Assign material_base to cut_order first
+          await supabase
+            .from('cut_orders')
+            .update({
+              material_base_id: inventory.product_id,
+              material_base_quantity: inventory.stock_total
+            })
+            .eq('id', cutOrder.id)
+          
+          const quantityToCut = Math.min(3, cutOrder.quantity_requested)
+          
+          await completeCut(context, cutOrder.id, quantityToCut, {
+            id: inventory.id,
+            quantity: inventory.stock_total
+          })
+          
+          // Step 3: Partial delivery
+          // Get preparation items
+          const { data: prepItems } = await supabase
+            .from('preparation_items')
+            .select('*')
+            .eq('cut_order_id', cutOrder.id)
+          
+          if (prepItems && prepItems.length > 0) {
+            const deliverQty = Math.min(2, prepItems.length)
+            await partialDelivery(context, orderId, [{
+              cutOrderId: cutOrder.id,
+              quantity: deliverQty
+            }])
+          }
         }
       }
     }

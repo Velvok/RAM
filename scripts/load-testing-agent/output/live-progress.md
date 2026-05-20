@@ -1,8 +1,8 @@
 # ✅ Simulación RAM - Completada
 
-**ID**: sim-2026-05-20T11-25-21-159Z  
-**Inicio**: 5/20/2026, 1:25:22 PM  
-**Tiempo transcurrido**: 0m 1s  
+**ID**: sim-2026-05-20T11-41-10-553Z  
+**Inicio**: 5/20/2026, 1:41:11 PM  
+**Tiempo transcurrido**: 0m 11s  
 **Estado**: ✅ Completado
 
 ---
@@ -23,8 +23,8 @@
 
 | Estado | Cantidad |
 |--------|----------|
-| **Creados** | 2 |
-| **Entregados** | 2 ✅ |
+| **Creados** | 20 |
+| **Entregados** | 5 ✅ |
 | **Parcialmente** | 0 🟡 |
 | Pendientes | 0 |
 | En corte | 0 |
@@ -35,7 +35,7 @@
 
 | Estado | Cantidad |
 |--------|----------|
-| **Total** | 0 |
+| **Total** | 4 |
 | Pendientes | 0 |
 | En proceso | 0 |
 | Completadas | 0 |
@@ -71,5 +71,5 @@
 
 ---
 
-*Actualizado: 1:25:24 PM*  
+*Actualizado: 1:41:22 PM*  
 *Archivo: `output/transaction-log.json` para detalles completos*

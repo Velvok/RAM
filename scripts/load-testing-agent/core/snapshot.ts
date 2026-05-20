@@ -15,6 +15,7 @@ export interface Snapshot {
 
 const TABLES_TO_SNAPSHOT = [
   'orders',
+  'order_lines',
   'cut_orders',
   'preparation_items',
   'inventory',
@@ -79,9 +80,6 @@ export async function restoreSnapshot(snapshotId: string): Promise<void> {
   
   const snapshot: Snapshot = JSON.parse(fs.readFileSync(snapshotPath, 'utf-8'))
   
-  // Disable triggers temporarily if needed (for some operations)
-  // Note: In Supabase, we might need to use RPC or handle this differently
-  
   // Delete in reverse order to respect foreign keys (children first)
   const deleteOrder = [
     'stock_reservations',
@@ -89,12 +87,13 @@ export async function restoreSnapshot(snapshotId: string): Promise<void> {
     'order_activity_log',
     'preparation_items',
     'cut_orders',
+    'order_lines',
     'inventory',
     'orders'
   ]
   
   for (const table of deleteOrder) {
-    console.log(`  �️  Clearing ${table}...`)
+    console.log(`  🚮  Clearing ${table}...`)
     
     // Delete current data
     const { error: deleteError } = await supabase
@@ -110,6 +109,7 @@ export async function restoreSnapshot(snapshotId: string): Promise<void> {
   // Insert in correct order (parents first)
   const insertOrder = [
     'orders',
+    'order_lines',
     'inventory',
     'cut_orders',
     'preparation_items',
