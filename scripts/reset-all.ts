@@ -199,6 +199,10 @@ async function resetAll() {
 
   // Seleccionar entre 2 y 5 productos aleatorios con suficiente stock para ambos pedidos
   const numLines = Math.floor(Math.random() * 4) + 2 // 2-5 líneas
+  const numOrders = testOrderNumbers.length // 2 pedidos
+  const quantityPerOrder = 4 // 4 unidades por pedido
+  const minStockRequired = quantityPerOrder * numOrders // 8 unidades mínimo (4 * 2)
+  
   const selectedProducts = []
   const availableProducts = [...uniqueProducts]
 
@@ -216,15 +220,15 @@ async function resetAll() {
 
     if (inventory && inventory.length > 0) {
       const stockDisponible = parseFloat(inventory[0].stock_disponible)
-      // Necesitamos al menos 2 unidades (1 para cada pedido)
-      if (stockDisponible >= 2) {
+      // Necesitamos al least minStockRequired unidades
+      if (stockDisponible >= minStockRequired) {
         selectedProducts.push({
           ...product,
           stock_disponible: stockDisponible
         })
         availableProducts.splice(randomIndex, 1)
       } else {
-        console.log(`   ⚠️  Producto ${product.code} solo tiene ${stockDisponible} unidades, omitiendo...`)
+        console.log(`   ⚠️  Producto ${product.code} solo tiene ${stockDisponible} unidades (necesita ${minStockRequired}), omitiendo...`)
         availableProducts.splice(randomIndex, 1)
         i-- // Reintentar con otro producto
       }
