@@ -19,6 +19,15 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
   const [groupByClient, setGroupByClient] = useState(false)
   const router = useRouter()
 
+  // Auto-refresh cada 30 segundos para asegurar datos frescos
+  useEffect(() => {
+    const refreshInterval = setInterval(() => {
+      router.refresh()
+    }, 30000)
+
+    return () => clearInterval(refreshInterval)
+  }, [router])
+
   // Cargar preferencia de vista desde localStorage solo en el cliente
   useEffect(() => {
     const savedMode = localStorage.getItem('pedidos-view-mode') as 'cards' | 'rows'

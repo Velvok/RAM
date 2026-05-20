@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { StockFilters } from './stock-filters'
 import { QuickAdjustModal } from './quick-adjust-modal'
 import { ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
@@ -13,12 +14,22 @@ type SortField = 'code' | 'name' | 'stock_total' | 'stock_reservado' | 'stock_ge
 type SortDirection = 'asc' | 'desc' | null
 
 export function StockTableClient({ inventory }: StockTableClientProps) {
+  const router = useRouter()
   const [filters, setFilters] = useState({ search: '', categories: [] as string[], stockStatus: 'todos' })
   const [currentPage, setCurrentPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(100)
   const [hoveredRow, setHoveredRow] = useState<string | null>(null)
   const [sortField, setSortField] = useState<SortField>(null)
   const [sortDirection, setSortDirection] = useState<SortDirection>(null)
+
+  // Auto-refresh cada 30 segundos para asegurar datos frescos
+  useEffect(() => {
+    const refreshInterval = setInterval(() => {
+      router.refresh()
+    }, 30000)
+
+    return () => clearInterval(refreshInterval)
+  }, [router])
 
   // Aplicar filtro desde sessionStorage si viene del dashboard
   useEffect(() => {

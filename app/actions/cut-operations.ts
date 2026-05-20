@@ -261,8 +261,19 @@ export async function processCutOrder(params: {
           disponible: beforeGenerate?.stock_disponible || 0
         })
 
-        // Generar la pieza cortada usando el código del producto solicitado
-        await generateRemnantStock(cutOrder.product?.code || '', productSize)
+        // Incrementar stock de la pieza cortada
+        const { error: generateError } = await supabase
+          .from('inventory')
+          .update({
+            stock_total: (beforeGenerate?.stock_total || 0) + 1,
+            stock_generado: (beforeGenerate?.stock_generado || 0) + 1
+          })
+          .eq('product_id', cutOrder.product_id)
+
+        if (generateError) {
+          console.error(`   ❌ Error generando pieza cortada:`, generateError)
+          throw generateError
+        }
 
         const { data: cutPieceInventory, error: inventoryError } = await supabase
           .from('inventory')

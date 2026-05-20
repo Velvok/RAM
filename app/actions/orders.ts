@@ -812,3 +812,563 @@ export async function undoOrderDelivery(orderId: string) {
   console.log(`✅ Entrega del pedido ${orderId} deshecha correctamente`)
   return { success: true }
 }
+
+/**
+ * Marcar retirada parcial de un pedido
+ * Permite al cliente retirar solo algunos items o cantidades parciales
+ */
+export async function markPartialDelivery(
+  orderId: string,
+  itemsToDeliver: Array<{
+    cutOrderId?: string
+    preparationItemId?: string
+    quantity: number
+  }>
+) {
+  const supabase = createAdminClient()
+
+  // Obtener usuario actual
+  const { data: { user } } = await supabase.auth.getUser()
+
+  // Obtener el pedido con sus cut_orders y preparation_items
+  const { data: orderData, error: orderError } = await supabase
+    .from('orders')
+    .select(`
+      *,
+      cut_orders:cut_orders!cut_orders_order_id_fkey(
+        id,
+        status,
+        material_base_id,
+        quantity_requested,
+        quantity_cut,
+        product:products!cut_orders_product_id_fkey(*)
+      ),
+      preparation_items(
+        id,
+        status,
+        assigned_inventory_id,
+        quantity_requested,
+        quantity_prepared,
+        product:products(*)
+      )
+    `)
+    .eq('id', orderId)
+    .single()
+
+  if (orderError) throw orderError
+  if (!orderData) throw new Error('Pedido no encontrado')
+
+  // Validar que el pedido esté en un estado válido para retirada parcial
+  const validStatuses = ['aprobado', 'en_corte', 'finalizado', 'parcialmente_entregado']
+  if (!validStatuses.includes(orderData.status)) {
+    throw new Error(`El pedido debe estar en estado aprobado, en_corte, finalizado o parcialmente_entregado para realizar retiradas parciales. Estado actual: ${orderData.status}`)
+  }
+
+  // Obtener historial de entregas previas para calcular lo ya retirado
+  const { data: previousDeliveries } = await supabase
+    .from('delivery_history')
+    .select('items_delivered')
+    .eq('order_id', orderId)
+    .eq('is_active', true)
+
+  // Calcular cantidades ya retiradas
+  const alreadyDelivered: Record<string, number> = {}
+  if (previousDeliveries) {
+    for (const delivery of previousDeliveries) {
+      if (delivery.items_delivered) {
+        for (const item of delivery.items_delivered) {
+          const key = item.cut_order_id || item.preparation_item_id
+          alreadyDelivered[key] = (alreadyDelivered[key] || 0) + item.quantity
+        }
+      }
+    }
+  }
+
+  // Validar cada item a retirar
+  const stockConsumed = []
+  const itemsDeliveredForHistory = []
+
+  for (const itemToDeliver of itemsToDeliver) {
+    if (itemToDeliver.quantity <= 0) {
+      throw new Error('La cantidad a retirar debe ser mayor a 0')
+    }
+
+    if (itemToDeliver.cutOrderId) {
+      // Validar cut_order
+      const cutOrder = orderData.cut_orders?.find((co: any) => co.id === itemToDeliver.cutOrderId)
+      if (!cutOrder) {
+        throw new Error(`Orden de corte ${itemToDeliver.cutOrderId} no encontrada`)
+      }
+
+      const quantityCut = cutOrder.quantity_cut || 0
+      const alreadyDeliveredQty = alreadyDelivered[itemToDeliver.cutOrderId] || 0
+      const availableToDeliver = quantityCut - alreadyDeliveredQty
+
+      if (quantityCut === 0) {
+        throw new Error(`La orden de corte ${itemToDeliver.cutOrderId} no tiene unidades completadas`)
+      }
+
+      if (itemToDeliver.quantity > availableToDeliver) {
+        throw new Error(`No se puede retirar ${itemToDeliver.quantity} unidades de la orden de corte ${itemToDeliver.cutOrderId}. Disponible para retirar: ${availableToDeliver}`)
+      }
+
+      // Obtener inventory_id del material asignado
+      if (!cutOrder.material_base_id) {
+        throw new Error(`La orden de corte ${itemToDeliver.cutOrderId} no tiene material asignado`)
+      }
+
+      const { data: inventoryData, error: invError } = await supabase
+        .from('inventory')
+        .select('id')
+        .eq('product_id', cutOrder.material_base_id)
+        .limit(1)
+
+      if (invError || !inventoryData || inventoryData.length === 0) {
+        throw new Error(`No se encontró inventario para el material asignado a la orden de corte ${itemToDeliver.cutOrderId}`)
+      }
+
+      const inventory = inventoryData[0]
+
+      // Guardar para consumir stock después
+      stockConsumed.push({
+        cut_order_id: itemToDeliver.cutOrderId,
+        inventory_id: inventory.id,
+        quantity: itemToDeliver.quantity
+      })
+
+      itemsDeliveredForHistory.push({
+        cut_order_id: itemToDeliver.cutOrderId,
+        quantity: itemToDeliver.quantity,
+        product_code: cutOrder.product?.code || null,
+        product_name: cutOrder.product?.name || null
+      })
+
+    } else if (itemToDeliver.preparationItemId) {
+      // Validar preparation_item
+      const prepItem = orderData.preparation_items?.find((pi: any) => pi.id === itemToDeliver.preparationItemId)
+      if (!prepItem) {
+        throw new Error(`Preparation item ${itemToDeliver.preparationItemId} no encontrado`)
+      }
+
+      const quantityPrepared = prepItem.quantity_prepared || 0
+      const alreadyDeliveredQty = alreadyDelivered[itemToDeliver.preparationItemId] || 0
+      const availableToDeliver = quantityPrepared - alreadyDeliveredQty
+
+      if (quantityPrepared === 0) {
+        throw new Error(`El preparation item ${itemToDeliver.preparationItemId} no tiene unidades preparadas`)
+      }
+
+      if (itemToDeliver.quantity > availableToDeliver) {
+        throw new Error(`No se puede retirar ${itemToDeliver.quantity} unidades del preparation item ${itemToDeliver.preparationItemId}. Disponible para retirar: ${availableToDeliver}`)
+      }
+
+      if (!prepItem.assigned_inventory_id) {
+        throw new Error(`El preparation item ${itemToDeliver.preparationItemId} no tiene inventario asignado`)
+      }
+
+      // Guardar para consumir stock después
+      stockConsumed.push({
+        preparation_item_id: itemToDeliver.preparationItemId,
+        inventory_id: prepItem.assigned_inventory_id,
+        quantity: itemToDeliver.quantity
+      })
+
+      itemsDeliveredForHistory.push({
+        preparation_item_id: itemToDeliver.preparationItemId,
+        quantity: itemToDeliver.quantity,
+        product_code: prepItem.product?.code || null,
+        product_name: prepItem.product?.name || null
+      })
+    } else {
+      throw new Error('Debe especificar cutOrderId o preparationItemId')
+    }
+  }
+
+  console.log(`📦 Procesando retirada parcial del pedido ${orderId}`)
+  console.log(`   Items a retirar: ${itemsToDeliver.length}`)
+
+  // Consumir stock reservado
+  for (const stockItem of stockConsumed) {
+    console.log(`📦 Consumiendo ${stockItem.quantity} unidades de stock para inventory ${stockItem.inventory_id}`)
+
+    for (let i = 0; i < stockItem.quantity; i++) {
+      const { error: stockError } = await supabase.rpc('consume_reserved_stock', {
+        p_inventory_id: stockItem.inventory_id
+      })
+
+      if (stockError) {
+        console.error(`Error consuming reserved stock (unit ${i + 1}/${stockItem.quantity}):`, stockError)
+        throw new Error(`Error consumiendo stock: ${stockError.message}`)
+      }
+    }
+
+    console.log(`✅ ${stockItem.quantity} unidades consumidas`)
+  }
+
+  // Guardar en delivery_history
+  const { data: historyData, error: historyError } = await supabase
+    .from('delivery_history')
+    .insert({
+      order_id: orderId,
+      delivered_by: user?.id,
+      previous_status: orderData.status,
+      stock_consumed: stockConsumed,
+      delivery_type: 'partial',
+      items_delivered: itemsDeliveredForHistory
+    })
+    .select()
+
+  if (historyError) {
+    console.error('❌ Error guardando historial de retirada parcial:', historyError)
+    throw new Error(`Error guardando historial: ${historyError.message}`)
+  }
+
+  console.log('✅ Historial de retirada parcial guardado:', historyData[0].id)
+
+  // Calcular si todos los items ya están completamente retirados
+  let allItemsDelivered = true
+  let totalItemsCompleted = 0
+  let totalItemsDelivered = 0
+  
+  // Verificar cut_orders
+  for (const cutOrder of orderData.cut_orders || []) {
+    const quantityCut = cutOrder.quantity_cut || 0
+    const delivered = (alreadyDelivered[cutOrder.id] || 0) + 
+      (itemsDeliveredForHistory.find(i => i.cut_order_id === cutOrder.id)?.quantity || 0)
+    
+    console.log(`   Cut Order ${cutOrder.id}: cortado=${quantityCut}, entregado=${delivered}`)
+    
+    // Solo contar items que tienen algo cortado
+    if (quantityCut > 0) {
+      totalItemsCompleted += quantityCut
+      totalItemsDelivered += delivered
+      
+      if (delivered < quantityCut) {
+        allItemsDelivered = false
+      }
+    }
+  }
+  
+  // Verificar preparation_items
+  for (const prepItem of orderData.preparation_items || []) {
+    const quantityPrepared = prepItem.quantity_prepared || 0
+    const delivered = (alreadyDelivered[prepItem.id] || 0) + 
+      (itemsDeliveredForHistory.find(i => i.preparation_item_id === prepItem.id)?.quantity || 0)
+    
+    console.log(`   Prep Item ${prepItem.id}: preparado=${quantityPrepared}, entregado=${delivered}`)
+    
+    // Solo contar items que tienen algo preparado
+    if (quantityPrepared > 0) {
+      totalItemsCompleted += quantityPrepared
+      totalItemsDelivered += delivered
+      
+      if (delivered < quantityPrepared) {
+        allItemsDelivered = false
+      }
+    }
+  }
+  
+  // Si no hay items completados, no puede estar todo entregado
+  if (totalItemsCompleted === 0) {
+    allItemsDelivered = false
+  }
+  
+  console.log(`   Total completado: ${totalItemsCompleted}, Total entregado: ${totalItemsDelivered}, Todo entregado: ${allItemsDelivered}`)
+
+  // En una retirada PARCIAL, NUNCA marcar como 'entregado'
+  // El estado 'entregado' solo se usa con el botón "Marcar como Entregado"
+  // Aquí solo calculamos el estado según el progreso de producción
+  
+  const cutOrders = orderData.cut_orders || []
+  const prepItems = orderData.preparation_items || []
+  
+  let newStatus = orderData.status
+  
+  if (cutOrders.length === 0 && prepItems.length === 0) {
+    // No hay items de producción, mantener estado actual (probablemente 'aprobado')
+    newStatus = orderData.status
+  } else {
+    // Verificar estado de cut_orders
+    const hasCutOrdersInCorte = cutOrders.some((co: any) => 
+      ['pendiente', 'en_corte', 'pendiente_confirmacion'].includes(co.status)
+    )
+    const allCutOrdersCompleted = cutOrders.every((co: any) => 
+      co.status === 'completado' || co.status === 'finalizado'
+    )
+    
+    // Verificar estado de preparation_items
+    const hasPrepItemsInProgress = prepItems.some((pi: any) => 
+      ['pendiente', 'en_preparacion'].includes(pi.status)
+    )
+    const allPrepItemsCompleted = prepItems.every((pi: any) => 
+      pi.status === 'completado' || pi.status === 'preparado'
+    )
+    
+    if (hasCutOrdersInCorte || hasPrepItemsInProgress) {
+      newStatus = 'en_corte'
+    } else if (allCutOrdersCompleted && allPrepItemsCompleted) {
+      newStatus = 'finalizado'
+    } else {
+      // Mantener estado actual si no se puede determinar
+      newStatus = orderData.status
+    }
+  }
+  
+  const { error: updateError } = await supabase
+    .from('orders')
+    .update({ status: newStatus })
+    .eq('id', orderId)
+
+  if (updateError) throw updateError
+
+  console.log(`✅ Estado del pedido actualizado a: ${newStatus}`)
+
+  // Construir descripción detallada para el log
+  const itemDescriptions = []
+  for (const item of itemsDeliveredForHistory) {
+    if (item.cut_order_id) {
+      const cutOrder = orderData.cut_orders?.find((co: any) => co.id === item.cut_order_id)
+      const product = Array.isArray(cutOrder?.product) ? cutOrder.product[0] : cutOrder?.product
+      itemDescriptions.push(`${item.quantity} ud de ${product?.name || product?.code || 'producto'}`)
+    } else if (item.preparation_item_id) {
+      const prepItem = orderData.preparation_items?.find((pi: any) => pi.id === item.preparation_item_id)
+      const product = Array.isArray(prepItem?.product) ? prepItem.product[0] : prepItem?.product
+      itemDescriptions.push(`${item.quantity} ud de ${product?.name || product?.code || 'producto'}`)
+    }
+  }
+  const detailedDescription = `Retirada parcial: ${itemDescriptions.join(', ')}`
+
+  // Registrar en el log
+  await supabase.from('order_activity_log').insert({
+    order_id: orderId,
+    activity_type: 'partial_delivery',
+    description: detailedDescription,
+    metadata: {
+      items_count: itemsToDeliver.length,
+      previous_status: orderData.status,
+      new_status: newStatus,
+      stock_consumed_count: stockConsumed.length,
+      items_delivered: itemsDeliveredForHistory
+    }
+  })
+
+  // Notificar a Evo
+  try {
+    const { notifyPedidoParcialmenteEntregado } = await import('@/lib/ram-outbound')
+    
+    // Preparar items entregados para Evo
+    const itemsDelivered = []
+    const remainingItems = []
+    
+    for (const item of itemsDeliveredForHistory) {
+      if (item.cut_order_id) {
+        const cutOrder = orderData.cut_orders?.find((co: any) => co.id === item.cut_order_id)
+        const product = Array.isArray(cutOrder?.product) ? cutOrder.product[0] : cutOrder?.product
+        
+        itemsDelivered.push({
+          product_id: product?.id,
+          product_code: product?.code,
+          evo_product_id: product?.evo_product_id,
+          quantity: item.quantity,
+          unit: product?.unit || 'm'
+        })
+        
+        // Calcular restante
+        const totalDelivered = (alreadyDelivered[item.cut_order_id] || 0) + item.quantity
+        const remaining = (cutOrder?.quantity_cut || 0) - totalDelivered
+        if (remaining > 0) {
+          remainingItems.push({
+            product_id: product?.id,
+            product_code: product?.code,
+            evo_product_id: product?.evo_product_id,
+            quantity: remaining,
+            unit: product?.unit || 'm'
+          })
+        }
+      } else if (item.preparation_item_id) {
+        const prepItem = orderData.preparation_items?.find((pi: any) => pi.id === item.preparation_item_id)
+        const product = Array.isArray(prepItem?.product) ? prepItem.product[0] : prepItem?.product
+        
+        itemsDelivered.push({
+          product_id: product?.id,
+          product_code: product?.code,
+          evo_product_id: product?.evo_product_id,
+          quantity: item.quantity,
+          unit: product?.unit || 'ud'
+        })
+        
+        // Calcular restante
+        const totalDelivered = (alreadyDelivered[item.preparation_item_id] || 0) + item.quantity
+        const remaining = (prepItem?.quantity_prepared || 0) - totalDelivered
+        if (remaining > 0) {
+          remainingItems.push({
+            product_id: product?.id,
+            product_code: product?.code,
+            evo_product_id: product?.evo_product_id,
+            quantity: remaining,
+            unit: product?.unit || 'ud'
+          })
+        }
+      }
+    }
+    
+    await notifyPedidoParcialmenteEntregado({
+      orderId,
+      orderNumber: orderData.order_number,
+      evoOrderId: orderData.evo_order_id || orderData.ref_evo?.id_pedido,
+      itemsDelivered,
+      remainingItems: remainingItems.length > 0 ? remainingItems : undefined
+    })
+  } catch (notifyError) {
+    console.error('Error notificando retirada parcial a Evo:', notifyError)
+    // No lanzar error, la retirada ya se completó
+  }
+
+  // Revalidar rutas
+  revalidateOrders(orderId)
+  revalidateStock()
+
+  return { 
+    success: true, 
+    newStatus,
+    deliveryHistoryId: historyData[0].id
+  }
+}
+
+/**
+ * Deshacer retirada parcial de un pedido
+ * Restaura el stock y revierte el estado del pedido
+ */
+export async function undoPartialDelivery(deliveryHistoryId: string) {
+  const supabase = createAdminClient()
+
+  // Obtener usuario actual
+  const { data: { user } } = await supabase.auth.getUser()
+
+  // Buscar el registro de delivery_history
+  const { data: deliveryHistory, error: historyError } = await supabase
+    .from('delivery_history')
+    .select('*')
+    .eq('id', deliveryHistoryId)
+    .single()
+
+  if (historyError) {
+    if (historyError.code === 'PGRST116') {
+      throw new Error('No se encontró el historial de retirada')
+    }
+    throw historyError
+  }
+
+  // Validar que sea una retirada parcial
+  if (deliveryHistory.delivery_type !== 'partial') {
+    throw new Error('Solo se pueden deshacer retiradas parciales con esta función')
+  }
+
+  // Validar que esté activa
+  if (!deliveryHistory.is_active) {
+    throw new Error('Esta retirada ya fue deshecha')
+  }
+
+  // Verificar que esté dentro de las 24 horas
+  const deliveredAt = new Date(deliveryHistory.delivered_at)
+  const now = new Date()
+  const hoursDiff = (now.getTime() - deliveredAt.getTime()) / (1000 * 60 * 60)
+
+  if (hoursDiff > 24) {
+    throw new Error('Solo se puede deshacer una retirada parcial dentro de las primeras 24 horas')
+  }
+
+  console.log(`🔄 Deshaciendo retirada parcial ${deliveryHistoryId} (${hoursDiff.toFixed(1)}h después)`)
+
+  // Restaurar el stock consumido
+  for (const stockItem of deliveryHistory.stock_consumed) {
+    console.log(`📦 Restaurando ${stockItem.quantity} unidades de stock para inventory ${stockItem.inventory_id}`)
+    
+    for (let i = 0; i < stockItem.quantity; i++) {
+      const { error: restoreError } = await supabase.rpc('restore_reserved_stock', {
+        p_inventory_id: stockItem.inventory_id
+      })
+
+      if (restoreError) {
+        console.error(`Error restaurando stock (unit ${i + 1}/${stockItem.quantity}):`, restoreError)
+        throw new Error(`Error restaurando stock: ${restoreError.message}`)
+      }
+    }
+    
+    console.log(`✅ ${stockItem.quantity} unidades restauradas`)
+  }
+
+  // Revertir el estado del pedido
+  const { error: updateError } = await supabase
+    .from('orders')
+    .update({ status: deliveryHistory.previous_status })
+    .eq('id', deliveryHistory.order_id)
+
+  if (updateError) throw updateError
+
+  // Marcar el historial como inactivo
+  const { error: deactivateError } = await supabase
+    .from('delivery_history')
+    .update({ 
+      is_active: false,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', deliveryHistoryId)
+
+  if (deactivateError) {
+    console.error('Error desactivando historial:', deactivateError)
+  }
+
+  // Construir descripción detallada para el log
+  const { data: orderData } = await supabase
+    .from('orders')
+    .select(`
+      order_number,
+      cut_orders(id, product:products(*)),
+      preparation_items(id, product:products(*))
+    `)
+    .eq('id', deliveryHistory.order_id)
+    .single()
+
+  let detailedDescription = `Retirada parcial deshecha`
+  
+  if (deliveryHistory.items_delivered && deliveryHistory.items_delivered.length > 0) {
+    const itemDescriptions = []
+    for (const item of deliveryHistory.items_delivered) {
+      if (item.cut_order_id) {
+        const cutOrder = orderData?.cut_orders?.find((co: any) => co.id === item.cut_order_id)
+        const product = Array.isArray(cutOrder?.product) ? cutOrder.product[0] : cutOrder?.product
+        itemDescriptions.push(`${item.quantity} ud de ${product?.name || product?.code || 'producto'}`)
+      } else if (item.preparation_item_id) {
+        const prepItem = orderData?.preparation_items?.find((pi: any) => pi.id === item.preparation_item_id)
+        const product = Array.isArray(prepItem?.product) ? prepItem.product[0] : prepItem?.product
+        itemDescriptions.push(`${item.quantity} ud de ${product?.name || product?.code || 'producto'}`)
+      }
+    }
+    if (itemDescriptions.length > 0) {
+      detailedDescription = `Retirada parcial deshecha: ${itemDescriptions.join(', ')}`
+    }
+  }
+
+  if (orderData) {
+    await supabase.from('order_activity_log').insert({
+      order_id: deliveryHistory.order_id,
+      activity_type: 'partial_delivery_undone',
+      description: detailedDescription,
+      metadata: {
+        delivery_history_id: deliveryHistoryId,
+        delivered_at: deliveryHistory.delivered_at,
+        undone_by: user?.id,
+        restored_status: deliveryHistory.previous_status,
+        stock_restored_count: deliveryHistory.stock_consumed.length
+      }
+    })
+  }
+
+  // Revalidar pedidos y stock
+  revalidateOrders(deliveryHistory.order_id)
+  revalidateStock()
+
+  console.log(`✅ Retirada parcial ${deliveryHistoryId} deshecha correctamente`)
+  return { success: true }
+}

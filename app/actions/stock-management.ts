@@ -525,15 +525,58 @@ export async function generateRemnantStock(
     console.log(`📦 Generando código de producto: ${productCode}`)
   }
 
-  // Buscar el producto
-  const { data: product, error: productError } = await supabase
+  // Buscar el producto usando LIKE para mayor flexibilidad
+  let product = null
+  
+  // Generar patrón base (ej: ACPOLI.CR.2)
+  const baseCode = productCode.split('.').slice(0, -1).join('.') // Ej: ACPOLI.CR
+  const sizeValue = Math.floor(remnantSize) // Ej: 2
+  const pattern = `${baseCode}.${sizeValue}%` // Ej: ACPOLI.CR.2%
+  
+  console.log(`🔍 Buscando producto con patrón LIKE: ${pattern}`)
+  
+  // Buscar con LIKE (encuentra ACPOLI.CR.2, ACPOLI.CR.2.0, ACPOLI.CR.2.00, ACPOLI.CR.2,0, etc.)
+  const { data: products, error: searchError } = await supabase
     .from('products')
     .select('*')
-    .eq('code', productCode)
-    .single()
+    .like('code', pattern)
+    .limit(1)
+  
+  if (!searchError && products && products.length > 0) {
+    product = products[0]
+    productCode = product.code
+    console.log(`✅ Producto encontrado: ${productCode}`)
+  } else {
+    // Si no encuentra con LIKE, intentar variantes exactas como fallback
+    console.log(`⚠️ No encontrado con LIKE, intentando variantes exactas...`)
+    
+    const variants = [
+      productCode,                                    // ACPOLI.CR.2,0
+      productCode.replace(',', '.'),                  // ACPOLI.CR.2.0
+      `${baseCode}.${remnantSize.toFixed(2).replace('.', ',')}`,  // ACPOLI.CR.2,00
+      `${baseCode}.${remnantSize.toFixed(2)}`,          // ACPOLI.CR.2.00
+      `${baseCode}.${sizeValue}`,                     // ACPOLI.CR.2
+    ]
+    
+    for (const variant of variants) {
+      const result = await supabase
+        .from('products')
+        .select('*')
+        .eq('code', variant)
+        .single()
+      
+      if (!result.error && result.data) {
+        product = result.data
+        productCode = result.data.code
+        console.log(`✅ Producto encontrado con variante: ${variant}`)
+        break
+      }
+    }
+  }
 
-  if (productError || !product) {
-    console.error(`❌ Producto remanente no encontrado: ${productCode}`)
+  if (!product) {
+    console.error(`❌ Producto remanente no encontrado`)
+    console.error(`   Patrón LIKE intentado: ${pattern}`)
     throw new Error(`Producto remanente no encontrado (${productCode}). Por favor, contacta con RAM para crear este nuevo producto en caso de querer.`)
   }
 
@@ -576,7 +619,7 @@ export async function generateRemnantStock(
     })
 
     console.log(`✅ Stock generado: ${product.code} +1 unidad`)
-    console.log(`   📊 Nuevo estado: total=${newTotal}, generado=${newGenerado}`)
+    console.log(`   📊 Nuevo estado: total=${data.stock_total}, generado=${data.stock_generado}, disponible=${data.stock_disponible}`)
     
     // Revalidar todas las rutas relevantes
     revalidatePath('/admin', 'page')

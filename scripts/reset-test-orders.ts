@@ -27,11 +27,11 @@ if (!supabaseUrl || !supabaseKey) {
 const supabase = createClient(supabaseUrl, supabaseKey)
 
 async function resetTestOrders() {
-  const orderNumbers = ['PED-TEST-1779180554506', 'PED-TEST-1779180755902']
+  console.log('🔄 Reseteando pedidos de prueba...')
 
-  console.log(`🔄 Reseteando pedidos de prueba...`)
+  const testOrderNumbers = ['PED-TEST-1779180554506', 'PED-TEST-1779180755902']
 
-  for (const orderNumber of orderNumbers) {
+  for (const orderNumber of testOrderNumbers) {
     console.log(`\n📦 Procesando ${orderNumber}...`)
 
     // 1. Obtener el pedido
@@ -70,12 +70,54 @@ async function resetTestOrders() {
       }
     }
 
-    // 3. Eliminar todas las cut_orders
-    const { data: cutOrders } = await supabase
-      .from('cut_orders')
-      .select('id')
+    // 3. Obtener los productos del pedido desde order_lines
+    const { data: orderLines } = await supabase
+      .from('order_lines')
+      .select('product_id')
       .eq('order_id', order.id)
 
+    // Recolectar todos los inventory_ids asociados a los productos del pedido
+    const inventoryIds = new Set<string>()
+    if (orderLines && orderLines.length > 0) {
+      console.log(`   🔍 Buscando inventarios para ${orderLines.length} productos...`)
+      
+      for (const line of orderLines) {
+        const { data: inventories } = await supabase
+          .from('inventory')
+          .select('id')
+          .eq('product_id', line.product_id)
+        
+        if (inventories) {
+          inventories.forEach(inv => inventoryIds.add(inv.id))
+        }
+      }
+    }
+
+    // 4. Obtener cut_orders con sus inventory_ids antes de eliminar
+    const { data: cutOrders } = await supabase
+      .from('cut_orders')
+      .select('id, material_base_id')
+      .eq('order_id', order.id)
+
+    // Obtener preparation_items con sus inventory_ids
+    const { data: preparationItems } = await supabase
+      .from('preparation_items')
+      .select('id, assigned_inventory_id')
+      .eq('order_id', order.id)
+
+    // Agregar inventarios de cut_orders y preparation_items
+    if (cutOrders) {
+      cutOrders.forEach(co => {
+        if (co.material_base_id) inventoryIds.add(co.material_base_id)
+      })
+    }
+    if (preparationItems) {
+      preparationItems.forEach(pi => {
+        if (pi.assigned_inventory_id) inventoryIds.add(pi.assigned_inventory_id)
+      })
+    }
+
+    // Eliminar todas las cut_orders
     if (cutOrders && cutOrders.length > 0) {
       console.log(`   🗑️  Eliminando ${cutOrders.length} cut_orders...`)
       
@@ -93,12 +135,7 @@ async function resetTestOrders() {
       console.log(`   ℹ️  No hay cut_orders para eliminar`)
     }
 
-    // 4. Eliminar preparation_items
-    const { data: preparationItems } = await supabase
-      .from('preparation_items')
-      .select('id')
-      .eq('order_id', order.id)
-
+    // 5. Eliminar preparation_items
     if (preparationItems && preparationItems.length > 0) {
       console.log(`   🗑️  Eliminando ${preparationItems.length} preparation_items...`)
       
@@ -114,10 +151,32 @@ async function resetTestOrders() {
       }
     }
 
-    // 5. Eliminar stock_reservations
+    // 5. Resetear stock de los inventarios asociados a este pedido
+    if (inventoryIds.size > 0) {
+      console.log(`   🔄 Reseteando stock de ${inventoryIds.size} inventarios asociados...`)
+      
+      for (const invId of inventoryIds) {
+        const { error: resetStockError } = await supabase
+          .from('inventory')
+          .update({
+            stock_total: 0,
+            stock_generado: 0,
+            stock_reservado: 0
+          })
+          .eq('id', invId)
+
+        if (resetStockError) {
+          console.error(`   ❌ Error reseteando stock para inventory ${invId}:`, resetStockError)
+        } else {
+          console.log(`   ✅ Stock reseteado para inventory ${invId}`)
+        }
+      }
+    }
+
+    // 6. Eliminar stock_reservations
     const { data: reservations } = await supabase
       .from('stock_reservations')
-      .select('id')
+      .select('id, inventory_id')
       .eq('order_id', order.id)
 
     if (reservations && reservations.length > 0) {
@@ -135,20 +194,28 @@ async function resetTestOrders() {
       }
     }
 
-    // 6. Resetear stock_reservado en inventory (poner a 0)
-    console.log(`   🔄 Reseteando stock_reservado...`)
-    const { error: resetStockError } = await supabase
-      .from('inventory')
-      .update({ stock_reservado: 0 })
-      .gt('stock_reservado', 0)
+    // 7. Eliminar delivery_history (historial de entregas)
+    const { data: deliveryHistory } = await supabase
+      .from('delivery_history')
+      .select('id, stock_consumed')
+      .eq('order_id', order.id)
 
-    if (resetStockError) {
-      console.error(`   ❌ Error reseteando stock:`, resetStockError)
-    } else {
-      console.log(`   ✅ Stock_reservado reseteado`)
+    if (deliveryHistory && deliveryHistory.length > 0) {
+      console.log(`   🗑️  Eliminando ${deliveryHistory.length} registros de delivery_history...`)
+      
+      const { error: deleteHistoryError } = await supabase
+        .from('delivery_history')
+        .delete()
+        .eq('order_id', order.id)
+
+      if (deleteHistoryError) {
+        console.error(`   ❌ Error eliminando delivery_history:`, deleteHistoryError)
+      } else {
+        console.log(`   ✅ Delivery_history eliminado`)
+      }
     }
 
-    // 7. Actualizar estado del pedido a 'nuevo'
+    // 8. Actualizar estado del pedido a 'nuevo'
     const { error: updateError } = await supabase
       .from('orders')
       .update({ status: 'nuevo' })
@@ -162,7 +229,8 @@ async function resetTestOrders() {
   }
 
   console.log(`\n🎉 Pedidos reseteados exitosamente!`)
-  console.log(`\nAhora ambos pedidos están en estado 'nuevo' sin cut_orders ni reservas de stock.`)
+  console.log(`\nAhora ambos pedidos están en estado 'nuevo' sin cut_orders, reservas ni entregas.`)
+  console.log(`El stock de los inventarios asociados ha sido reseteado a 0.`)
   console.log(`\nPuedes aprobarlos de nuevo para hacer las pruebas.`)
 }
 

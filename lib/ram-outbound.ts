@@ -25,6 +25,7 @@ export type OutboundEventType =
   | 'stock_generado'      // Terminamos un corte (generamos producto)
   | 'excedente_creado'    // Generamos un recorte reutilizable
   | 'pedido_completado'   // Entregamos un pedido completo
+  | 'pedido_parcialmente_entregado'  // Retirada parcial de un pedido
   | 'pedido_iniciado'     // Iniciamos preparación
   | 'stock_ajustado'      // Ajuste manual de stock
   | 'test_ping'           // Para health checks
@@ -36,6 +37,7 @@ const ENDPOINT_MAP: Record<OutboundEventType, string> = {
   stock_generado: '/api/velvok/stock-generado',
   excedente_creado: '/api/velvok/excedente',
   pedido_completado: '/api/velvok/pedido-completado',
+  pedido_parcialmente_entregado: '/api/velvok/pedido-parcialmente-entregado',
   pedido_iniciado: '/api/velvok/pedido-iniciado',
   stock_ajustado: '/api/velvok/stock-ajustado',
   test_ping: '/api/velvok/ping',
@@ -383,6 +385,43 @@ export async function notifyPedidoCompletado(params: {
       order_number: params.orderNumber,
       evo_order_id: params.evoOrderId,
       items: params.items,
+    },
+    relatedEntityType: 'order',
+    relatedEntityId: params.orderId,
+  })
+}
+
+/**
+ * Notifica a RAM que se realizó una retirada parcial de un pedido
+ */
+export async function notifyPedidoParcialmenteEntregado(params: {
+  orderId: string
+  orderNumber: string
+  evoOrderId?: string
+  itemsDelivered: Array<{
+    product_id: string
+    product_code: string
+    evo_product_id?: string
+    quantity: number
+    unit: string
+  }>
+  remainingItems?: Array<{
+    product_id: string
+    product_code: string
+    evo_product_id?: string
+    quantity: number
+    unit: string
+  }>
+}) {
+  return enqueueOutboundEvent({
+    eventType: 'pedido_parcialmente_entregado',
+    payload: {
+      timestamp: new Date().toISOString(),
+      order_id: params.orderId,
+      order_number: params.orderNumber,
+      evo_order_id: params.evoOrderId,
+      items_delivered: params.itemsDelivered,
+      remaining_items: params.remainingItems,
     },
     relatedEntityType: 'order',
     relatedEntityId: params.orderId,

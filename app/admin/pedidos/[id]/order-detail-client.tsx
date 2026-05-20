@@ -4,10 +4,12 @@ import { useState, useEffect } from 'react'
 import { getOrderById } from '@/app/actions/orders'
 import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { ArrowLeft, CheckCircle2, Clock, ArrowRightLeft, AlertTriangle, Info } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Clock, ArrowRightLeft, AlertTriangle, Info, Package, Undo2 } from 'lucide-react'
 import Link from 'next/link'
 import OrderActions from './order-actions'
 import ReassignStockModal from '@/components/reassign-stock-modal'
+import PartialDeliveryModal from '@/components/partial-delivery-modal'
+import DeliveryHistoryPanel from '@/components/delivery-history-panel'
 import { useSuccess } from '@/components/success-modal'
 import { useError } from '@/components/error-modal'
 import { extractSizeFromName, extractSizeFromCode } from '@/lib/product-utils'
@@ -22,6 +24,8 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
   const [activityLog, setActivityLog] = useState<any[]>([])
   const [loadingLog, setLoadingLog] = useState(false)
   const [showCutOrdersInfo, setShowCutOrdersInfo] = useState(false)
+  const [partialDeliveryModalOpen, setPartialDeliveryModalOpen] = useState(false)
+  const [deliveryHistory, setDeliveryHistory] = useState<any[]>([])
   const { showSuccess, SuccessDialog } = useSuccess()
   const { showError, ErrorDialog } = useError()
 
@@ -90,11 +94,68 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
   // Cargar log al montar
   useEffect(() => {
     loadActivityLog()
+    loadDeliveryHistory()
   }, [order.id])
+
+  // Cargar historial de entregas
+  async function loadDeliveryHistory() {
+    try {
+      const { getDeliveryHistory } = await import('@/app/actions/delivery-history')
+      const data = await getDeliveryHistory(order.id)
+      setDeliveryHistory(data)
+    } catch (error) {
+      console.error('Error loading delivery history:', error)
+    }
+  }
 
   function openReassignModal(cutOrder: any) {
     setSelectedCutOrder(cutOrder)
     setReassignModalOpen(true)
+  }
+
+  async function handlePartialDelivery(itemsToDeliver: Array<{
+    cutOrderId?: string
+    preparationItemId?: string
+    quantity: number
+  }>) {
+    try {
+      const { markPartialDelivery } = await import('@/app/actions/orders')
+      const result = await markPartialDelivery(order.id, itemsToDeliver)
+      
+      alert(`✅ Retirada parcial realizada correctamente\n\nNuevo estado: ${result.newStatus}\nItems retirados: ${itemsToDeliver.length}`)
+      
+      setPartialDeliveryModalOpen(false)
+      
+      // Recargar pedido y historial
+      await reloadOrder()
+      await loadDeliveryHistory()
+      await loadActivityLog()
+    } catch (error: any) {
+      console.error('Error en retirada parcial:', error)
+      alert(`❌ Error en retirada parcial\n\n${error.message || 'Error desconocido'}`)
+      throw error
+    }
+  }
+
+  async function handleUndoPartialDelivery(deliveryHistoryId: string) {
+    if (!confirm('¿Estás seguro de deshacer esta retirada parcial?\n\nSe restaurará el stock y el estado del pedido.')) {
+      return
+    }
+
+    try {
+      const { undoPartialDelivery } = await import('@/app/actions/orders')
+      await undoPartialDelivery(deliveryHistoryId)
+      
+      alert('✅ Retirada parcial deshecha correctamente')
+      
+      // Recargar pedido y historial
+      await reloadOrder()
+      await loadDeliveryHistory()
+      await loadActivityLog()
+    } catch (error: any) {
+      console.error('Error deshaciendo retirada parcial:', error)
+      alert(`❌ Error\n\n${error.message || 'Error desconocido'}`)
+    }
   }
 
   async function handleReassign(fromCutOrderId: string, quantity: number) {
@@ -145,6 +206,8 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                   ? 'bg-blue-100 text-blue-800'
                   : order.status === 'finalizado'
                   ? 'bg-green-100 text-green-800'
+                  : order.status === 'parcialmente_entregado'
+                  ? 'bg-indigo-100 text-indigo-800'
                   : order.status === 'entregado'
                   ? 'bg-purple-100 text-purple-800'
                   : 'bg-red-100 text-red-800'
@@ -154,13 +217,21 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                order.status === 'aprobado' ? 'Aprobado' :
                order.status === 'en_corte' ? 'En Corte' :
                order.status === 'finalizado' ? 'Finalizado' :
+               order.status === 'parcialmente_entregado' ? 'Parcialmente Entregado' :
                order.status === 'entregado' ? 'Entregado' :
                order.status}
             </span>
           </div>
         </div>
         <div>
-          <OrderActions key={refreshKey} order={order} onUpdate={reloadOrder} isHeaderMode={true} />
+          <OrderActions 
+            key={refreshKey} 
+            order={order} 
+            onUpdate={reloadOrder} 
+            isHeaderMode={true}
+            onOpenPartialDelivery={() => setPartialDeliveryModalOpen(true)}
+            deliveryHistory={deliveryHistory}
+          />
         </div>
       </div>
 
@@ -561,61 +632,85 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
             </div>
           ) : (
             <div className="space-y-3">
-              {activityLog.map((activity) => (
-                <div
-                  key={activity.id}
-                  className={`flex items-start gap-3 p-4 rounded-lg border ${
-                    activity.activity_type === 'reassign_out' 
-                      ? 'bg-blue-50 border-blue-200' 
-                      : activity.activity_type === 'reassign_in'
-                      ? 'bg-green-50 border-green-200'
-                      : 'bg-slate-50 border-slate-200'
-                  }`}
-                >
-                  <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
-                    activity.activity_type === 'reassign_out'
-                      ? 'bg-blue-100'
-                      : activity.activity_type === 'reassign_in'
-                      ? 'bg-green-100'
-                      : 'bg-blue-100'
-                  }`}>
-                    {activity.activity_type === 'reassign_out' ? (
-                      <ArrowRightLeft className="w-5 h-5 text-blue-600" />
-                    ) : activity.activity_type === 'reassign_in' ? (
-                      <CheckCircle2 className="w-5 h-5 text-green-600" />
-                    ) : activity.activity_type === 'reassign' ? (
-                      <ArrowRightLeft className="w-5 h-5 text-blue-600" />
-                    ) : (
-                      <Clock className="w-5 h-5 text-slate-600" />
-                    )}
+              {activityLog.map((activity) => {
+                // Determinar colores según el tipo de actividad
+                let bgColor = 'bg-slate-50'
+                let borderColor = 'border-slate-200'
+                let iconBgColor = 'bg-blue-100'
+                let iconColor = 'text-blue-600'
+                let icon = <Clock className="w-5 h-5" />
+
+                if (activity.activity_type === 'reassign_out') {
+                  bgColor = 'bg-blue-50'
+                  borderColor = 'border-blue-200'
+                  iconBgColor = 'bg-blue-100'
+                  iconColor = 'text-blue-600'
+                  icon = <ArrowRightLeft className="w-5 h-5" />
+                } else if (activity.activity_type === 'reassign_in') {
+                  bgColor = 'bg-green-50'
+                  borderColor = 'border-green-200'
+                  iconBgColor = 'bg-green-100'
+                  iconColor = 'text-green-600'
+                  icon = <CheckCircle2 className="w-5 h-5" />
+                } else if (activity.activity_type === 'reassign') {
+                  bgColor = 'bg-blue-50'
+                  borderColor = 'border-blue-200'
+                  iconBgColor = 'bg-blue-100'
+                  iconColor = 'text-blue-600'
+                  icon = <ArrowRightLeft className="w-5 h-5" />
+                } else if (activity.activity_type === 'partial_delivery') {
+                  bgColor = 'bg-purple-50'
+                  borderColor = 'border-purple-200'
+                  iconBgColor = 'bg-purple-100'
+                  iconColor = 'text-purple-600'
+                  icon = <Package className="w-5 h-5" />
+                } else if (activity.activity_type === 'partial_delivery_undone') {
+                  bgColor = 'bg-orange-50'
+                  borderColor = 'border-orange-200'
+                  iconBgColor = 'bg-orange-100'
+                  iconColor = 'text-orange-600'
+                  icon = <Undo2 className="w-5 h-5" />
+                }
+
+                return (
+                  <div
+                    key={activity.id}
+                    className={`flex items-start gap-3 p-4 rounded-lg border ${bgColor} ${borderColor}`}
+                  >
+                    <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${iconBgColor} ${iconColor}`}>
+                      {icon}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-900">
+                        {activity.description}
+                      </p>
+                      {activity.metadata && (
+                        <div className="mt-2 text-xs text-slate-600 bg-white/50 rounded p-2 border border-slate-200">
+                          <p><strong>Acción:</strong> {activity.metadata.action}</p>
+                          {activity.metadata.product_code && (
+                            <p><strong>Chapa:</strong> {activity.metadata.product_code}</p>
+                          )}
+                          {activity.metadata.from_order_number && activity.metadata.to_order_number && (
+                            <p><strong>Transferencia:</strong> {activity.metadata.from_order_number} → {activity.metadata.to_order_number}</p>
+                          )}
+                          {activity.metadata.items_delivered && (
+                            <p><strong>Items entregados:</strong> {activity.metadata.items_delivered.length}</p>
+                          )}
+                        </div>
+                      )}
+                      <p className="text-xs text-slate-500 mt-1">
+                        {new Date(activity.created_at).toLocaleString('es-ES', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-900">
-                      {activity.description}
-                    </p>
-                    {activity.metadata && (
-                      <div className="mt-2 text-xs text-slate-600 bg-white/50 rounded p-2 border border-slate-200">
-                        <p><strong>Acción:</strong> {activity.metadata.action}</p>
-                        {activity.metadata.product_code && (
-                          <p><strong>Chapa:</strong> {activity.metadata.product_code}</p>
-                        )}
-                        {activity.metadata.from_order_number && activity.metadata.to_order_number && (
-                          <p><strong>Transferencia:</strong> {activity.metadata.from_order_number} → {activity.metadata.to_order_number}</p>
-                        )}
-                      </div>
-                    )}
-                    <p className="text-xs text-slate-500 mt-1">
-                      {new Date(activity.created_at).toLocaleString('es-ES', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </p>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>
@@ -651,6 +746,23 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
             await reloadOrder()
             showSuccess('Stock actualizado correctamente', 'Stock Cambiado')
           }}
+        />
+      )}
+
+      {/* Modal de Retirada Parcial */}
+      <PartialDeliveryModal
+        open={partialDeliveryModalOpen}
+        onClose={() => setPartialDeliveryModalOpen(false)}
+        order={order}
+        deliveryHistory={deliveryHistory}
+        onConfirm={handlePartialDelivery}
+      />
+
+      {/* Panel de Historial de Entregas */}
+      {deliveryHistory.length > 0 && (
+        <DeliveryHistoryPanel
+          deliveryHistory={deliveryHistory}
+          onUndoDelivery={handleUndoPartialDelivery}
         />
       )}
 
