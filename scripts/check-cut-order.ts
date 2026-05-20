@@ -64,7 +64,8 @@ async function checkCutOrder() {
 
   for (const co of cutOrders) {
     console.log(`\n🔹 ${co.cut_number}`)
-    console.log(`   Producto: ${co.product?.code} - ${co.product?.name}`)
+    const product = Array.isArray(co.product) ? co.product[0] : co.product
+    console.log(`   Producto: ${product?.code} - ${product?.name}`)
     console.log(`   material_base_id: ${co.material_base_id || 'NULL'}`)
     console.log(`   material_base_quantity: ${co.material_base_quantity || 'NULL'}`)
 
@@ -100,7 +101,8 @@ async function checkCutOrder() {
         } else if (inventory) {
           console.log(`   ✅ material_base_id es un INVENTORY_ID:`)
           console.log(`      ID: ${inventory.id}`)
-          console.log(`      Producto: ${inventory.product?.code}`)
+          const invProduct = Array.isArray(inventory.product) ? inventory.product[0] : inventory.product
+          console.log(`      Producto: ${invProduct?.code}`)
         }
       }
     }
