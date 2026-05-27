@@ -12,8 +12,6 @@ export async function getAvailableStock(productCode: string) {
   // Extraer el código de familia del CÓDIGO del producto
   const familyCode = extractFamilyCode(productCode)
 
-  console.log('🔍 [SERVER] Buscando stock para:', { productCode, familyCode, productSize })
-
   // Buscar TODO el stock disponible
   const { data: inventory, error } = await supabase
     .from('inventory')
@@ -24,8 +22,6 @@ export async function getAvailableStock(productCode: string) {
     console.error('Error en consulta inventory:', error)
     throw error
   }
-
-  console.log('📦 [SERVER] Stock total encontrado:', inventory?.length)
 
   if (!inventory || inventory.length === 0) {
     return []
@@ -42,8 +38,6 @@ export async function getAvailableStock(productCode: string) {
     console.error('Error obteniendo productos:', productsError)
     throw productsError
   }
-
-  console.log('📦 [SERVER] Productos encontrados:', products?.length)
 
   // Crear un mapa de productos por ID
   const productMap = new Map((products || []).map(p => [p.id, p]))
@@ -79,9 +73,6 @@ export async function getAvailableStock(productCode: string) {
       const sizeB = extractSizeFromCode(prodB?.code || '')
       return sizeA - sizeB
     })
-
-  console.log('📦 [SERVER] Stock filtrado:', filtered.length)
-  console.log('📦 [SERVER] Productos filtrados:', filtered.map(f => f.product?.code))
 
   return filtered
 }

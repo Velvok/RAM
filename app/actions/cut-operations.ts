@@ -125,13 +125,13 @@ export async function processCutOrder(params: {
   const isFullyCompleted = newQuantityCut >= cutOrder.quantity_requested
 
   console.log(`📊 Progreso de corte: ${cutOrder.quantity_cut || 0} + ${quantityToCut} = ${newQuantityCut}/${cutOrder.quantity_requested}`)
-  console.log(`📊 isFullyCompleted: ${isFullyCompleted}, nuevo estado: ${isFullyCompleted ? 'completada' : 'en_proceso'}`)
+  console.log(`📊 isFullyCompleted: ${isFullyCompleted}, nuevo estado: ${isFullyCompleted ? 'completada' : 'pendiente'}`)
 
   // Actualizar cut_order directamente aquí en lugar de usar finishCutOrder
   const { error: updateError } = await supabase
     .from('cut_orders')
     .update({
-      status: isFullyCompleted ? 'completada' : 'en_proceso',
+      status: isFullyCompleted ? 'completada' : 'pendiente',
       quantity_cut: newQuantityCut,
       finished_at: isFullyCompleted ? new Date().toISOString() : null,
     })
@@ -142,7 +142,7 @@ export async function processCutOrder(params: {
     throw updateError
   }
 
-  console.log(`✅ Cut_order actualizada: status=${isFullyCompleted ? 'completada' : 'en_proceso'}, quantity_cut=${newQuantityCut}`)
+  console.log(`✅ Cut_order actualizada: status=${isFullyCompleted ? 'completada' : 'pendiente'}, quantity_cut=${newQuantityCut}`)
   
   // Registrar cut_line
   await supabase

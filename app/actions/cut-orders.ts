@@ -78,7 +78,7 @@ export async function startCutOrder(cutOrderId: string, operatorId: string) {
   const { data, error } = await supabase
     .from('cut_orders')
     .update({
-      status: 'en_proceso',
+      status: 'pendiente',
       assigned_to: operatorId,
       started_at: new Date().toISOString(),
     })

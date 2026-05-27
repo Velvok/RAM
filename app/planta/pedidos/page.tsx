@@ -51,6 +51,7 @@ export default function PlantaPedidosPage() {
       
       console.log('🔍 Buscando pedidos en estados: aprobado, en_corte, finalizado')
       
+      // Agregar timestamp para evitar caché del navegador
       const data = await getOrdersForPlanta()
       
       console.log('✅ Pedidos encontrados:', data?.length || 0, data)
