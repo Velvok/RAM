@@ -12,13 +12,15 @@ export default function OrderActions({
   onUpdate,
   isHeaderMode = false,
   onOpenPartialDelivery,
-  deliveryHistory = []
+  deliveryHistory = [],
+  deliveryHistoryLoaded = false
 }: { 
   order: any
   onUpdate?: () => Promise<void>
   isHeaderMode?: boolean
   onOpenPartialDelivery?: () => void
   deliveryHistory?: any[]
+  deliveryHistoryLoaded?: boolean
 }) {
   const [loading, setLoading] = useState(false)
   const [undoingDelivery, setUndoingDelivery] = useState(false)
@@ -62,6 +64,14 @@ export default function OrderActions({
       const result = await generateCutOrders(order.id)
       await reloadOrder()
       
+      // Revalidar para sincronizar con tablet
+      try {
+        await fetch(`/api/revalidate?path=/admin/pedidos/${order.id}`, { method: 'POST' })
+        await fetch(`/api/revalidate?path=/planta/pedidos/${order.id}`, { method: 'POST' })
+      } catch (e) {
+        console.log('Revalidación fallida')
+      }
+      
       if (result.warnings && result.warnings.length > 0) {
         // Mostrar advertencias si hay problemas de stock
         showError(
@@ -95,6 +105,14 @@ export default function OrderActions({
       const result = await approveOrderOnHold(order.id)
       await reloadOrder()
       
+      // Revalidar para sincronizar con tablet
+      try {
+        await fetch(`/api/revalidate?path=/admin/pedidos/${order.id}`, { method: 'POST' })
+        await fetch(`/api/revalidate?path=/planta/pedidos/${order.id}`, { method: 'POST' })
+      } catch (e) {
+        console.log('Revalidación fallida')
+      }
+      
       showSuccess(
         result.message || 'Pedido aprobado en pausa. El stock deberá asignarse manualmente desde el detalle del pedido.',
         'Pedido Aprobado en Pausa'
@@ -121,6 +139,14 @@ export default function OrderActions({
       await markOrderAsDelivered(order.id)
       await reloadOrder()
       
+      // Revalidar para sincronizar con tablet
+      try {
+        await fetch(`/api/revalidate?path=/admin/pedidos/${order.id}`, { method: 'POST' })
+        await fetch(`/api/revalidate?path=/planta/pedidos/${order.id}`, { method: 'POST' })
+      } catch (e) {
+        console.log('Revalidación fallida')
+      }
+      
       showSuccess(
         'Pedido marcado como entregado. El stock reservado ha sido consumido.',
         '✓ Pedido Entregado'
@@ -135,7 +161,7 @@ export default function OrderActions({
   async function handleUndoDelivery() {
     const confirmed = await confirm(
       '¿Estás seguro de deshacer esta entrega?',
-      'Esta acción restaurará el stock consumido y revertirá el estado del pedido. Solo se puede hacer dentro de las primeras 24 horas.'
+      'Esta acción restaurará el stock consumido y revertirá el estado del pedido.'
     )
     
     if (!confirmed) return
@@ -144,6 +170,14 @@ export default function OrderActions({
     try {
       await undoOrderDelivery(order.id)
       await reloadOrder()
+      
+      // Revalidar para sincronizar con tablet
+      try {
+        await fetch(`/api/revalidate?path=/admin/pedidos/${order.id}`, { method: 'POST' })
+        await fetch(`/api/revalidate?path=/planta/pedidos/${order.id}`, { method: 'POST' })
+      } catch (e) {
+        console.log('Revalidación fallida')
+      }
       
       showSuccess(
         'Entrega deshecha correctamente. El stock ha sido restaurado.',
@@ -186,6 +220,7 @@ export default function OrderActions({
     })
 
   const canPartialDelivery = 
+    deliveryHistoryLoaded &&
     hasAvailableItems && 
     ['aprobado', 'en_corte', 'finalizado', 'parcialmente_entregado'].includes(order.status)
 

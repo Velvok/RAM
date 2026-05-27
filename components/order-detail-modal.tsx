@@ -21,7 +21,7 @@ export default function OrderDetailModal({ order, isOpen, onClose, onUpdate }: O
   // Obtener info de estado
   const cutOrders = order.cut_orders || []
   const totalCutOrders = cutOrders.length
-  const completedCutOrders = cutOrders.filter((co: any) => co.status === 'completada').length
+  const completedCutOrders = cutOrders.filter((co: any) => co.status === 'completada' || co.status === 'entregado').length
   const inProgressCutOrders = cutOrders.filter((co: any) => co.status === 'en_proceso').length
   const pendingCutOrders = cutOrders.filter((co: any) => co.status === 'lanzada').length
 

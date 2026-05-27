@@ -191,8 +191,8 @@ export async function getAvailableOrdersForReassignment(productId: string, minLe
       // Debe tener unidades cortadas disponibles
       const hasCutUnits = (cutOrder.quantity_cut || 0) > 0
       
-      // Debe estar completada o parcialmente completada
-      const isAvailable = cutOrder.status === 'completada' || hasCutUnits
+      // Debe estar completada, entregado o parcialmente completada
+      const isAvailable = cutOrder.status === 'completada' || cutOrder.status === 'entregado' || hasCutUnits
       
       // NOTA: No filtramos por minLength aquí, permitimos cualquier cantidad disponible
       // El usuario puede reasignar la cantidad que necesite desde el modal

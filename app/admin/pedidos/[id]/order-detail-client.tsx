@@ -13,6 +13,7 @@ import DeliveryHistoryPanel from '@/components/delivery-history-panel'
 import { useSuccess } from '@/components/success-modal'
 import { useError } from '@/components/error-modal'
 import { extractSizeFromName, extractSizeFromCode } from '@/lib/product-utils'
+import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 
 export default function OrderDetailClient({ initialOrder }: { initialOrder: any }) {
   const [order, setOrder] = useState(initialOrder)
@@ -26,6 +27,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
   const [showCutOrdersInfo, setShowCutOrdersInfo] = useState(false)
   const [partialDeliveryModalOpen, setPartialDeliveryModalOpen] = useState(false)
   const [deliveryHistory, setDeliveryHistory] = useState<any[]>([])
+  const [deliveryHistoryLoaded, setDeliveryHistoryLoaded] = useState(false)
   const { showSuccess, SuccessDialog } = useSuccess()
   const { showError, ErrorDialog } = useError()
 
@@ -75,6 +77,12 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
     }
   }
 
+  // Auto-refresh para detectar cambios desde tablet
+  useAutoRefresh(order.id, () => getOrderById(order.id), {
+    enabled: true,
+    interval: 10, // Verificar cada 10 segundos
+  })
+
   // Cargar log de actividades
   async function loadActivityLog() {
     setLoadingLog(true)
@@ -105,6 +113,8 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
       setDeliveryHistory(data)
     } catch (error) {
       console.error('Error loading delivery history:', error)
+    } finally {
+      setDeliveryHistoryLoaded(true)
     }
   }
 
@@ -231,6 +241,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
             isHeaderMode={true}
             onOpenPartialDelivery={() => setPartialDeliveryModalOpen(true)}
             deliveryHistory={deliveryHistory}
+            deliveryHistoryLoaded={deliveryHistoryLoaded}
           />
         </div>
       </div>
@@ -494,6 +505,11 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                           <Clock className="w-3 h-3 mr-1" />
                           Pendiente Operario
                         </span>
+                      ) : cutOrder.status === 'entregado' ? (
+                        <span className="px-2 inline-flex items-center text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                          <CheckCircle2 className="w-3 h-3 mr-1" />
+                          Entregado
+                        </span>
                       ) : (
                         <span className="px-2 inline-flex items-center text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
                           <CheckCircle2 className="w-3 h-3 mr-1" />
@@ -511,8 +527,8 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                           Reasignar
                         </button>
                       )}
-                      {cutOrder.status === 'completada' && (
-                        <span className="text-xs text-slate-400">Completado</span>
+                      {(cutOrder.status === 'completada' || cutOrder.status === 'entregado') && (
+                        <span className="text-xs text-slate-400">{cutOrder.status === 'entregado' ? 'Entregado' : 'Completado'}</span>
                       )}
                     </td>
                   </tr>
@@ -597,13 +613,15 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        item.status === 'completada'
+                        item.status === 'entregado'
+                          ? 'bg-blue-100 text-blue-800'
+                          : item.status === 'completada'
                           ? 'bg-green-100 text-green-800'
                           : item.status === 'en_proceso'
-                          ? 'bg-blue-100 text-blue-800'
+                          ? 'bg-indigo-100 text-indigo-800'
                           : 'bg-yellow-100 text-yellow-800'
                       }`}>
-                        {item.status === 'completada' ? 'Completada' : item.status === 'en_proceso' ? 'En Proceso' : 'Pendiente'}
+                        {item.status === 'entregado' ? 'Entregado' : item.status === 'completada' ? 'Completada' : item.status === 'en_proceso' ? 'En Proceso' : 'Pendiente'}
                       </span>
                     </td>
                   </tr>

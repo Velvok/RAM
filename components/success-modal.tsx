@@ -76,15 +76,9 @@ export function useSuccess() {
     isOpen: false,
     message: ''
   })
-  const [lastMessage, setLastMessage] = useState<string>('')
 
   const showSuccess = (message: string, title?: string) => {
-    // Evitar mostrar el mismo mensaje repetidamente
-    if (lastMessage === message && config.isOpen) {
-      return
-    }
-    
-    setLastMessage(message)
+    // Mostrar siempre el mensaje, sin importar si es repetido
     setConfig({
       isOpen: true,
       title: title || '¡Éxito!',
@@ -98,7 +92,6 @@ export function useSuccess() {
       title: undefined,
       message: ''
     })
-    setLastMessage('')
   }
 
   const SuccessDialog = () => (

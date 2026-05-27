@@ -1,6 +1,11 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/server'
+import { revalidatePath } from 'next/cache'
+import { unstable_noStore } from 'next/cache'
+
+// Deshabilitar caché en todas las queries
+unstable_noStore()
 
 /**
  * Server actions para queries que se ejecutan desde componentes cliente

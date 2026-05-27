@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { CheckCircle2, ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, Package, Clock, Truck } from 'lucide-react'
 import { extractSizeFromName, extractSizeFromCode } from '@/lib/product-utils'
+import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 
 // Tipo para sugerencias (mock)
 interface MaterialSuggestion {
@@ -93,6 +94,15 @@ export default function PlantaPedidoDetallePage() {
     }
   }
 
+  // Auto-refresh para detectar cambios desde admin
+  useAutoRefresh(pedidoId, async () => {
+    const { getOrderById } = await import('@/app/actions/client-queries')
+    return await getOrderById(pedidoId)
+  }, {
+    enabled: true,
+    interval: 10, // Verificar cada 10 segundos
+  })
+
   async function handleMarkAsDelivered() {
     if (!pedido) return
     
@@ -114,7 +124,15 @@ export default function PlantaPedidoDetallePage() {
       
       // Recargar el pedido para ver el nuevo estado
       await loadPedido()
-      
+
+      // Revalidar para sincronizar con admin
+      try {
+        await fetch(`/api/revalidate?path=/planta/pedidos/${pedidoId}`, { method: 'POST' })
+        await fetch(`/api/revalidate?path=/admin/pedidos/${pedido.id}`, { method: 'POST' })
+      } catch (e) {
+        console.log('Revalidación fallida')
+      }
+
       // Mostrar mensaje de éxito
       alert('¡Pedido marcado como entregado correctamente!')
       
@@ -131,7 +149,7 @@ export default function PlantaPedidoDetallePage() {
 
     const confirmed = confirm(
       '¿Estás seguro de deshacer esta entrega?\n\n' +
-      'Esta acción restaurará el stock consumido y revertirá el estado del pedido. Solo se puede hacer dentro de las primeras 24 horas.'
+      'Esta acción restaurará el stock consumido y revertirá el estado del pedido.'
     )
 
     if (!confirmed) return
@@ -144,6 +162,14 @@ export default function PlantaPedidoDetallePage() {
 
       // Recargar el pedido para ver el nuevo estado
       await loadPedido()
+
+      // Revalidar para sincronizar con admin
+      try {
+        await fetch(`/api/revalidate?path=/planta/pedidos/${pedidoId}`, { method: 'POST' })
+        await fetch(`/api/revalidate?path=/admin/pedidos/${pedido.id}`, { method: 'POST' })
+      } catch (e) {
+        console.log('Revalidación fallida')
+      }
 
       // Mostrar mensaje de éxito
       alert('¡Entrega deshecha correctamente! El stock ha sido restaurado.')
@@ -249,6 +275,14 @@ export default function PlantaPedidoDetallePage() {
           // Recargar sugerencias para reflejar el cambio
           const lengthNeeded = extractSizeFromCode(cutOrder.product?.code || '')
           await toggleCutOrder(cutOrderId, cutOrder.product_id, lengthNeeded)
+
+          // Revalidar para sincronizar con admin
+          try {
+            await fetch(`/api/revalidate?path=/planta/pedidos/${pedidoId}`, { method: 'POST' })
+            await fetch(`/api/revalidate?path=/admin/pedidos/${pedido.id}`, { method: 'POST' })
+          } catch (e) {
+            console.log('Revalidación fallida')
+          }
         }
       } else {
         alert('Error al cambiar stock')
@@ -836,8 +870,21 @@ export default function PlantaPedidoDetallePage() {
       {/* Lista de Órdenes de Corte */}
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-4">
         {pedido.cut_orders && pedido.cut_orders.length > 0 ? (
-          // Filtrar solo órdenes principales (sin parent_cut_order_id)
-          pedido.cut_orders.filter((co: any) => !co.parent_cut_order_id).map((cutOrder: any) => {
+          // Filtrar solo órdenes principales (sin parent_cut_order_id) y ordenar
+          pedido.cut_orders
+            .filter((co: any) => !co.parent_cut_order_id)
+            .sort((a: any, b: any) => {
+              // Primero las pendientes (no completadas), luego las completadas
+              const aIsCompleted = a.status === 'completada'
+              const bIsCompleted = b.status === 'completada'
+              
+              if (aIsCompleted && !bIsCompleted) return 1
+              if (!aIsCompleted && bIsCompleted) return -1
+              
+              // Dentro del mismo grupo, mantener orden original por ID
+              return 0
+            })
+            .map((cutOrder: any) => {
             const isExpanded = expandedCutId === cutOrder.id
             const isPending = cutOrder.status === 'pendiente'
             const isCompleted = cutOrder.status === 'completada'
@@ -1003,57 +1050,35 @@ export default function PlantaPedidoDetallePage() {
                           </div>
                         </div>
 
-                        <button
-                          onClick={() => {
-                            setSelectedMaterials(prev => ({ ...prev, [cutOrder.id]: cutSuggestions.best }))
-                            setShowOtherOptions(prev => ({ ...prev, [cutOrder.id]: false }))
-                          }}
-                          className={`w-full h-20 rounded-2xl text-xl font-bold uppercase transition-all transform active:scale-95 mt-2 ${
-                            selectedMaterial?.id === cutSuggestions.best.id
-                              ? 'bg-green-600 text-white shadow-lg shadow-green-500/30'
-                              : 'bg-green-600/20 text-green-400 hover:bg-green-600/40 border-2 border-green-500/50'
-                          }`}
-                        >
-                          {selectedMaterial?.id === cutSuggestions.best.id ? 'Material Seleccionado' : 'Utilizar Sugerencia'}
-                        </button>
                       </div>
                     )}
 
-                    {/* BLOQUE B: Alternativas y Selector Manual (Recuadro Colapsable) */}
+                    {/* BLOQUE B: Alternativas y Selector Manual (Botón directo a cambiar stock) */}
                     {((cutSuggestions?.alternatives && cutSuggestions.alternatives.length > 0) || (cutSuggestions?.all && cutSuggestions.all.length > 0)) && (
-                      <div className="bg-slate-800/50 border-2 border-slate-600 rounded-2xl shadow-lg overflow-hidden">
-                        {/* Título Clickeable */}
-                        <button
-                          onClick={() => setShowOtherOptions(prev => ({ ...prev, [cutOrder.id]: !prev[cutOrder.id] }))}
-                          className="w-full p-6 hover:bg-slate-800/70 transition-all flex items-center justify-center gap-3"
-                        >
-                          <h5 className="text-xl font-bold text-white uppercase">Otras Opciones</h5>
-                          <span className="text-xl text-white">{showOtherOptions[cutOrder.id] ? '▼' : '▶'}</span>
-                        </button>
-                        
-                        {/* Contenido Expandible */}
-                        {showOtherOptions[cutOrder.id] && (
-                          <div className="px-6 pb-6 space-y-6 animate-in slide-in-from-top duration-300">
-                            {/* Botón para cambiar stock asignado */}
-                            <button
-                              onClick={async () => {
-                                // Cargar stock antes de abrir el modal
-                                await loadAvailableStockForCutOrder(cutOrder.id, cutOrder)
-                                setShowChangeStockModal(prev => ({ ...prev, [cutOrder.id]: true }))
-                              }}
-                              className="w-full h-14 bg-amber-600 hover:bg-amber-500 border-2 border-amber-500 rounded-xl text-lg font-bold text-white transition-all flex items-center justify-center gap-3"
-                            >
-                              <span>🔄 Cambiar Stock Asignado</span>
-                            </button>
-                          </div>
-                        )}
-                      </div>
+                      <button
+                        onClick={async () => {
+                          // Cargar stock antes de abrir el modal
+                          await loadAvailableStockForCutOrder(cutOrder.id, cutOrder)
+                          setShowChangeStockModal(prev => ({ ...prev, [cutOrder.id]: true }))
+                        }}
+                        className="w-full h-14 bg-slate-800/50 hover:bg-slate-800/70 border-2 border-slate-600 rounded-2xl text-lg font-bold text-white transition-all flex items-center justify-center gap-3"
+                      >
+                        <h5 className="text-xl font-bold text-white uppercase">Asignar otro tamaño de corte</h5>
+                        <span className="text-xl text-white">🔄</span>
+                      </button>
                     )}
 
                     {/* BLOQUE C: Cantidad a Cortar (Stepper Industrial) */}
                     <div>
                       <label className="block text-lg font-bold text-white mb-3 uppercase">
-                        Cantidad a Cortar:
+                        {(() => {
+                          const materialSize = selectedMaterial?.length || 0
+                          const productSize = cutOrder.product?.length_meters || 
+                                           parseFloat(cutOrder.product?.code?.match(/\.(\d+),(\d+)$/)?.[0]?.replace('.', '')?.replace(',', '.') || '0') ||
+                                           0
+                          const isCut = materialSize > productSize
+                          return isCut ? 'Cantidad a Cortar:' : 'Cantidad a Recoger:'
+                        })()}
                       </label>
                       <div className="mb-4 text-base text-slate-300 bg-slate-800/50 p-3 rounded-lg">
                         Pendientes: <span className="font-bold text-white text-xl">{cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)}</span> unidades
@@ -1183,7 +1208,15 @@ export default function PlantaPedidoDetallePage() {
                       disabled={!selectedMaterial || isProcessing || !quantityInputs[cutOrder.id] || parseInt(quantityInputs[cutOrder.id]) <= 0}
                       className="w-full h-20 bg-green-600 hover:bg-green-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded-2xl font-bold text-2xl uppercase transition-all transform active:scale-95 shadow-lg shadow-green-500/30 disabled:shadow-none"
                     >
-                      {isProcessing ? 'Procesando...' : `Confirmar Corte (${quantityInputs[cutOrder.id] || 0} unidades)`}
+                      {isProcessing ? 'Procesando...' : (() => {
+                        const materialSize = selectedMaterial?.length || 0
+                        const productSize = cutOrder.product?.length_meters || 
+                                         parseFloat(cutOrder.product?.code?.match(/\.(\d+),(\d+)$/)?.[0]?.replace('.', '')?.replace(',', '.') || '0') ||
+                                         0
+                        const isCut = materialSize > productSize
+                        const actionText = isCut ? 'Confirmar Corte' : 'Confirmar Recogida'
+                        return `${actionText} (${quantityInputs[cutOrder.id] || 0} unidades)`
+                      })()}
                     </button>
                   </div>
                 )}
@@ -1367,7 +1400,14 @@ export default function PlantaPedidoDetallePage() {
 
                                 <div>
                                   <label className="block text-base font-bold text-white mb-2 uppercase">
-                                    Cantidad a Cortar:
+                                    {(() => {
+                                      const materialSize = selectedMaterial?.length || 0
+                                      const productSize = cutOrder.product?.length_meters || 
+                                                       parseFloat(cutOrder.product?.code?.match(/\.(\d+),(\d+)$/)?.[0]?.replace('.', '')?.replace(',', '.') || '0') ||
+                                                       0
+                                      const isCut = materialSize > productSize
+                                      return isCut ? 'Cantidad a Cortar:' : 'Cantidad a Recoger:'
+                                    })()}
                                   </label>
                                   <input
                                     type="number"
@@ -1550,17 +1590,41 @@ export default function PlantaPedidoDetallePage() {
                       <label className="block text-white font-semibold mb-2">
                         Cantidad de chapas a cambiar:
                       </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max={cutOrder.quantity_requested}
-                        value={quantityToChange[cutOrder.id] || cutOrder.quantity_requested}
-                        onChange={(e) => {
-                          const value = parseInt(e.target.value) || 1
-                          setQuantityToChange(prev => ({ ...prev, [cutOrder.id]: Math.min(Math.max(1, value), cutOrder.quantity_requested) }))
-                        }}
-                        className="w-full p-4 bg-slate-800 border-2 border-slate-700 rounded-xl text-white text-lg focus:border-amber-500 focus:outline-none"
-                      />
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => {
+                            const currentValue = quantityToChange[cutOrder.id] || cutOrder.quantity_requested
+                            const newValue = Math.max(1, currentValue - 1)
+                            setQuantityToChange(prev => ({ ...prev, [cutOrder.id]: newValue }))
+                          }}
+                          disabled={(quantityToChange[cutOrder.id] || cutOrder.quantity_requested) <= 1}
+                          className="w-14 h-14 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:cursor-not-allowed text-white rounded-xl text-2xl font-bold transition-colors border-2 border-slate-600"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min="1"
+                          max={cutOrder.quantity_requested}
+                          value={quantityToChange[cutOrder.id] || cutOrder.quantity_requested}
+                          onChange={(e) => {
+                            const value = parseInt(e.target.value) || 1
+                            setQuantityToChange(prev => ({ ...prev, [cutOrder.id]: Math.min(Math.max(1, value), cutOrder.quantity_requested) }))
+                          }}
+                          className="flex-1 p-4 bg-slate-800 border-2 border-slate-700 rounded-xl text-white text-lg text-center focus:border-amber-500 focus:outline-none"
+                        />
+                        <button
+                          onClick={() => {
+                            const currentValue = quantityToChange[cutOrder.id] || cutOrder.quantity_requested
+                            const newValue = Math.min(cutOrder.quantity_requested, currentValue + 1)
+                            setQuantityToChange(prev => ({ ...prev, [cutOrder.id]: newValue }))
+                          }}
+                          disabled={(quantityToChange[cutOrder.id] || cutOrder.quantity_requested) >= cutOrder.quantity_requested}
+                          className="w-14 h-14 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:cursor-not-allowed text-white rounded-xl text-2xl font-bold transition-colors border-2 border-slate-600"
+                        >
+                          +
+                        </button>
+                      </div>
                       <p className="text-slate-500 text-sm mt-1">
                         Máximo: {cutOrder.quantity_requested} chapas
                       </p>
@@ -1586,7 +1650,7 @@ export default function PlantaPedidoDetallePage() {
                               onClick={() => setSelectedStock(prev => ({ ...prev, [cutOrder.id]: stock }))}
                               className={`p-4 rounded-xl border-2 transition-all ${
                                 isSelected
-                                  ? 'bg-amber-600 border-amber-500 shadow-lg'
+                                  ? 'bg-slate-800 border-amber-500 shadow-lg'
                                   : isCurrent
                                   ? 'bg-slate-800 border-blue-500'
                                   : 'bg-slate-800 border-slate-700 hover:bg-slate-700'

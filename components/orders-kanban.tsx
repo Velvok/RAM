@@ -24,7 +24,7 @@ export default function OrdersKanban({ orders }: OrdersKanbanProps) {
       return 'ingresado'
     }
 
-    const completedCutOrders = cutOrders.filter((co: any) => co.status === 'completada').length
+    const completedCutOrders = cutOrders.filter((co: any) => co.status === 'completada' || co.status === 'entregado').length
     const inProgressCutOrders = cutOrders.filter((co: any) => co.status === 'en_proceso').length
 
     if (completedCutOrders === totalCutOrders) {
@@ -147,7 +147,7 @@ export default function OrdersKanban({ orders }: OrdersKanbanProps) {
                 ) : (
                   column.orders.map((order) => {
                     const cutOrders = order.cut_orders || []
-                    const completedCutOrders = cutOrders.filter((co: any) => co.status === 'completada').length
+                    const completedCutOrders = cutOrders.filter((co: any) => co.status === 'completada' || co.status === 'entregado').length
                     const progress = cutOrders.length > 0 
                       ? Math.round((completedCutOrders / cutOrders.length) * 100) 
                       : 0

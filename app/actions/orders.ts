@@ -448,7 +448,7 @@ export async function updateOrderStatus(orderId: string) {
   const completedItems = completedCutOrders + completedPrepItems
   
   // Verificar si hay items en proceso
-  const inProgressCutOrders = (cutOrders || []).filter(co => co.status === 'en_proceso').length
+  const inProgressCutOrders = (cutOrders || []).filter(co => co.status === 'pendiente').length
   const inProgressPrepItems = (prepItems || []).filter(pi => pi.status === 'en_proceso').length
   
   // Verificar si hay trabajos parciales
@@ -605,6 +605,34 @@ export async function markOrderAsDelivered(orderId: string) {
     }
   }
 
+  // Marcar todos los cut_orders como 'entregado'
+  for (const cutOrder of cutOrders || []) {
+    const { error: updateError } = await supabase
+      .from('cut_orders')
+      .update({ status: 'entregado' })
+      .eq('id', cutOrder.id)
+    
+    if (updateError) {
+      console.error(`Error actualizando estado de cut_order ${cutOrder.id}:`, updateError)
+    } else {
+      console.log(`✅ Cut order ${cutOrder.id} marcado como entregado`)
+    }
+  }
+
+  // Marcar todos los preparation_items como 'entregado'
+  for (const prepItem of prepItems || []) {
+    const { error: updateError } = await supabase
+      .from('preparation_items')
+      .update({ status: 'entregado' })
+      .eq('id', prepItem.id)
+    
+    if (updateError) {
+      console.error(`Error actualizando estado de preparation_item ${prepItem.id}:`, updateError)
+    } else {
+      console.log(`✅ Preparation item ${prepItem.id} marcado como entregado`)
+    }
+  }
+
   // Actualizar estado del pedido
   const { error: updateError } = await supabase
     .from('orders')
@@ -735,16 +763,7 @@ export async function undoOrderDelivery(orderId: string) {
     throw historyError
   }
 
-  // Verificar que esté dentro de las 24 horas
-  const deliveredAt = new Date(deliveryHistory.delivered_at)
-  const now = new Date()
-  const hoursDiff = (now.getTime() - deliveredAt.getTime()) / (1000 * 60 * 60)
-
-  if (hoursDiff > 24) {
-    throw new Error('Solo se puede deshacer una entrega dentro de las primeras 24 horas')
-  }
-
-  console.log(`🔄 Deshaciendo entrega del pedido ${orderId} (${hoursDiff.toFixed(1)}h después)`)
+  console.log(`🔄 Deshaciendo entrega del pedido ${orderId}`)
 
   // 1. Restaurar el stock consumido
   for (const stockItem of deliveryHistory.stock_consumed) {
@@ -758,6 +777,49 @@ export async function undoOrderDelivery(orderId: string) {
 
       if (restoreError) {
         console.error(`Error restaurando stock (unit ${i + 1}/${stockItem.quantity}):`, restoreError)
+      }
+    }
+  }
+
+  // Revertir estado de items de 'entregado' a 'completada'
+  const { data: cutOrders } = await supabase
+    .from('cut_orders')
+    .select('id')
+    .eq('order_id', orderId)
+    .eq('status', 'entregado')
+  
+  if (cutOrders) {
+    for (const cutOrder of cutOrders) {
+      const { error: updateError } = await supabase
+        .from('cut_orders')
+        .update({ status: 'completada' })
+        .eq('id', cutOrder.id)
+      
+      if (updateError) {
+        console.error(`Error revirtiendo estado de cut_order ${cutOrder.id}:`, updateError)
+      } else {
+        console.log(`✅ Cut order ${cutOrder.id} revertido a completada`)
+      }
+    }
+  }
+
+  const { data: prepItems } = await supabase
+    .from('preparation_items')
+    .select('id')
+    .eq('order_id', orderId)
+    .eq('status', 'entregado')
+  
+  if (prepItems) {
+    for (const prepItem of prepItems) {
+      const { error: updateError } = await supabase
+        .from('preparation_items')
+        .update({ status: 'completada' })
+        .eq('id', prepItem.id)
+      
+      if (updateError) {
+        console.error(`Error revirtiendo estado de preparation_item ${prepItem.id}:`, updateError)
+      } else {
+        console.log(`✅ Preparation item ${prepItem.id} revertido a completada`)
       }
     }
   }
@@ -1005,6 +1067,53 @@ export async function markPartialDelivery(
     console.log(`✅ ${stockItem.quantity} unidades consumidas`)
   }
 
+  // Actualizar estado de items a 'entregado' si se entregaron completamente
+  for (const item of itemsToDeliver) {
+    if (item.cutOrderId) {
+      const cutOrder = orderData.cut_orders?.find((co: any) => co.id === item.cutOrderId)
+      if (cutOrder) {
+        const quantityCut = cutOrder.quantity_cut || 0
+        const alreadyDeliveredQty = alreadyDelivered[item.cutOrderId] || 0
+        const totalDelivered = alreadyDeliveredQty + item.quantity
+        
+        // Si se entregó todo lo cortado, cambiar estado a 'entregado'
+        if (totalDelivered >= quantityCut && quantityCut > 0) {
+          const { error: updateError } = await supabase
+            .from('cut_orders')
+            .update({ status: 'entregado' })
+            .eq('id', item.cutOrderId)
+          
+          if (updateError) {
+            console.error(`Error actualizando estado de cut_order ${item.cutOrderId}:`, updateError)
+          } else {
+            console.log(`✅ Cut order ${item.cutOrderId} marcado como entregado`)
+          }
+        }
+      }
+    } else if (item.preparationItemId) {
+      const prepItem = orderData.preparation_items?.find((pi: any) => pi.id === item.preparationItemId)
+      if (prepItem) {
+        const quantityPrepared = prepItem.quantity_prepared || 0
+        const alreadyDeliveredQty = alreadyDelivered[item.preparationItemId] || 0
+        const totalDelivered = alreadyDeliveredQty + item.quantity
+        
+        // Si se entregó todo lo preparado, cambiar estado a 'entregado'
+        if (totalDelivered >= quantityPrepared && quantityPrepared > 0) {
+          const { error: updateError } = await supabase
+            .from('preparation_items')
+            .update({ status: 'entregado' })
+            .eq('id', item.preparationItemId)
+          
+          if (updateError) {
+            console.error(`Error actualizando estado de preparation_item ${item.preparationItemId}:`, updateError)
+          } else {
+            console.log(`✅ Preparation item ${item.preparationItemId} marcado como entregado`)
+          }
+        }
+      }
+    }
+  }
+
   // Guardar en delivery_history
   const { data: historyData, error: historyError } = await supabase
     .from('delivery_history')
@@ -1093,7 +1202,7 @@ export async function markPartialDelivery(
       ['pendiente', 'en_corte', 'pendiente_confirmacion'].includes(co.status)
     )
     const allCutOrdersCompleted = cutOrders.every((co: any) => 
-      co.status === 'completado' || co.status === 'finalizado'
+      co.status === 'completada' || co.status === 'completado' || co.status === 'entregado'
     )
     
     // Verificar estado de preparation_items
@@ -1101,7 +1210,7 @@ export async function markPartialDelivery(
       ['pendiente', 'en_preparacion'].includes(pi.status)
     )
     const allPrepItemsCompleted = prepItems.every((pi: any) => 
-      pi.status === 'completado' || pi.status === 'preparado'
+      pi.status === 'completada' || pi.status === 'completado' || pi.status === 'entregado'
     )
     
     if (hasCutOrdersInCorte || hasPrepItemsInProgress) {
@@ -1269,16 +1378,7 @@ export async function undoPartialDelivery(deliveryHistoryId: string) {
     throw new Error('Esta retirada ya fue deshecha')
   }
 
-  // Verificar que esté dentro de las 24 horas
-  const deliveredAt = new Date(deliveryHistory.delivered_at)
-  const now = new Date()
-  const hoursDiff = (now.getTime() - deliveredAt.getTime()) / (1000 * 60 * 60)
-
-  if (hoursDiff > 24) {
-    throw new Error('Solo se puede deshacer una retirada parcial dentro de las primeras 24 horas')
-  }
-
-  console.log(`🔄 Deshaciendo retirada parcial ${deliveryHistoryId} (${hoursDiff.toFixed(1)}h después)`)
+  console.log(`🔄 Deshaciendo retirada parcial ${deliveryHistoryId}`)
 
   // Restaurar el stock consumido
   for (const stockItem of deliveryHistory.stock_consumed) {
@@ -1296,6 +1396,35 @@ export async function undoPartialDelivery(deliveryHistoryId: string) {
     }
     
     console.log(`✅ ${stockItem.quantity} unidades restauradas`)
+  }
+
+  // Revertir estado de items de 'entregado' a 'completada'
+  if (deliveryHistory.items_delivered) {
+    for (const item of deliveryHistory.items_delivered) {
+      if (item.cut_order_id) {
+        const { error: updateError } = await supabase
+          .from('cut_orders')
+          .update({ status: 'completada' })
+          .eq('id', item.cut_order_id)
+        
+        if (updateError) {
+          console.error(`Error revirtiendo estado de cut_order ${item.cut_order_id}:`, updateError)
+        } else {
+          console.log(`✅ Cut order ${item.cut_order_id} revertido a completada`)
+        }
+      } else if (item.preparation_item_id) {
+        const { error: updateError } = await supabase
+          .from('preparation_items')
+          .update({ status: 'completada' })
+          .eq('id', item.preparation_item_id)
+        
+        if (updateError) {
+          console.error(`Error revirtiendo estado de preparation_item ${item.preparation_item_id}:`, updateError)
+        } else {
+          console.log(`✅ Preparation item ${item.preparation_item_id} revertido a completada`)
+        }
+      }
+    }
   }
 
   // Revertir el estado del pedido

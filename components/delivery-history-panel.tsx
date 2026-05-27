@@ -106,9 +106,6 @@ export default function DeliveryHistoryPanel({
                       <Undo2 className="w-4 h-4 mr-1" />
                       Deshacer
                     </Button>
-                    <div className="text-xs text-slate-500 mt-1 text-center">
-                      {(24 - hoursDiff).toFixed(0)}h restantes
-                    </div>
                   </div>
                 )}
               </div>

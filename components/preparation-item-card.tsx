@@ -15,7 +15,7 @@ export function PreparationItemCard({ item, onUpdate }: PreparationItemCardProps
   const [quantity, setQuantity] = useState(1)
   const [isLoading, setIsLoading] = useState(false)
   
-  const isCompleted = item.status === 'completada'
+  const isCompleted = item.status === 'completada' || item.status === 'entregado'
   const progress = (item.quantity_prepared / item.quantity_requested) * 100
   const remaining = item.quantity_requested - item.quantity_prepared
 
@@ -90,10 +90,11 @@ export function PreparationItemCard({ item, onUpdate }: PreparationItemCardProps
           <div className="flex justify-between">
             <span>Estado:</span>
             <span className={`font-medium ${
-              item.status === 'completada' ? 'text-green-600' : 
+              item.status === 'completada' || item.status === 'entregado' ? 'text-green-600' : 
               item.status === 'en_proceso' ? 'text-blue-600' : 'text-yellow-600'
             }`}>
-              {item.status === 'completada' ? 'Completado' : 
+              {item.status === 'entregado' ? 'Entregado' :
+               item.status === 'completada' ? 'Completado' : 
                item.status === 'en_proceso' ? 'En proceso' : 'Pendiente'}
             </span>
           </div>

@@ -61,17 +61,13 @@ export default function PartialDeliveryModal({
     if (open) {
       const initialQuantities: Record<string, number> = {}
       
-      // Inicializar con el máximo disponible para cada item
+      // Inicializar en 0 para cada item
       availableCutOrders.forEach((co: any) => {
-        const quantityCut = co.quantity_cut || 0
-        const delivered = alreadyDelivered[co.id] || 0
-        initialQuantities[co.id] = quantityCut - delivered
+        initialQuantities[co.id] = 0
       })
       
       availablePrepItems.forEach((pi: any) => {
-        const quantityPrepared = pi.quantity_prepared || 0
-        const delivered = alreadyDelivered[pi.id] || 0
-        initialQuantities[pi.id] = quantityPrepared - delivered
+        initialQuantities[pi.id] = 0
       })
       
       setSelectedQuantities(initialQuantities)

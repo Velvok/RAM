@@ -65,9 +65,9 @@ export default function ReassignmentModal({
       const { getAvailableOrdersForReassignment } = await import('@/app/actions/dashboard-data')
       const orders = await getAvailableOrdersForReassignment('', targetCutOrder?.quantity_requested || 0)
 
-      // Filtrar por cortes completados
+      // Filtrar por cortes completados o entregados
       const filtered = orders?.filter(order => 
-        order.cut_orders?.some((cutOrder: any) => cutOrder.status === 'completada')
+        order.cut_orders?.some((cutOrder: any) => cutOrder.status === 'completada' || cutOrder.status === 'entregado')
       ) || []
 
       // Normalizar datos de Supabase (convierte arrays a objetos simples)

@@ -97,7 +97,7 @@ export async function reassignCutOrder(
   if (remainingError) throw remainingError
 
   const allReassigned = remainingCuts.every(cut => 
-    cut.id === fromCutOrderId || cut.status === 'completada'
+    cut.id === fromCutOrderId || cut.status === 'completada' || cut.status === 'entregado'
   )
 
   // Si todas las órdenes fueron reasignadas o completadas, marcar como desarmado
@@ -150,7 +150,7 @@ async function updateOrderStatus(orderId: string) {
   if (!cutOrders || cutOrders.length === 0) return
 
   const totalOrders = cutOrders.length
-  const completedOrders = cutOrders.filter(co => co.status === 'completada').length
+  const completedOrders = cutOrders.filter(co => co.status === 'completada' || co.status === 'entregado').length
 
   let newStatus = 'aprobado'
   if (completedOrders === totalOrders) {

@@ -3,11 +3,24 @@ import { Button } from '@/components/ui/button'
 import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import OrderDetailClient from './order-detail-client'
+import { unstable_noStore } from 'next/cache'
+import { headers } from 'next/headers'
 
-// Deshabilitar caché
+// Deshabilitar caché completamente
+unstable_noStore()
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 export const fetchCache = 'force-no-store'
+
+export async function generateMetadata() {
+  return {
+    other: {
+      'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0, private',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+    }
+  }
+}
 
 export default async function PedidoDetallePage({
   params,
@@ -15,6 +28,7 @@ export default async function PedidoDetallePage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
+  
   const order = await getOrderById(id)
 
   if (!order) {
@@ -35,5 +49,9 @@ export default async function PedidoDetallePage({
     )
   }
 
-  return <OrderDetailClient initialOrder={order} />
+  return (
+    <>
+      <OrderDetailClient initialOrder={order} />
+    </>
+  )
 }

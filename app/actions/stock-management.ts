@@ -769,8 +769,8 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
     .single()
 
   if (toError) throw toError
-  if (toOrder.status === 'completada') {
-    throw new Error('No se puede reasignar a una orden ya completada')
+  if (toOrder.status === 'completada' || toOrder.status === 'entregado') {
+    throw new Error('No se puede reasignar a una orden ya completada o entregada')
   }
 
   const inventoryId = assignedInventory.id
@@ -826,9 +826,9 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
     .select('status')
     .eq('order_id', fromOrderData.id)
 
-  const fromAllCompleted = fromOrderOrders?.every(o => o.status === 'completada')
-  const fromAnyInProgress = fromOrderOrders?.some(o => o.status === 'en_proceso')
-  const fromAnyCompleted = fromOrderOrders?.some(o => o.status === 'completada')
+  const fromAllCompleted = fromOrderOrders?.every(o => o.status === 'completada' || o.status === 'entregado')
+  const fromAnyInProgress = fromOrderOrders?.some(o => o.status === 'pendiente')
+  const fromAnyCompleted = fromOrderOrders?.some(o => o.status === 'completada' || o.status === 'entregado')
 
   let fromNewStatus = fromOrderData.status
   if (fromAllCompleted) {
@@ -851,9 +851,9 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
     .select('status')
     .eq('order_id', toOrderData.id)
 
-  const toAllCompleted = toOrderOrders?.every(o => o.status === 'completada')
-  const toAnyInProgress = toOrderOrders?.some(o => o.status === 'en_proceso')
-  const toAnyCompleted = toOrderOrders?.some(o => o.status === 'completada')
+  const toAllCompleted = toOrderOrders?.every(o => o.status === 'completada' || o.status === 'entregado')
+  const toAnyInProgress = toOrderOrders?.some(o => o.status === 'pendiente')
+  const toAnyCompleted = toOrderOrders?.some(o => o.status === 'completada' || o.status === 'entregado')
 
   let toNewStatus = toOrderData.status
   if (toAllCompleted) {
@@ -945,7 +945,7 @@ export async function getCompletedOrdersForReassignment(productSize: number) {
         product:products(code, name)
       )
     `)
-    .eq('status', 'completada')
+    .in('status', ['completada', 'entregado'])
     .not('material_base_id', 'is', null)
 
   if (error) throw error
