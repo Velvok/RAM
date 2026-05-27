@@ -27,6 +27,7 @@ interface PedidoNuevoPayload {
   items: Array<{
     id_articulo: string
     cantidad: number
+    nro_item?: number
   }>
   estado?: 'nuevo' | 'pendiente'
 }
@@ -377,7 +378,8 @@ async function processPedidoNuevo(payload: PedidoNuevoPayload) {
         product_id: productIds.get(item.id_articulo)!.id,
         quantity: item.cantidad,
         unit_price: 0,
-        subtotal: 0
+        subtotal: 0,
+        evo_item_number: item.nro_item != null ? String(item.nro_item) : null
       }))
 
     if (orderLines.length > 0) {

@@ -128,13 +128,16 @@ export async function reassignStock(
       .insert({
         cut_number: newCutNumber,
         order_id: cutOrder.order_id,
+        order_line_id: cutOrder.order_line_id,
         product_id: cutOrder.product_id,
         quantity_requested: quantityForNewMaterial,
         quantity_cut: 0,
         status: 'pendiente',
         material_base_id: productId,
-        material_base_quantity: quantity,  // Usar el parámetro quantity que ya tiene el tamaño correcto
-        material_quantity: 1
+        material_base_quantity: quantity,
+        material_quantity: 1,
+        evo_item_number: cutOrder.evo_item_number || null,
+        parent_cut_order_id: cutOrderId,
       })
       .select()
       .single()

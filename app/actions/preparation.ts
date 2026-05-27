@@ -12,7 +12,8 @@ export async function createPreparationItem(
   orderLineId: string,
   productId: string,
   quantityRequested: number,
-  reserveStock: boolean = true
+  reserveStock: boolean = true,
+  evoItemNumber?: string | null
 ) {
   // Usar admin client para bypass RLS
   const { createAdminClient } = await import('@/lib/supabase/server')
@@ -77,7 +78,8 @@ export async function createPreparationItem(
       product_id: productId,
       quantity_requested: quantityRequested,
       assigned_inventory_id: selectedInventory?.id || null,
-      status: 'pendiente'
+      status: 'pendiente',
+      evo_item_number: evoItemNumber || null
     })
     .select()
     .single()

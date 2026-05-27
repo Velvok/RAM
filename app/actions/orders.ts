@@ -158,10 +158,12 @@ export async function approveOrderOnHold(orderId: string) {
         .insert({
           cut_number: cutNumber,
           order_id: orderId,
+          order_line_id: line.id,
           product_id: line.product_id,
           quantity_requested: units,
           quantity_cut: 0,
           status: 'pendiente',
+          evo_item_number: line.evo_item_number || null,
           // NO asignamos material_base_id ni material_base_quantity
         })
         .select()
@@ -286,10 +288,12 @@ export async function approveOrder(orderId: string) {
         .insert({
           cut_number: cutNumber,
           order_id: orderId,
+          order_line_id: line.id,
           product_id: line.product_id,
           quantity_requested: units,
           quantity_cut: 0,
           status: 'pendiente',
+          evo_item_number: line.evo_item_number || null,
         })
         .select()
       
@@ -371,7 +375,7 @@ export async function approveOrder(orderId: string) {
       try {
         const { createPreparationItem } = await import('./preparation')
         console.log(`   → Llamando a createPreparationItem...`)
-        const result = await createPreparationItem(orderId, line.id, line.product_id, units)
+        const result = await createPreparationItem(orderId, line.id, line.product_id, units, true, line.evo_item_number || null)
         console.log(`✅ Preparation item creado:`, result)
         console.log(`✅ Stock reservado: ${units} unidades`)
       } catch (prepError: any) {

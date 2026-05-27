@@ -360,23 +360,25 @@ export async function processCutOrder(params: {
         } else {
           const movimientos: CorteMovimiento[] = []
 
-          // BAJA del material consumido
+          const nroItem = cutOrder.evo_item_number ? parseInt(cutOrder.evo_item_number, 10) : 0
+
+          // BAJA del material consumido (nro_item: 0, no es la línea del cliente)
           movimientos.push({
             tipo: 'BAJA',
-            nro_item: 1,
+            nro_item: 0,
             id_articulo: usedProduct.evo_product_id,
             cantidad: sheetsUsed,
           })
 
-          // ALTA del producto cortado (pieza solicitada)
+          // ALTA del producto cortado (pieza solicitada → lleva nro_item de la línea)
           movimientos.push({
             tipo: 'ALTA',
+            nro_item: nroItem,
             id_articulo: cutOrder.product.evo_product_id,
             cantidad: sheetsUsed,
           })
 
-          // ALTA del remanente
-          // Usar el mismo formato que generateRemnantStock para Dach acanalada
+          // ALTA del remanente (nro_item: 0, no corresponde a ninguna línea del pedido)
           let remnantCode = ''
           const dachMatch = usedProduct.code.match(/^([A-Z0-9.,]+)X\d+[.,]\d+M$/i)
           if (dachMatch) {
@@ -401,6 +403,7 @@ export async function processCutOrder(params: {
             if (remnantProduct?.evo_product_id) {
               movimientos.push({
                 tipo: 'ALTA',
+                nro_item: 0,
                 id_articulo: remnantProduct.evo_product_id,
                 cantidad: sheetsUsed,
               })
