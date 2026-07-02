@@ -414,13 +414,13 @@ async function processPartialDelivery(
 
       console.log(`   Found product: ${product.code} - ${product.name}`)
 
-      // Buscar cut_orders finalizados de este pedido y producto
+      // Buscar cut_orders finalizados o pendientes de este pedido y producto
       const { data: cutOrders } = await supabase
         .from('cut_orders')
         .select('id, quantity_cut, quantity_delivered, assigned_inventory_id, status')
         .eq('order_id', order.id)
         .eq('product_id', product.id)
-        .eq('status', 'finalizado')
+        .in('status', ['finalizado', 'pendiente'])
         .order('created_at', { ascending: true })
 
       // Buscar preparation_items finalizados
