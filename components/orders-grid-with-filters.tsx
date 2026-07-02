@@ -237,7 +237,7 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
   }
 
   function handleRefresh() {
-    router.refresh()
+    window.location.reload()
   }
 
   function handleOrderClick(order: any) {
