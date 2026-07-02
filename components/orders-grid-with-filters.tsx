@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { generateCutOrders } from '@/app/actions/orders'
-import { Package, Calendar, User, DollarSign, CheckCircle, Clock, AlertCircle, Loader2, Filter, LayoutGrid, List, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Package, Calendar, User, DollarSign, CheckCircle, Clock, AlertCircle, Loader2, Filter, LayoutGrid, List, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
 
 interface OrdersGridWithFiltersProps {
   orders: any[]
@@ -231,6 +231,10 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
     }
   }
 
+  function handleRefresh() {
+    router.refresh()
+  }
+
   function handleOrderClick(order: any) {
     // Ir directamente al detalle del pedido
     router.push(`/admin/pedidos/${order.id}`)
@@ -241,9 +245,19 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
       {/* Filtros con diseño mejorado */}
       <div className="bg-white rounded-lg shadow p-6 mb-6">
         {/* Título de filtros */}
-        <div className="flex items-center gap-2 mb-6">
-          <Filter className="w-5 h-5 text-slate-600" />
-          <h3 className="text-base font-semibold text-slate-900">Filtros de Pedidos</h3>
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2">
+            <Filter className="w-5 h-5 text-slate-600" />
+            <h3 className="text-base font-semibold text-slate-900">Filtros de Pedidos</h3>
+          </div>
+          <button
+            onClick={handleRefresh}
+            className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+            title="Refrescar pedidos"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Refrescar
+          </button>
         </div>
         
         {/* Filtros de estado */}
