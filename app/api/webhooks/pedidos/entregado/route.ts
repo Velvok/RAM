@@ -414,22 +414,22 @@ async function processPartialDelivery(
 
       console.log(`   Found product: ${product.code} - ${product.name}`)
 
-      // Buscar cut_orders completadas o pendientes de este pedido y producto
+      // Buscar cut_orders con unidades cortadas de este pedido y producto
       const { data: cutOrders } = await supabase
         .from('cut_orders')
         .select('id, quantity_cut, quantity_delivered, assigned_inventory_id, status')
         .eq('order_id', order.id)
         .eq('product_id', product.id)
-        .in('status', ['completada', 'pendiente'])
+        .gt('quantity_cut', 0)
         .order('created_at', { ascending: true })
 
-      // Buscar preparation_items finalizados o pendientes
+      // Buscar preparation_items con unidades preparadas
       const { data: prepItems } = await supabase
         .from('preparation_items')
         .select('id, quantity_prepared, quantity_delivered, assigned_inventory_id, status')
         .eq('order_id', order.id)
         .eq('product_id', product.id)
-        .in('status', ['finalizado', 'pendiente'])
+        .gt('quantity_prepared', 0)
         .order('created_at', { ascending: true })
 
       console.log(`   Found ${cutOrders?.length || 0} cut_orders, ${prepItems?.length || 0} preparation_items`)
