@@ -2,6 +2,7 @@
 
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidateOrders, revalidateStock } from '@/lib/revalidate'
+import { notifyChapaPreparada } from '@/lib/ram-outbound'
 
 /**
  * Crear preparation_item para un artículo que no requiere corte
@@ -121,10 +122,14 @@ export async function prepareItem(
 
   console.log(`\n📦 Preparando artículo ${itemId}: ${quantityPrepared} unidades`)
 
-  // 1. Obtener preparation_item
+  // 1. Obtener preparation_item con información del pedido
   const { data: item, error: itemError } = await supabase
     .from('preparation_items')
-    .select('*, product:products(*)')
+    .select(`
+      *,
+      product:products(*),
+      order:orders!preparation_items_order_id_fkey(id, order_number, evo_order_id, ref_evo)
+    `)
     .eq('id', itemId)
     .single()
 
@@ -164,7 +169,41 @@ export async function prepareItem(
 
   console.log(`✅ Artículo actualizado: ${newTotal}/${item.quantity_requested} preparadas`)
 
-  // 5. Registrar actividad
+  // 5. Si se completó la preparación, enviar evento PREP a EVO
+  if (isCompleted) {
+    console.log(`📤 Enviando evento PREP a EVO (artículo preparado)`)
+    
+    const orderData = Array.isArray(item.order) ? item.order[0] : item.order
+    
+    // Obtener nro_item desde ref_evo o evo_item_number del preparation_item
+    const refEvo = orderData.ref_evo || {}
+    const nroItem = item.evo_item_number || refEvo.nro_item || refEvo.item_number || 1
+    
+    // Construir movimiento PREP
+    const movimientos = [{
+      tipo: 'PREP' as const,
+      nro_item: nroItem,
+      id_articulo: item.product.code,
+      cantidad: quantityPrepared,
+    }]
+    
+    try {
+      await notifyChapaPreparada({
+        cutOrderId: itemId, // Usamos el preparation_item_id como referencia
+        orderId: orderData.id,
+        idPedido: orderData.evo_order_id || orderData.order_number,
+        refEvo: refEvo,
+        operario: 'operario', // TODO: Obtener del usuario autenticado
+        movimientos,
+      })
+      console.log(`✅ Evento PREP enviado a EVO`)
+    } catch (error) {
+      console.error('❌ Error enviando evento PREP a EVO:', error)
+      // No fallar la preparación si falla el envío a EVO
+    }
+  }
+
+  // 6. Registrar actividad
   await supabase.from('order_activity_log').insert({
     order_id: item.order_id,
     activity_type: 'item_prepared',
@@ -176,11 +215,11 @@ export async function prepareItem(
     }
   })
 
-  // 6. Actualizar estado del pedido
+  // 7. Actualizar estado del pedido
   const { updateOrderStatus } = await import('@/app/actions/orders')
   await updateOrderStatus(item.order_id)
 
-  // 7. Revalidar
+  // 8. Revalidar
   revalidateOrders(item.order_id)
 
   return { success: true, isCompleted, newTotal }
