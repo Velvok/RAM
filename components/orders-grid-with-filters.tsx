@@ -21,6 +21,7 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
 
   // Auto-refresh al montar para asegurar datos frescos
   useEffect(() => {
+    console.log('🔄 Auto-refresh al montar /admin/pedidos')
     router.refresh()
   }, [router])
 
@@ -237,7 +238,10 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
   }
 
   function handleRefresh() {
-    window.location.reload()
+    console.log('🔄 Botón refresh presionado')
+    
+    // Forzar revalidación del servidor
+    router.refresh()
   }
 
   function handleOrderClick(order: any) {

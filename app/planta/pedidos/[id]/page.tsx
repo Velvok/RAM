@@ -870,9 +870,8 @@ export default function PlantaPedidoDetallePage() {
       {/* Lista de Órdenes de Corte */}
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-4">
         {pedido.cut_orders && pedido.cut_orders.length > 0 ? (
-          // Filtrar solo órdenes principales (sin parent_cut_order_id) y ordenar
+          // Mostrar todas las órdenes de corte (incluidas las hijas de reasignación parcial)
           pedido.cut_orders
-            .filter((co: any) => !co.parent_cut_order_id)
             .sort((a: any, b: any) => {
               // Primero las pendientes (no completadas), luego las completadas
               const aIsCompleted = a.status === 'completada'

@@ -1,5 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  turbopack: {
+    // Configurar el root correcto para evitar conflictos con lockfiles en directorios padre
+    root: __dirname,
+  },
   experimental: {
     serverActions: {
       bodySizeLimit: '2mb',
