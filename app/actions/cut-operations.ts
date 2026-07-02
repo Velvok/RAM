@@ -134,6 +134,7 @@ export async function processCutOrder(params: {
       status: isFullyCompleted ? 'completada' : 'pendiente',
       quantity_cut: newQuantityCut,
       finished_at: isFullyCompleted ? new Date().toISOString() : null,
+      assigned_inventory_id: actualInventoryId,
     })
     .eq('id', cutOrderId)
 
@@ -268,8 +269,18 @@ export async function processCutOrder(params: {
         console.log(`📦 PROCESANDO CHAPA ${i + 1}/${sheetsUsed}`)
         console.log(`${'─'.repeat(50)}`)
 
-        // NO modificamos stock local - EVO actualizará vía webhook
-        console.log(`   ⏭️ Stock local NO modificado - EVO actualizará vía stock_actualizado webhook`)
+        // Reservar stock de la chapa usada
+        console.log(`   📦 Reservando stock de chapa ${usedProduct.code} (${materialLength}m)`)
+        const { error: reserveError } = await supabase.rpc('reserve_stock', {
+          p_inventory_id: actualInventoryId,
+          p_quantity: 1
+        })
+
+        if (reserveError) {
+          console.error(`   ❌ Error reservando stock: ${reserveError.message}`)
+        } else {
+          console.log(`   ✅ Stock reservado correctamente`)
+        }
 
       } catch (error) {
         console.error(`\n❌ ERROR en chapa ${i + 1}/${sheetsUsed}:`, error)
