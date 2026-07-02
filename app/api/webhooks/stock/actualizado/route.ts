@@ -139,23 +139,7 @@ async function processStockUpdate(payload: StockActualizadoPayload) {
   const errors: string[] = []
 
   try {
-    // 1. Verificar versión
-    const { data: lastSync } = await supabase
-      .from('stock_sync_log')
-      .select('version')
-      .order('version', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    const currentVersion = lastSync?.version || 0
-    console.log(`📊 Current version: ${currentVersion}, Received: ${payload.version}`)
-
-    if (payload.version <= currentVersion) {
-      console.log(`⏭️ Skipping older version`)
-      return
-    }
-
-    // 2. Obtener todos los productos existentes EN BATCHES (Supabase tiene límite de URL)
+    // 1. Obtener todos los productos existentes EN BATCHES (Supabase tiene límite de URL)
     const allEvoIds = payload.items.map(i => i.id_articulo)
     console.log(`🔍 Fetching existing products in batches...`)
 
@@ -312,18 +296,6 @@ async function processStockUpdate(payload: StockActualizadoPayload) {
         processed_at: new Date().toISOString()
       })
       .eq('id_evento', payload.id_evento)
-
-    // 9. Registrar en stock_sync_log
-    await supabase
-      .from('stock_sync_log')
-      .insert({
-        version: payload.version,
-        timestamp: payload.timestamp,
-        items_count: payload.items.length,
-        updated_count: inventoryUpdates.length,
-        errors_count: errors.length,
-        errors: errors.length > 0 ? errors : null
-      })
 
   } catch (error) {
     console.error('❌ Error in bulk processing:', error)

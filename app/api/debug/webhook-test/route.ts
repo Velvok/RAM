@@ -80,31 +80,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Obtener versión actual
-    console.log('🔍 DEBUG: Getting current version from stock_sync_log')
-    const { data: lastSync, error: syncError } = await supabase
-      .from('stock_sync_log')
-      .select('version')
-      .order('version', { ascending: false })
-      .limit(1)
-      .single()
-
-    console.log('🔍 DEBUG: Last sync result:', { lastSync, syncError })
-    const currentVersion = lastSync?.version || 0
-    console.log('🔍 DEBUG: Current version:', currentVersion, 'Received version:', payload.version)
-
-    // Verificar versión
-    if (payload.version <= currentVersion) {
-      console.log('🔍 DEBUG: Version check failed - older version')
-      return NextResponse.json({
-        success: true,
-        message: 'Older version, ignoring',
-        current_version: currentVersion,
-        received_version: payload.version
-      })
-    }
-
-    console.log('🔍 DEBUG: Version check passed, processing items')
+    console.log('🔍 DEBUG: Processing items (no version check)')
 
     // Procesar actualizaciones de stock
     let updatedCount = 0
@@ -175,34 +151,15 @@ export async function POST(request: NextRequest) {
 
     console.log('🔍 DEBUG: Event insert result:', { eventData, eventError })
 
-    // Registrar sincronización
-    console.log('🔍 DEBUG: Inserting into stock_sync_log')
-    const { data: syncData, error: syncInsertError } = await supabase
-      .from('stock_sync_log')
-      .insert({
-        version: payload.version,
-        timestamp: payload.timestamp,
-        items_count: payload.items.length,
-        updated_count: updatedCount,
-        errors_count: errors.length,
-        errors: errors.length > 0 ? errors : null
-      })
-      .select()
-
-    console.log('🔍 DEBUG: Sync log insert result:', { syncData, syncInsertError })
-
     const response = {
       success: true,
       message: 'Stock updated successfully',
       id_evento: payload.id_evento,
-      version: payload.version,
       updated_count: updatedCount,
       errors_count: errors.length,
       errors: errors.length > 0 ? errors : undefined,
       debug: {
-        current_version: currentVersion,
-        event_inserted: !!eventData,
-        sync_inserted: !!syncData
+        event_inserted: !!eventData
       }
     }
 
