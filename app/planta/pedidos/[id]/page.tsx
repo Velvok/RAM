@@ -966,22 +966,22 @@ export default function PlantaPedidoDetallePage() {
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-slate-400 font-medium">Progreso</span>
                         <span className="text-white font-bold text-lg">
-                          {cutOrder.quantity_cut || 0}/{cutOrder.quantity_requested}
+                          {(cutOrder.quantity_cut || 0) - (cutOrder.quantity_delivered || 0)}/{cutOrder.quantity_requested - (cutOrder.quantity_delivered || 0)}
                         </span>
                       </div>
-                      
+
                       {/* Barra de progreso visual */}
                       <div className="w-full bg-slate-700 rounded-full h-3 overflow-hidden">
-                        <div 
+                        <div
                           className={`h-full rounded-full transition-all duration-500 ${
-                            (cutOrder.quantity_cut || 0) >= cutOrder.quantity_requested
+                            (cutOrder.quantity_cut || 0) - (cutOrder.quantity_delivered || 0) >= cutOrder.quantity_requested - (cutOrder.quantity_delivered || 0)
                               ? 'bg-green-500'
-                              : (cutOrder.quantity_cut || 0) > 0
+                              : (cutOrder.quantity_cut || 0) - (cutOrder.quantity_delivered || 0) > 0
                               ? 'bg-yellow-500'
                               : 'bg-slate-600'
                           }`}
-                          style={{ 
-                            width: `${Math.min(((cutOrder.quantity_cut || 0) / cutOrder.quantity_requested) * 100, 100)}%` 
+                          style={{
+                            width: `${Math.min((((cutOrder.quantity_cut || 0) - (cutOrder.quantity_delivered || 0)) / (cutOrder.quantity_requested - (cutOrder.quantity_delivered || 0))) * 100, 100)}%`
                           }}
                         />
                       </div>
@@ -1341,20 +1341,20 @@ export default function PlantaPedidoDetallePage() {
                                   <div className="flex items-center justify-between text-xs">
                                     <span className="text-slate-400">Progreso</span>
                                     <span className="text-white font-bold">
-                                      {subOrder.quantity_cut || 0}/{subOrder.quantity_requested}
+                                      {(subOrder.quantity_cut || 0) - (subOrder.quantity_delivered || 0)}/{subOrder.quantity_requested - (subOrder.quantity_delivered || 0)}
                                     </span>
                                   </div>
                                   <div className="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
-                                    <div 
+                                    <div
                                       className={`h-full rounded-full transition-all duration-500 ${
-                                        (subOrder.quantity_cut || 0) >= subOrder.quantity_requested
+                                        (subOrder.quantity_cut || 0) - (subOrder.quantity_delivered || 0) >= subOrder.quantity_requested - (subOrder.quantity_delivered || 0)
                                           ? 'bg-green-500'
-                                          : (subOrder.quantity_cut || 0) > 0
+                                          : (subOrder.quantity_cut || 0) - (subOrder.quantity_delivered || 0) > 0
                                           ? 'bg-yellow-500'
                                           : 'bg-slate-600'
                                       }`}
-                                      style={{ 
-                                        width: `${Math.min(((subOrder.quantity_cut || 0) / subOrder.quantity_requested) * 100, 100)}%` 
+                                      style={{
+                                        width: `${Math.min((((subOrder.quantity_cut || 0) - (subOrder.quantity_delivered || 0)) / (subOrder.quantity_requested - (subOrder.quantity_delivered || 0))) * 100, 100)}%`
                                       }}
                                     />
                                   </div>
