@@ -139,8 +139,14 @@ async function processStockUpdate(payload: StockActualizadoPayload) {
   const errors: string[] = []
 
   try {
-    // 1. Obtener todos los productos existentes EN BATCHES (Supabase tiene límite de URL)
-    const allEvoIds = payload.items.map(i => i.id_articulo)
+    // 1. Deduplicar items por id_articulo (EVO puede enviar duplicados)
+    const uniqueItems = Array.from(
+      new Map(payload.items.map(item => [item.id_articulo, item])).values()
+    )
+    console.log(`🔍 Deduplicated items: ${payload.items.length} → ${uniqueItems.length}`)
+
+    // 2. Obtener todos los productos existentes EN BATCHES (Supabase tiene límite de URL)
+    const allEvoIds = uniqueItems.map(i => i.id_articulo)
     console.log(`🔍 Fetching existing products in batches...`)
 
     const existingByEvoId = new Map<string, { id: string; code: string; name: string; evo_product_id: string }>()
@@ -177,7 +183,7 @@ async function processStockUpdate(payload: StockActualizadoPayload) {
     const toUpdateName: Array<{ id: string; name: string }> = []
     const productsByEvoId = new Map<string, { id: string; code: string; name: string }>()
 
-    for (const item of payload.items) {
+    for (const item of uniqueItems) {
       const existing = existingByEvoId.get(item.id_articulo)
 
       if (existing) {
@@ -244,7 +250,7 @@ async function processStockUpdate(payload: StockActualizadoPayload) {
     }
 
     // 6. Preparar upsert masivo de inventory
-    const inventoryUpdates = payload.items
+    const inventoryUpdates = uniqueItems
       .map(item => {
         const product = productsByEvoId.get(item.id_articulo)
         if (!product) {
