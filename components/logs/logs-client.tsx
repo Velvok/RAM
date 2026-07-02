@@ -320,7 +320,15 @@ export function LogsClient({ initialLogs, totalLogs, eventTypes, initialStats }:
                       )}
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
-                      {new Date(log.created_at).toLocaleString('es-AR')}
+                      {new Date(log.created_at).toLocaleString('es-AR', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: false
+                      })}
                     </td>
                     <td className="px-4 py-3 text-sm text-red-600 max-w-xs truncate">
                       {log.error_message || '-'}
