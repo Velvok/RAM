@@ -15,7 +15,8 @@ interface StockActualizadoPayload {
   items: Array<{
     id_articulo: string
     nombre?: string
-    cantidad: number
+    cantidad?: number
+    stock?: number
   }>
 }
 
@@ -259,7 +260,7 @@ async function processStockUpdate(payload: StockActualizadoPayload) {
         }
         return {
           product_id: product.id,
-          stock_total: item.cantidad,
+          stock_total: item.stock ?? item.cantidad ?? 0,
           last_sync_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         }
