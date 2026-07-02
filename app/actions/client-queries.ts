@@ -47,6 +47,7 @@ export async function getOrderById(orderId: string) {
     .single()
 
   if (error) throw error
+
   return data
 }
 
