@@ -5,7 +5,7 @@ import { generateRemnantStock, reserveStock } from './stock-management'
 import { extractSizeFromCode, extractFamilyCode } from '@/lib/product-utils'
 import { finishCutOrder } from './cut-orders'
 import { updateOrderStatus } from './orders'
-import { notifyCorteRealizado, type CorteMovimiento } from '@/lib/ram-outbound'
+import { notifyCorteRealizado, notifyChapaPreparada, type CorteMovimiento } from '@/lib/ram-outbound'
 import { revalidatePath } from 'next/cache'
 
 export async function processCutOrder(params: {
@@ -181,163 +181,107 @@ export async function processCutOrder(params: {
     console.log(`\n🎯 Match exacto: ${sheetsUsed} unidades de ${materialLength}m`)
     console.log(`   ✅ Las piezas ya están reservadas, no se modifica el stock`)
     console.log(`   📝 El stock_reservado se consumirá al entregar el pedido`)
-    
+
+    // ============================================
+    // 📤 NOTIFICAR A EVO: chapa_preparada (PREP)
+    // Cuando es match exacto, enviamos evento PREP
+    // ============================================
+    try {
+      const evoOrderId = cutOrder.order?.evo_order_id
+      const refEvo = cutOrder.ref_evo || cutOrder.order?.ref_evo
+
+      if (!evoOrderId) {
+        console.log(`⏭️ Pedido sin evo_order_id, no se notifica a EVO`)
+      } else if (!refEvo) {
+        console.log(`⏭️ Pedido sin ref_evo, no se notifica a EVO`)
+      } else if (!cutOrder.product?.evo_product_id) {
+        console.log(`⏭️ Producto sin evo_product_id, no se notifica a EVO`)
+      } else {
+        const nroItem = cutOrder.evo_item_number ? parseInt(cutOrder.evo_item_number, 10) : 
+                       refEvo.nro_item || refEvo.item_number || 1
+
+        const movimientos: CorteMovimiento[] = [{
+          tipo: 'PREP',
+          nro_item: nroItem,
+          id_articulo: cutOrder.product.evo_product_id,
+          cantidad: quantityToCut,
+        }]
+
+        // Obtener código del operario
+        const { data: opData } = await supabase
+          .from('plant_operators')
+          .select('name, code')
+          .eq('id', operatorId)
+          .single()
+
+        const operario = (opData as any)?.code || opData?.name || operatorId
+
+        console.log(`📤 Notificando a EVO chapa_preparada (PREP):`, {
+          id_pedido: evoOrderId,
+          ref_evo: refEvo,
+          operario,
+          movimientos,
+        })
+
+        await notifyChapaPreparada({
+          cutOrderId,
+          orderId: cutOrder.order_id,
+          idPedido: evoOrderId,
+          refEvo,
+          operario,
+          movimientos,
+        })
+
+        console.log(`✅ Evento chapa_preparada (PREP) encolado para EVO`)
+      }
+    } catch (notifyError) {
+      // No bloqueamos el corte si falla la notificación; se reintenta por cron
+      console.error(`⚠️ Error notificando a EVO (no bloqueante):`, notifyError)
+    }
+
   } else {
     // ========== CORTE REAL ==========
     console.log(`\n✂️ ENTRANDO AL FLUJO DE CORTE REAL`)
-    
+
     const { data: usedProduct } = await supabase
       .from('products')
       .select('code, evo_product_id')
       .eq('id', inventoryItem.product_id)
       .single()
-    
+
     if (!usedProduct) {
       console.error(`❌ ERROR: No se encontró usedProduct para inventoryItem.product_id: ${inventoryItem.product_id}`)
       throw new Error('No se encontró el producto usado')
     }
-    
+
     console.log(`✅ usedProduct encontrado:`, usedProduct)
     console.log(`✂️ Procesando corte real de ${sheetsUsed} chapas...`)
     console.log(`   Chapa original: ${usedProduct.code} (${materialLength}m)`)
     console.log(`   Pieza a obtener: ${productSize}m`)
     console.log(`   Remanente: ${remnantPerSheet}m`)
     console.log(`   cutOrder.product_id: ${cutOrder.product_id}`)
-    
+    console.log(`   ⏭️ NO modificamos stock local - EVO será la única fuente de verdad`)
+
     for (let i = 0; i < sheetsUsed; i++) {
       try {
         console.log(`\n${'─'.repeat(50)}`)
         console.log(`📦 PROCESANDO CHAPA ${i + 1}/${sheetsUsed}`)
         console.log(`${'─'.repeat(50)}`)
-        
-        // 1. Consumir chapa original
-        const { data: beforeConsume } = await supabase
-          .from('inventory')
-          .select('stock_total, stock_reservado, stock_disponible')
-          .eq('id', actualInventoryId)
-          .single()
-        
-        console.log(`   📊 Chapa ${materialLength}m antes:`, {
-          total: beforeConsume?.stock_total,
-          reservado: beforeConsume?.stock_reservado,
-          disponible: beforeConsume?.stock_disponible
-        })
-        
-        const { error: consumeError } = await supabase.rpc('consume_reserved_stock', {
-          p_inventory_id: actualInventoryId
-        })
-        
-        if (consumeError) {
-          console.error('   ❌ Error al consumir stock reservado:', consumeError)
-          throw consumeError
-        }
-        
-        const { data: afterConsume } = await supabase
-          .from('inventory')
-          .select('stock_total, stock_reservado, stock_disponible')
-          .eq('id', actualInventoryId)
-          .single()
-        
-        console.log(`   ✅ Consumida: -1 chapa de ${materialLength}m`)
-        console.log(`   📊 Chapa ${materialLength}m después:`, {
-          total: afterConsume?.stock_total,
-          reservado: afterConsume?.stock_reservado,
-          disponible: afterConsume?.stock_disponible
-        })
-        
-        // 2. Generar pieza cortada (usando el código del producto solicitado)
-        console.log(`   🔍 Generando pieza cortada de ${productSize}m (ya reservada)...`)
 
-        const { data: beforeGenerate } = await supabase
-          .from('inventory')
-          .select('id, product_id, stock_total, stock_reservado, stock_generado, stock_disponible')
-          .eq('product_id', cutOrder.product_id)
-          .single()
+        // NO modificamos stock local - EVO actualizará vía webhook
+        console.log(`   ⏭️ Stock local NO modificado - EVO actualizará vía stock_actualizado webhook`)
 
-        console.log(`   📊 Stock ANTES de generar:`, {
-          total: beforeGenerate?.stock_total || 0,
-          reservado: beforeGenerate?.stock_reservado || 0,
-          generado: beforeGenerate?.stock_generado || 0,
-          disponible: beforeGenerate?.stock_disponible || 0
-        })
-
-        // Incrementar stock de la pieza cortada
-        const { error: generateError } = await supabase
-          .from('inventory')
-          .update({
-            stock_total: (beforeGenerate?.stock_total || 0) + 1,
-            stock_generado: (beforeGenerate?.stock_generado || 0) + 1
-          })
-          .eq('product_id', cutOrder.product_id)
-
-        if (generateError) {
-          console.error(`   ❌ Error generando pieza cortada:`, generateError)
-          throw generateError
-        }
-
-        const { data: cutPieceInventory, error: inventoryError } = await supabase
-          .from('inventory')
-          .select('id, product_id, stock_total, stock_reservado, stock_generado, stock_disponible')
-          .eq('product_id', cutOrder.product_id)
-          .single()
-
-        if (inventoryError || !cutPieceInventory) {
-          console.error(`   ❌ Error al buscar inventario:`, inventoryError)
-          throw new Error(`No se encontró el inventario para el producto ${cutOrder.product_id}`)
-        }
-
-        console.log(`   📊 Stock DESPUÉS de generar:`, {
-          total: cutPieceInventory.stock_total,
-          reservado: cutPieceInventory.stock_reservado,
-          generado: cutPieceInventory.stock_generado,
-          disponible: cutPieceInventory.stock_disponible
-        })
-        console.log(`   ✅ Cambios: total +${cutPieceInventory.stock_total - (beforeGenerate?.stock_total || 0)}, generado +${cutPieceInventory.stock_generado - (beforeGenerate?.stock_generado || 0)}`)
-
-        // 3. Reservar la pieza generada
-        const { error: updateError } = await supabase
-          .from('inventory')
-          .update({
-            stock_reservado: cutPieceInventory.stock_reservado + 1
-          })
-          .eq('id', cutPieceInventory.id)
-
-        if (updateError) {
-          console.error(`   ❌ Error al reservar pieza generada:`, updateError)
-          throw updateError
-        }
-
-        const { data: afterReserve } = await supabase
-          .from('inventory')
-          .select('stock_total, stock_reservado, stock_generado, stock_disponible')
-          .eq('id', cutPieceInventory.id)
-          .single()
-
-        console.log(`   ✅ Pieza generada y reservada: +1 de ${productSize}m`)
-        console.log(`   📊 Stock final:`, {
-          total: afterReserve?.stock_total,
-          reservado: afterReserve?.stock_reservado,
-          generado: afterReserve?.stock_generado,
-          disponible: afterReserve?.stock_disponible
-        })
-
-        // 4. Generar remanente (si existe)
-        if (remnantPerSheet > 0) {
-          await generateRemnantStock(usedProduct.code, remnantPerSheet)
-          console.log(`   ✅ Remanente: +1 pieza de ${remnantPerSheet}m (disponible)`)
-        }
-        
       } catch (error) {
         console.error(`\n❌ ERROR en chapa ${i + 1}/${sheetsUsed}:`, error)
         throw error
       }
     }
-    
+
     console.log(`\n✅ Proceso completado: ${sheetsUsed} chapas cortadas`)
-    console.log(`   📉 Chapas originales: -${sheetsUsed} × ${materialLength}m`)
-    console.log(`   📈 Piezas cortadas: +${sheetsUsed} × ${productSize}m (generadas y reservadas)`)
+    console.log(`   📉 Chapas originales: -${sheetsUsed} × ${materialLength}m (EVO actualizará)`)
+    console.log(`   📈 Piezas cortadas: +${sheetsUsed} × ${productSize}m (EVO actualizará)`)
     if (remnantPerSheet > 0) {
-      console.log(`   📈 Remanentes: +${sheetsUsed} × ${remnantPerSheet}m (disponibles)`)
+      console.log(`   📈 Remanentes: +${sheetsUsed} × ${remnantPerSheet}m (EVO actualizará)`)
     }
 
     // ============================================
