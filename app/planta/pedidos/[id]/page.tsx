@@ -432,7 +432,7 @@ export default function PlantaPedidoDetallePage() {
       .from('inventory')
       .select('stock_disponible, stock_total')
       .eq('id', selectedMaterial.id)
-      .single()
+      .maybeSingle()
 
     if (stockCheck && stockCheck.stock_disponible < 0) {
       alert(
@@ -519,8 +519,8 @@ export default function PlantaPedidoDetallePage() {
         .from('inventory')
         .select('product_id')
         .eq('id', selectedMaterial.id)
-        .single()
-      
+        .maybeSingle()
+
       if (!inventoryItem) {
         throw new Error('No se encontró el producto en el inventario')
       }
@@ -622,8 +622,8 @@ export default function PlantaPedidoDetallePage() {
           .from('products')
           .select('code')
           .eq('id', inventoryItem?.product_id)
-          .single()
-        
+          .maybeSingle()
+
         if (!usedProduct?.code) {
           throw new Error('No se encontró el producto usado')
         }
@@ -658,8 +658,8 @@ export default function PlantaPedidoDetallePage() {
             .from('inventory')
             .select('id')
             .eq('product_id', cutOrder.product_id)
-            .single()
-          
+            .maybeSingle()
+
           if (cutPieceInventory?.id) {
             await reserveStock(cutPieceInventory!.id)
             console.log(`   ✅ Reservada: +1 pieza de ${productSize}m`)
