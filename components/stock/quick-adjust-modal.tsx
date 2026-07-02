@@ -23,7 +23,7 @@ interface QuickAdjustModalProps {
 export function QuickAdjustModal({ inventoryItem }: QuickAdjustModalProps) {
   const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
-  const [newTotal, setNewTotal] = useState(inventoryItem.stock_total.toString())
+  const [newTotal, setNewTotal] = useState((inventoryItem.stock_total ?? 0).toString())
   const [loading, setLoading] = useState(false)
 
   async function handleAdjust() {
