@@ -19,6 +19,11 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
   const [groupByClient, setGroupByClient] = useState(false)
   const router = useRouter()
 
+  // Auto-refresh al montar para asegurar datos frescos
+  useEffect(() => {
+    router.refresh()
+  }, [router])
+
   // Auto-refresh cada 30 segundos para asegurar datos frescos
   useEffect(() => {
     const refreshInterval = setInterval(() => {
