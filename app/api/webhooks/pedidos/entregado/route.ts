@@ -193,15 +193,15 @@ async function processPedidoEntregado(payload: PedidoEntregadoPayload, id_evento
 
     console.log('✅ Order found:', order.id, 'status:', order.status)
 
-    // Validar que el pedido esté en estado "finalizado"
-    if (order.status !== 'finalizado') {
-      console.log('❌ Order status is not finalizado:', order.status)
-      errors.push(`Order must be in "finalizado" status to be delivered, current status: ${order.status}`)
+    // Validar que el pedido esté en estado "en_corte" o "finalizado"
+    if (order.status !== 'en_corte' && order.status !== 'finalizado') {
+      console.log('❌ Order status is not en_corte or finalizado:', order.status)
+      errors.push(`Order must be in "en_corte" or "finalizado" status to be delivered, current status: ${order.status}`)
       await updateEventStatus(supabase, id_evento, false, errors)
       return
     }
 
-    console.log('✅ Order status is finalizado, proceeding with delivery')
+    console.log('✅ Order status is valid, proceeding with delivery')
 
     // Determinar si es entrega completa o parcial
     let isCompleteDelivery = true
