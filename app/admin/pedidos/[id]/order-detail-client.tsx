@@ -8,8 +8,6 @@ import { ArrowLeft, CheckCircle2, Clock, ArrowRightLeft, AlertTriangle, Info, Pa
 import Link from 'next/link'
 import OrderActions from './order-actions'
 import ReassignStockModal from '@/components/reassign-stock-modal'
-import PartialDeliveryModal from '@/components/partial-delivery-modal'
-import DeliveryHistoryPanel from '@/components/delivery-history-panel'
 import { useSuccess } from '@/components/success-modal'
 import { useError } from '@/components/error-modal'
 import { extractSizeFromName, extractSizeFromCode } from '@/lib/product-utils'
@@ -25,9 +23,6 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
   const [activityLog, setActivityLog] = useState<any[]>([])
   const [loadingLog, setLoadingLog] = useState(false)
   const [showCutOrdersInfo, setShowCutOrdersInfo] = useState(false)
-  const [partialDeliveryModalOpen, setPartialDeliveryModalOpen] = useState(false)
-  const [deliveryHistory, setDeliveryHistory] = useState<any[]>([])
-  const [deliveryHistoryLoaded, setDeliveryHistoryLoaded] = useState(false)
   const { showSuccess, SuccessDialog } = useSuccess()
   const { showError, ErrorDialog } = useError()
 
@@ -102,71 +97,13 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
   // Cargar log al montar
   useEffect(() => {
     loadActivityLog()
-    loadDeliveryHistory()
   }, [order.id])
-
-  // Cargar historial de entregas
-  async function loadDeliveryHistory() {
-    try {
-      const { getDeliveryHistory } = await import('@/app/actions/delivery-history')
-      const data = await getDeliveryHistory(order.id)
-      setDeliveryHistory(data)
-    } catch (error) {
-      console.error('Error loading delivery history:', error)
-    } finally {
-      setDeliveryHistoryLoaded(true)
-    }
-  }
 
   function openReassignModal(cutOrder: any) {
     setSelectedCutOrder(cutOrder)
     setReassignModalOpen(true)
   }
 
-  async function handlePartialDelivery(itemsToDeliver: Array<{
-    cutOrderId?: string
-    preparationItemId?: string
-    quantity: number
-  }>) {
-    try {
-      const { markPartialDelivery } = await import('@/app/actions/orders')
-      const result = await markPartialDelivery(order.id, itemsToDeliver)
-      
-      alert(`✅ Retirada parcial realizada correctamente\n\nNuevo estado: ${result.newStatus}\nItems retirados: ${itemsToDeliver.length}`)
-      
-      setPartialDeliveryModalOpen(false)
-      
-      // Recargar pedido y historial
-      await reloadOrder()
-      await loadDeliveryHistory()
-      await loadActivityLog()
-    } catch (error: any) {
-      console.error('Error en retirada parcial:', error)
-      alert(`❌ Error en retirada parcial\n\n${error.message || 'Error desconocido'}`)
-      throw error
-    }
-  }
-
-  async function handleUndoPartialDelivery(deliveryHistoryId: string) {
-    if (!confirm('¿Estás seguro de deshacer esta retirada parcial?\n\nSe restaurará el stock y el estado del pedido.')) {
-      return
-    }
-
-    try {
-      const { undoPartialDelivery } = await import('@/app/actions/orders')
-      await undoPartialDelivery(deliveryHistoryId)
-      
-      alert('✅ Retirada parcial deshecha correctamente')
-      
-      // Recargar pedido y historial
-      await reloadOrder()
-      await loadDeliveryHistory()
-      await loadActivityLog()
-    } catch (error: any) {
-      console.error('Error deshaciendo retirada parcial:', error)
-      alert(`❌ Error\n\n${error.message || 'Error desconocido'}`)
-    }
-  }
 
   async function handleReassign(fromCutOrderId: string, quantity: number) {
     try {
@@ -239,9 +176,6 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
             order={order} 
             onUpdate={reloadOrder} 
             isHeaderMode={true}
-            onOpenPartialDelivery={() => setPartialDeliveryModalOpen(true)}
-            deliveryHistory={deliveryHistory}
-            deliveryHistoryLoaded={deliveryHistoryLoaded}
           />
         </div>
       </div>
@@ -447,14 +381,21 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                       {cutOrder.product?.name}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <span className={cutOrder.quantity_cut >= cutOrder.quantity_requested ? 'text-green-600' : 'text-slate-900'}>
-                        {cutOrder.quantity_cut || 0}/{cutOrder.quantity_requested}
-                      </span>
-                      {cutOrder.quantity_cut > 0 && cutOrder.quantity_cut < cutOrder.quantity_requested && (
-                        <span className="ml-2 text-xs text-yellow-600">
-                          ({cutOrder.quantity_requested - cutOrder.quantity_cut} pendientes)
+                      <div className="flex flex-col gap-1">
+                        <span className={cutOrder.quantity_cut >= cutOrder.quantity_requested ? 'text-green-600' : 'text-slate-900'}>
+                          Cortadas: {cutOrder.quantity_cut || 0}/{cutOrder.quantity_requested}
                         </span>
-                      )}
+                        {(cutOrder.quantity_delivered || 0) > 0 && (
+                          <span className="text-xs text-blue-600">
+                            Entregadas: {cutOrder.quantity_delivered || 0}
+                          </span>
+                        )}
+                        {cutOrder.quantity_cut > 0 && (cutOrder.quantity_cut - (cutOrder.quantity_delivered || 0)) > 0 && (
+                          <span className="text-xs text-purple-600">
+                            Pendientes entrega: {cutOrder.quantity_cut - (cutOrder.quantity_delivered || 0)}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
                       <div className="flex items-center gap-2">
@@ -578,14 +519,21 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                       {item.product?.name}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <span className={item.quantity_prepared >= item.quantity_requested ? 'text-green-600' : 'text-slate-900'}>
-                        {item.quantity_prepared || 0}/{item.quantity_requested}
-                      </span>
-                      {item.quantity_prepared > 0 && item.quantity_prepared < item.quantity_requested && (
-                        <span className="ml-2 text-xs text-yellow-600">
-                          ({item.quantity_requested - item.quantity_prepared} pendientes)
+                      <div className="flex flex-col gap-1">
+                        <span className={item.quantity_prepared >= item.quantity_requested ? 'text-green-600' : 'text-slate-900'}>
+                          Preparadas: {item.quantity_prepared || 0}/{item.quantity_requested}
                         </span>
-                      )}
+                        {(item.quantity_delivered || 0) > 0 && (
+                          <span className="text-xs text-blue-600">
+                            Entregadas: {item.quantity_delivered || 0}
+                          </span>
+                        )}
+                        {item.quantity_prepared > 0 && (item.quantity_prepared - (item.quantity_delivered || 0)) > 0 && (
+                          <span className="text-xs text-purple-600">
+                            Pendientes entrega: {item.quantity_prepared - (item.quantity_delivered || 0)}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
                       <div className="flex items-center gap-2">
@@ -764,23 +712,6 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
             await reloadOrder()
             showSuccess('Stock actualizado correctamente', 'Stock Cambiado')
           }}
-        />
-      )}
-
-      {/* Modal de Retirada Parcial */}
-      <PartialDeliveryModal
-        open={partialDeliveryModalOpen}
-        onClose={() => setPartialDeliveryModalOpen(false)}
-        order={order}
-        deliveryHistory={deliveryHistory}
-        onConfirm={handlePartialDelivery}
-      />
-
-      {/* Panel de Historial de Entregas */}
-      {deliveryHistory.length > 0 && (
-        <DeliveryHistoryPanel
-          deliveryHistory={deliveryHistory}
-          onUndoDelivery={handleUndoPartialDelivery}
         />
       )}
 

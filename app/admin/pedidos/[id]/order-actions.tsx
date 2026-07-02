@@ -10,17 +10,11 @@ import { useSuccess } from '@/components/success-modal'
 export default function OrderActions({ 
   order: initialOrder, 
   onUpdate,
-  isHeaderMode = false,
-  onOpenPartialDelivery,
-  deliveryHistory = [],
-  deliveryHistoryLoaded = false
+  isHeaderMode = false
 }: { 
   order: any
   onUpdate?: () => Promise<void>
   isHeaderMode?: boolean
-  onOpenPartialDelivery?: () => void
-  deliveryHistory?: any[]
-  deliveryHistoryLoaded?: boolean
 }) {
   const [loading, setLoading] = useState(false)
   const [undoingDelivery, setUndoingDelivery] = useState(false)
@@ -193,37 +187,6 @@ export default function OrderActions({
   // Verificar si se puede deshacer la entrega (dentro de 24h y estado entregado)
   const canUndoDelivery = order.status === 'entregado'
 
-  // Calcular cantidades ya retiradas del historial
-  const alreadyDelivered: Record<string, number> = {}
-  if (deliveryHistory) {
-    for (const delivery of deliveryHistory) {
-      if (delivery.is_active && delivery.items_delivered) {
-        for (const item of delivery.items_delivered) {
-          const key = item.cut_order_id || item.preparation_item_id
-          alreadyDelivered[key] = (alreadyDelivered[key] || 0) + item.quantity
-        }
-      }
-    }
-  }
-
-  // Verificar si hay items completados DISPONIBLES para retirada parcial
-  const hasAvailableItems = 
-    order.cut_orders?.some((co: any) => {
-      const quantityCut = co.quantity_cut || 0
-      const delivered = alreadyDelivered[co.id] || 0
-      return quantityCut > delivered
-    }) ||
-    order.preparation_items?.some((pi: any) => {
-      const quantityPrepared = pi.quantity_prepared || 0
-      const delivered = alreadyDelivered[pi.id] || 0
-      return quantityPrepared > delivered
-    })
-
-  const canPartialDelivery = 
-    deliveryHistoryLoaded &&
-    hasAvailableItems && 
-    ['aprobado', 'en_corte', 'finalizado', 'parcialmente_entregado'].includes(order.status)
-
   // Modo header: solo botones sin cuadro
   if (isHeaderMode) {
     return (
@@ -257,16 +220,6 @@ export default function OrderActions({
             <div className="px-4 py-2 bg-orange-100 text-orange-800 rounded-lg text-sm font-semibold">
               ⏸️ En Pausa - Sin stock asignado
             </div>
-          )}
-
-          {/* Retirada Parcial */}
-          {canPartialDelivery && onOpenPartialDelivery && (
-            <button
-              onClick={onOpenPartialDelivery}
-              className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-sm font-semibold transition-colors"
-            >
-              📦 Retirada Parcial
-            </button>
           )}
 
           {/* Marcar como Entregado */}
