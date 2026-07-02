@@ -28,6 +28,7 @@ export type OutboundEventType =
   | 'pedido_parcialmente_entregado'  // Retirada parcial de un pedido
   | 'pedido_iniciado'     // Iniciamos preparación
   | 'stock_ajustado'      // Ajuste manual de stock
+  | 'chapa_preparada'     // Operario confirmó recogida de chapa del mismo tamaño (PREP)
   | 'test_ping'           // Para health checks
 
 // Mapeo de tipo de evento → endpoint en RAM/EVO
@@ -40,6 +41,7 @@ const ENDPOINT_MAP: Record<OutboundEventType, string> = {
   pedido_parcialmente_entregado: '/api/velvok/pedido-parcialmente-entregado',
   pedido_iniciado: '/api/velvok/pedido-iniciado',
   stock_ajustado: '/api/velvok/stock-ajustado',
+  chapa_preparada: '/api/v1/stock/movimientos',
   test_ping: '/api/velvok/ping',
 }
 
@@ -434,7 +436,7 @@ export async function notifyPedidoParcialmenteEntregado(params: {
  * Endpoint: /api/v1/stock/movimientos
  */
 export interface CorteMovimiento {
-  tipo: 'BAJA' | 'ALTA'
+  tipo: 'BAJA' | 'ALTA' | 'PREP'
   nro_item?: number
   id_articulo: string
   cantidad: number
@@ -453,6 +455,33 @@ export async function notifyCorteRealizado(params: {
     payload: {
       id_evento: `corte_${params.cutOrderId}_${Date.now()}`,
       tipo_evento: 'corte_realizado',
+      id_pedido: params.idPedido,
+      ref_evo: params.refEvo,
+      operario: params.operario,
+      movimientos: params.movimientos,
+    },
+    relatedEntityType: 'cut_order',
+    relatedEntityId: params.cutOrderId,
+  })
+}
+
+/**
+ * Notifica a EVO que se preparó una chapa del mismo tamaño (PREP)
+ * Se usa cuando el operario confirma la recogida de una chapa que no requiere corte
+ */
+export async function notifyChapaPreparada(params: {
+  cutOrderId: string
+  orderId: string
+  idPedido: string                        // evo_order_id (e.g. "100042647")
+  refEvo: Record<string, any>             // ref_evo guardado del pedido original
+  operario: string                        // código/nombre del operario
+  movimientos: CorteMovimiento[]
+}) {
+  return enqueueOutboundEvent({
+    eventType: 'chapa_preparada',
+    payload: {
+      id_evento: `prep_${params.cutOrderId}_${Date.now()}`,
+      tipo_evento: 'chapa_preparada',
       id_pedido: params.idPedido,
       ref_evo: params.refEvo,
       operario: params.operario,

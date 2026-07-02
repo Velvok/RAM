@@ -2,6 +2,7 @@
 
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { notifyChapaPreparada } from '@/lib/ram-outbound'
 
 /**
  * Confirmar que el operario recogió la pieza reasignada
@@ -15,7 +16,7 @@ export async function confirmReassignmentPickup(cutOrderId: string) {
     .from('cut_orders')
     .select(`
       *,
-      order:orders!cut_orders_order_id_fkey(id, order_number),
+      order:orders!cut_orders_order_id_fkey(id, order_number, evo_order_id, ref_evo),
       reassigned_from_order:orders!cut_orders_reassigned_from_order_id_fkey(order_number)
     `)
     .eq('id', cutOrderId)
@@ -39,8 +40,9 @@ export async function confirmReassignmentPickup(cutOrderId: string) {
   const chapaSize = materialInfo.length_meters
   const productSize = cutOrder.quantity_requested
   const remnantSize = chapaSize - productSize
+  const isSameSize = Math.abs(chapaSize - productSize) < 0.01 // Tolerancia de 1cm
 
-  console.log(`📏 Confirmando reasignación: Chapa ${chapaSize}m → Corte ${productSize}m → Recorte ${remnantSize}m`)
+  console.log(`📏 Confirmando reasignación: Chapa ${chapaSize}m → Corte ${productSize}m → Recorte ${remnantSize}m (mismo tamaño: ${isSameSize})`)
 
   // NUEVO: Incrementar quantity_cut según la cantidad reasignada
   const quantityToAdd = cutOrder.reassigned_quantity || 1
@@ -65,6 +67,40 @@ export async function confirmReassignmentPickup(cutOrderId: string) {
   if (updateError) throw updateError
   
   console.log(`✅ Orden confirmada: ${newQuantityCut}/${cutOrder.quantity_requested} → estado: ${isCompleted ? 'completada' : 'pendiente'}`)
+
+  // NUEVO: Si la chapa es del mismo tamaño, enviar evento PREP a EVO
+  if (isSameSize) {
+    console.log(`📤 Enviando evento PREP a EVO (chapa del mismo tamaño)`)
+    
+    const orderData = Array.isArray(cutOrder.order) ? cutOrder.order[0] : cutOrder.order
+    
+    // Obtener nro_item desde ref_evo
+    const refEvo = orderData.ref_evo || {}
+    const nroItem = refEvo.nro_item || refEvo.item_number || 1
+    
+    // Construir movimiento PREP
+    const movimientos = [{
+      tipo: 'PREP' as const,
+      nro_item: nroItem,
+      id_articulo: materialInfo.code,
+      cantidad: quantityToAdd,
+    }]
+    
+    try {
+      await notifyChapaPreparada({
+        cutOrderId: cutOrder.id,
+        orderId: orderData.id,
+        idPedido: orderData.evo_order_id || orderData.order_number,
+        refEvo: refEvo,
+        operario: 'operario', // TODO: Obtener del usuario autenticado
+        movimientos,
+      })
+      console.log(`✅ Evento PREP enviado a EVO`)
+    } catch (error) {
+      console.error('❌ Error enviando evento PREP a EVO:', error)
+      // No fallar la confirmación si falla el envío a EVO
+    }
+  }
 
   // IMPORTANTE: Decrementar quantity_cut de la orden origen
   if (cutOrder.reassigned_from_cut_order_id) {
