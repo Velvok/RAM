@@ -18,7 +18,7 @@ export async function runConcurrentOrders(context: SimulationContext): Promise<v
   // Import admin operations
   const { createOrder } = await import('../operations/admin/create-order')
   const { approveOrder } = await import('../operations/admin/approve-order')
-  const { partialDelivery } = await import('../operations/admin/partial-delivery')
+  // partialDelivery eliminado - ahora se hace vía webhook de EVO
   
   // Create orders in batches
   const batchSize = config.concurrentOrders
@@ -98,21 +98,9 @@ export async function runConcurrentOrders(context: SimulationContext): Promise<v
             id: inventory.id,
             quantity: inventory.stock_total
           })
-          
-          // Step 3: Partial delivery
-          // Get preparation items
-          const { data: prepItems } = await supabase
-            .from('preparation_items')
-            .select('*')
-            .eq('cut_order_id', cutOrder.id)
-          
-          if (prepItems && prepItems.length > 0) {
-            const deliverQty = Math.min(2, prepItems.length)
-            await partialDelivery(context, orderId, [{
-              cutOrderId: cutOrder.id,
-              quantity: deliverQty
-            }])
-          }
+
+          // Step 3: Partial delivery eliminado - ahora se hace vía webhook de EVO
+          // La entrega parcial ya no se simula en load testing
         }
       }
     }
