@@ -468,6 +468,7 @@ export async function notifyCorteRealizado(params: {
 /**
  * Notifica a EVO que se preparó una chapa del mismo tamaño (PREP)
  * Se usa cuando el operario confirma la recogida de una chapa que no requiere corte
+ * Internamente usamos 'chapa_preparada' pero enviamos 'corte_realizado' a EVO
  */
 export async function notifyChapaPreparada(params: {
   cutOrderId: string
@@ -481,7 +482,7 @@ export async function notifyChapaPreparada(params: {
     eventType: 'chapa_preparada',
     payload: {
       id_evento: `prep_${params.cutOrderId}_${Date.now()}`,
-      tipo_evento: 'chapa_preparada',
+      tipo_evento: 'corte_realizado', // EVO espera corte_realizado
       id_pedido: params.idPedido,
       ref_evo: params.refEvo,
       operario: params.operario,
