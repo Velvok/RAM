@@ -382,8 +382,8 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex flex-col gap-1">
-                        <span className={(cutOrder.quantity_cut - (cutOrder.quantity_delivered || 0)) >= cutOrder.quantity_requested ? 'text-green-600' : 'text-slate-900'}>
-                          Cortadas: {(cutOrder.quantity_cut || 0) - (cutOrder.quantity_delivered || 0)}/{cutOrder.quantity_requested}
+                        <span className={(cutOrder.quantity_cut - (cutOrder.quantity_delivered || 0)) >= (cutOrder.quantity_requested - (cutOrder.quantity_delivered || 0)) ? 'text-green-600' : 'text-slate-900'}>
+                          Cortadas: {(cutOrder.quantity_cut || 0) - (cutOrder.quantity_delivered || 0)}/{cutOrder.quantity_requested - (cutOrder.quantity_delivered || 0)}
                         </span>
                         {(cutOrder.quantity_delivered || 0) > 0 && (
                           <span className="text-xs text-blue-600">
@@ -515,8 +515,8 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex flex-col gap-1">
-                        <span className={(item.quantity_prepared - (item.quantity_delivered || 0)) >= item.quantity_requested ? 'text-green-600' : 'text-slate-900'}>
-                          Preparadas: {(item.quantity_prepared || 0) - (item.quantity_delivered || 0)}/{item.quantity_requested}
+                        <span className={(item.quantity_prepared - (item.quantity_delivered || 0)) >= (item.quantity_requested - (item.quantity_delivered || 0)) ? 'text-green-600' : 'text-slate-900'}>
+                          Preparadas: {(item.quantity_prepared || 0) - (item.quantity_delivered || 0)}/{item.quantity_requested - (item.quantity_delivered || 0)}
                         </span>
                         {(item.quantity_delivered || 0) > 0 && (
                           <span className="text-xs text-blue-600">
