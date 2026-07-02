@@ -169,38 +169,36 @@ export async function prepareItem(
 
   console.log(`✅ Artículo actualizado: ${newTotal}/${item.quantity_requested} preparadas`)
 
-  // 5. Si se completó la preparación, enviar evento PREP a EVO
-  if (isCompleted) {
-    console.log(`📤 Enviando evento PREP a EVO (artículo preparado)`)
-    
-    const orderData = Array.isArray(item.order) ? item.order[0] : item.order
-    
-    // Obtener nro_item desde ref_evo o evo_item_number del preparation_item
-    const refEvo = orderData.ref_evo || {}
-    const nroItem = item.evo_item_number || refEvo.nro_item || refEvo.item_number || 1
-    
-    // Construir movimiento PREP
-    const movimientos = [{
-      tipo: 'PREP' as const,
-      nro_item: nroItem,
-      id_articulo: item.product.code,
-      cantidad: quantityPrepared,
-    }]
-    
-    try {
-      await notifyChapaPreparada({
-        cutOrderId: itemId, // Usamos el preparation_item_id como referencia
-        orderId: orderData.id,
-        idPedido: orderData.evo_order_id || orderData.order_number,
-        refEvo: refEvo,
-        operario: 'operario', // TODO: Obtener del usuario autenticado
-        movimientos,
-      })
-      console.log(`✅ Evento PREP enviado a EVO`)
-    } catch (error) {
-      console.error('❌ Error enviando evento PREP a EVO:', error)
-      // No fallar la preparación si falla el envío a EVO
-    }
+  // 5. Enviar evento PREP a EVO en cada actualización
+  console.log(`📤 Enviando evento PREP a EVO (artículo preparado)`)
+  
+  const orderData = Array.isArray(item.order) ? item.order[0] : item.order
+  
+  // Obtener nro_item desde ref_evo o evo_item_number del preparation_item
+  const refEvo = orderData.ref_evo || {}
+  const nroItem = item.evo_item_number || refEvo.nro_item || refEvo.item_number || 1
+  
+  // Construir movimiento PREP
+  const movimientos = [{
+    tipo: 'PREP' as const,
+    nro_item: nroItem,
+    id_articulo: item.product.code,
+    cantidad: quantityPrepared,
+  }]
+  
+  try {
+    await notifyChapaPreparada({
+      cutOrderId: itemId, // Usamos el preparation_item_id como referencia
+      orderId: orderData.id,
+      idPedido: orderData.evo_order_id || orderData.order_number,
+      refEvo: refEvo,
+      operario: 'operario', // TODO: Obtener del usuario autenticado
+      movimientos,
+    })
+    console.log(`✅ Evento PREP enviado a EVO`)
+  } catch (error) {
+    console.error('❌ Error enviando evento PREP a EVO:', error)
+    // No fallar la preparación si falla el envío a EVO
   }
 
   // 6. Registrar actividad
