@@ -321,7 +321,11 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 w-32">
-                    <QuickAdjustModal inventoryItem={item} />
+                    {item.product && item.stock_total !== null && item.stock_total !== undefined ? (
+                      <QuickAdjustModal inventoryItem={item} />
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
                   </td>
 
                   {/* Tooltip con información de pedidos */}
