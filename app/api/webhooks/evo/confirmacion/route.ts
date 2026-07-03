@@ -109,6 +109,25 @@ export async function POST(request: NextRequest) {
 
     console.log(`✅ Outbound event updated to: ${updateData.status}`)
 
+    // Registrar el evento de confirmación en evo_events para que aparezca en /admin/logs
+    try {
+      await supabase
+        .from('evo_events')
+        .insert({
+          id_evento: `confirm_${payload.id_evento}`,
+          tipo_evento: 'evo_confirmacion',
+          payload: payload,
+          processed_at: new Date().toISOString(),
+          success: payload.estado === 'completado',
+          errors: payload.estado === 'error' ? [payload.error_message] : null,
+          order_id: outboundEvent.related_entity_id
+        })
+      console.log('✅ Confirmation event logged in evo_events')
+    } catch (logError) {
+      console.error('⚠️ Error logging confirmation in evo_events:', logError)
+      // No fallar el flujo principal si falla el log
+    }
+
     // Procesar el siguiente evento pendiente
     await processNextPendingEvent(supabase)
 
