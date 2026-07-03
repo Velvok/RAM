@@ -240,7 +240,7 @@ async function processPedidoEntregado(payload: PedidoEntregadoPayload, id_evento
     if (isPartialDelivery) {
       console.log('🔄 Processing partial delivery...')
       const articlesForPartial = payload.articulos?.map(a => ({ id_articulo: a.codart, cantidad: a.cantidad })) || []
-      await processPartialDelivery(supabase, order, articlesForPartial, errors)
+      await processPartialDelivery(supabase, order, articlesForPartial, payload, errors)
       await updateEventStatus(supabase, id_evento, errors.length === 0, errors.length > 0 ? errors : null, order.id)
       return
     }
@@ -384,6 +384,7 @@ async function processPartialDelivery(
   supabase: ReturnType<typeof createAdminClient>,
   order: any,
   deliveredArticles: Array<{ id_articulo: string; cantidad: number }>,
+  payload: any,
   errors: string[]
 ) {
   console.log(`🔄 Processing partial delivery for order ${order.id}`)
@@ -531,6 +532,10 @@ async function processPartialDelivery(
     }
   }
 
+  // Registrar actividad en el historial
+  const totalDelivered = payload.articulos.reduce((sum: number, art: any) => sum + art.cantidad, 0)
+  await logPartialDeliveryActivity(supabase, order.id, payload.articulos, totalDelivered)
+
   // Actualizar estado del pedido si es necesario (no cambiar a 'entregado' en parcial)
   // Mantener 'finalizado' o cambiar a 'parcialmente_entregado' si tiene sentido
   console.log(`✅ Partial delivery processed with ${errors.length} errors`)
@@ -557,5 +562,37 @@ async function updateEventStatus(
       .eq('id_evento', idEvento)
   } catch (error) {
     console.error('Failed to update event status:', error)
+  }
+}
+
+async function logPartialDeliveryActivity(
+  supabase: ReturnType<typeof createAdminClient>,
+  orderId: string,
+  articles: any[],
+  totalDelivered: number
+) {
+  try {
+    const itemsDelivered = articles.map(art => ({
+      product_code: art.codart,
+      quantity: art.cantidad
+    }))
+
+    await supabase
+      .from('order_activity_log')
+      .insert({
+        order_id: orderId,
+        activity_type: 'partial_delivery',
+        description: `Retirada parcial desde EVO: ${totalDelivered} unidades entregadas`,
+        metadata: {
+          action: 'partial_delivery_from_evo',
+          items_delivered: itemsDelivered,
+          total_delivered: totalDelivered,
+          source: 'evo_webhook'
+        }
+      })
+
+    console.log('✅ Activity logged for partial delivery')
+  } catch (error) {
+    console.error('Failed to log activity:', error)
   }
 }
