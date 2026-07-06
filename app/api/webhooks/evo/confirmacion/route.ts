@@ -111,20 +111,32 @@ export async function POST(request: NextRequest) {
 
     // Registrar el evento de confirmación en evo_events para que aparezca en /admin/logs
     try {
-      await supabase
+      // Solo incluir order_id si el evento está relacionado con un order
+      const insertData: any = {
+        id_evento: `confirm_${payload.id_evento}`,
+        tipo_evento: 'evo_confirmacion',
+        payload: payload,
+        processed_at: new Date().toISOString(),
+        success: payload.estado === 'completado',
+        errors: payload.estado === 'error' && payload.error_message ? [payload.error_message] : null
+      }
+
+      // Si el evento está relacionado con un order, incluir order_id
+      if (outboundEvent.related_entity_type === 'order' && outboundEvent.related_entity_id) {
+        insertData.order_id = outboundEvent.related_entity_id
+      }
+
+      const { error: insertError } = await supabase
         .from('evo_events')
-        .insert({
-          id_evento: `confirm_${payload.id_evento}`,
-          tipo_evento: 'evo_confirmacion',
-          payload: payload,
-          processed_at: new Date().toISOString(),
-          success: payload.estado === 'completado',
-          errors: payload.estado === 'error' ? [payload.error_message] : null,
-          order_id: outboundEvent.related_entity_id
-        })
-      console.log('✅ Confirmation event logged in evo_events')
+        .insert(insertData)
+
+      if (insertError) {
+        console.error('⚠️ Error inserting confirmation in evo_events:', insertError)
+      } else {
+        console.log('✅ Confirmation event logged in evo_events')
+      }
     } catch (logError) {
-      console.error('⚠️ Error logging confirmation in evo_events:', logError)
+      console.error('⚠️ Exception logging confirmation in evo_events:', logError)
       // No fallar el flujo principal si falla el log
     }
 
