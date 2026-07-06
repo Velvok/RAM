@@ -94,10 +94,24 @@ export async function enqueueOutboundEvent({
     throw error
   }
 
-  // Intentar procesarlo inmediatamente (fire and forget)
-  processOutboundEvent(data.id).catch(err => {
-    console.error('Error procesando evento inmediatamente:', err)
-  })
+  // Solo procesar inmediatamente si NO hay otro evento en processing
+  // Esto implementa la cola secuencial para evitar saturar a EVO
+  const { data: processingEvents } = await supabase
+    .from('outbound_events')
+    .select('id')
+    .eq('status', 'processing')
+    .limit(1)
+
+  if (!processingEvents || processingEvents.length === 0) {
+    // No hay eventos en proceso, podemos procesar este inmediatamente
+    console.log(`🚀 No hay eventos en proceso, procesando ${data.id} inmediatamente`)
+    processOutboundEvent(data.id).catch(err => {
+      console.error('Error procesando evento inmediatamente:', err)
+    })
+  } else {
+    // Hay un evento en proceso, este quedará pending hasta que el webhook de confirmación lo procese
+    console.log(`⏸️ Evento ${data.id} encolado, esperando confirmación de evento en proceso`)
+  }
 
   return data.id
 }
@@ -210,9 +224,13 @@ export async function processOutboundEvent(eventId: string): Promise<{
 
   // 6. Actualizar el evento con el resultado
   const isLastAttempt = currentAttempt >= event.max_attempts
+  
+  // Si el envío fue exitoso, dejarlo en 'processing' esperando confirmación de EVO
+  // Solo se marcará como 'success' cuando EVO envíe la confirmación vía webhook
   const nextStatus = success
-    ? 'success'
+    ? 'processing'  // Esperando confirmación de EVO
     : (isLastAttempt ? 'failed' : 'failed') // 'failed' permite reintentos via cron
+  
   const nextRetryAt = success
     ? null
     : calculateNextRetryTime(currentAttempt)
@@ -225,9 +243,11 @@ export async function processOutboundEvent(eventId: string): Promise<{
       response_body: responseBody,
       error_message: errorMessage,
       next_retry_at: nextRetryAt,
-      completed_at: success || isLastAttempt ? new Date().toISOString() : null,
+      completed_at: isLastAttempt && !success ? new Date().toISOString() : null,
     })
     .eq('id', eventId)
+
+  console.log(`📊 Evento ${eventId} actualizado a estado: ${nextStatus}${success ? ' (esperando confirmación de EVO)' : ''}`)
 
   return { success, status: httpStatus, error: errorMessage || undefined }
 }

@@ -82,7 +82,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Event not found' }, { status: 404 })
     }
 
-    console.log(`✅ Found outbound event: ${outboundEvent.id} (${outboundEvent.event_type})`)
+    console.log(`✅ Found outbound event: ${outboundEvent.id} (${outboundEvent.event_type}) - Status: ${outboundEvent.status}`)
+
+    // Verificar que el evento esté en estado 'processing' (esperando confirmación)
+    if (outboundEvent.status !== 'processing') {
+      console.log(`⚠️ Event ${outboundEvent.id} is not in 'processing' state (current: ${outboundEvent.status}), skipping update`)
+      return NextResponse.json({
+        success: true,
+        message: 'Event already processed',
+        id_evento: payload.id_evento
+      })
+    }
 
     // Actualizar el estado del evento
     const updateData: any = {
