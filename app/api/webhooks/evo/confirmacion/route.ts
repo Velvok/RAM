@@ -158,38 +158,21 @@ export async function POST(request: NextRequest) {
       // No fallar el flujo principal si falla el log
     }
 
-    // Procesar eventos pending en loop hasta que no haya más listos
-    // Esto maneja casos donde eventos se re-encolan después de 401
-    const processedEvents = []
-    let hasMoreEvents = true
-    let loopCount = 0
-    const maxLoops = 5 // Límite de seguridad
+    // Procesar el siguiente evento pending (solo uno)
+    // Cada confirmación procesa el siguiente en la cola
+    console.log('⏳ Esperando 2 segundos antes de procesar siguiente evento...')
+    await new Promise(resolve => setTimeout(resolve, 2000))
     
-    while (hasMoreEvents && loopCount < maxLoops) {
-      loopCount++
-      console.log(`⏳ Loop ${loopCount}: Esperando 2 segundos antes de buscar siguiente evento...`)
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      
-      console.log(`🔄 Loop ${loopCount}: Buscando siguiente evento pendiente...`)
-      const nextEventResult = await processNextPendingEvent(supabase)
-      console.log(`📊 Loop ${loopCount}: Resultado:`, nextEventResult)
-      
-      if (nextEventResult.success && nextEventResult.message !== 'No pending events') {
-        processedEvents.push(nextEventResult)
-      } else {
-        hasMoreEvents = false
-      }
-    }
-    
-    console.log(`✅ Procesados ${processedEvents.length} eventos adicionales`)
+    console.log('🔄 Procesando siguiente evento pendiente...')
+    const nextEventResult = await processNextPendingEvent(supabase)
+    console.log('📊 Resultado:', nextEventResult)
     console.log('=== FIN WEBHOOK CONFIRMACIÓN ===\n')
 
     return NextResponse.json({
       success: true,
       message: 'Confirmation processed',
       id_evento: payload.id_evento,
-      events_processed: processedEvents.length,
-      processed_events: processedEvents
+      next_event_processed: nextEventResult
     })
 
   } catch (error) {

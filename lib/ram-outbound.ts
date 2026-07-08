@@ -281,35 +281,6 @@ export async function processOutboundEvent(eventId: string): Promise<{
     } else {
       errorMessage = `HTTP ${response.status}: ${responseBody?.error || responseBody?.message || 'Error desconocido'}`
       console.log(`❌ Request falló: HTTP ${response.status}, currentAttempt: ${currentAttempt}`)
-      
-      // REINTENTO AUTOMÁTICO para HTTP 401
-      // Estrategia: Re-encolar como pending para que se procese como evento completamente nuevo
-      // Esto simula el reintento manual que funciona
-      if (response.status === 401 && currentAttempt === 1) {
-        console.log(`⚠️ HTTP 401 detectado - Re-encolando evento para reintento automático...`)
-        
-        // Marcar como pending con next_retry_at en 60 segundos
-        // EVO necesita tiempo significativo para "olvidar" el evento anterior
-        await supabase
-          .from('outbound_events')
-          .update({
-            status: 'pending',
-            next_retry_at: new Date(Date.now() + 60000).toISOString(), // 60 segundos
-            attempts: 0, // Resetear intentos para que se procese de nuevo
-            http_status: null,
-            error_message: 'Reintento automático por HTTP 401 - esperando 60s',
-          })
-          .eq('id', event.id)
-        
-        console.log(`✅ Evento re-encolado para procesamiento en 60 segundos`)
-        
-        // Retornar indicando que se re-encoló (no es ni success ni failed)
-        return {
-          success: false,
-          status: 401,
-          error: 'Re-encolado para reintento automático'
-        }
-      }
     }
   } catch (err: any) {
     errorMessage = err.name === 'AbortError'
