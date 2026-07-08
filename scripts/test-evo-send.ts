@@ -1,6 +1,9 @@
 // Script de prueba para probar diferentes formas de enviar a EVO
 // Este script prueba el mismo payload con diferentes configuraciones
 
+import { config } from 'dotenv'
+config({ path: '.env.local' })
+
 const RAM_API_KEY = process.env.RAM_API_KEY || process.env.EVO_API_KEY || ''
 const EVO_ENDPOINT = 'http://186.138.17.53:8083/api-evo-velvokp/api/v1/stock/movimientos'
 
