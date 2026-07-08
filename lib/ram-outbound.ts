@@ -236,11 +236,19 @@ export async function processOutboundEvent(eventId: string): Promise<{
       console.log(`   Tiene espacios extra al final: ${authHeader !== authHeader.trimEnd()}`)
     }
 
+    // Forzar nueva conexión HTTP para cada request
+    // Esto evita reutilizar conexiones keep-alive que puedan causar problemas con EVO
     const response = await fetch(event.endpoint, {
       method: 'POST',
-      headers,
+      headers: {
+        ...headers,
+        'Connection': 'close', // Forzar cierre de conexión después del request
+        'X-Request-Timestamp': new Date().toISOString(), // Timestamp único para cada request
+        'X-Request-ID': `${event.id}-${currentAttempt}-${Date.now()}`, // ID único para este intento específico
+      },
       body: JSON.stringify(event.payload),
       signal: controller.signal,
+      keepalive: false, // Deshabilitar keep-alive
     })
 
     clearTimeout(timeoutId)
