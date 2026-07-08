@@ -246,6 +246,8 @@ export async function processOutboundEvent(eventId: string): Promise<{
       },
       body: JSON.stringify(event.payload),
       signal: controller.signal,
+      // Forzar cierre de conexión TCP para evitar reuso en Vercel
+      keepalive: false,
     })
 
     clearTimeout(timeoutId)
