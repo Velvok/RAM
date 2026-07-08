@@ -23,6 +23,13 @@ const RAM_API_KEY = RAM_API_KEY_RAW.trim()
 const RAM_TIMEOUT_MS = 30000
 
 // Log de inicialización para debug
+console.log(`🔑 EVO Token Initialization:`)
+console.log(`   RAM_API_KEY exists: ${!!process.env.RAM_API_KEY}`)
+console.log(`   EVO_API_KEY exists: ${!!process.env.EVO_API_KEY}`)
+console.log(`   Using: ${process.env.RAM_API_KEY ? 'RAM_API_KEY' : 'EVO_API_KEY'}`)
+console.log(`   Token length: ${RAM_API_KEY.length}`)
+console.log(`   Token SHA256: ${createHash('sha256').update(RAM_API_KEY).digest('hex')}`)
+
 if (RAM_API_KEY_RAW !== RAM_API_KEY) {
   console.warn(`⚠️ RAM_API_KEY tenía espacios extra - se limpiaron automáticamente`)
   console.warn(`   Original length: ${RAM_API_KEY_RAW.length}, Limpio: ${RAM_API_KEY.length}`)
