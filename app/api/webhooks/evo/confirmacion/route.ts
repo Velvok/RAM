@@ -60,7 +60,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log('📦 Payload:', JSON.stringify(payload, null, 2))
+    console.log('\n=== � WEBHOOK CONFIRMACIÓN EVO ===')
+    console.log('� Payload:', JSON.stringify(payload, null, 2))
+    console.log('🔑 Auth header:', request.headers.get('authorization') ? 'Bearer ***' : 'none')
 
     // Validación
     if (!payload.id_evento || !payload.estado || !payload.timestamp) {
@@ -71,6 +73,7 @@ export async function POST(request: NextRequest) {
 
     // Buscar el outbound_event correspondiente
     // El id_evento viene en el payload que enviamos a EVO
+    console.log(`🔍 Buscando outbound_event con id_evento: ${payload.id_evento}`)
     const { data: outboundEvent, error: fetchError } = await supabase
       .from('outbound_events')
       .select('*')
@@ -78,11 +81,16 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (fetchError || !outboundEvent) {
-      console.error('❌ Outbound event not found for id_evento:', payload.id_evento)
+      console.error('❌ Outbound event not found for id_evento:', payload.id_evento, fetchError)
       return NextResponse.json({ error: 'Event not found' }, { status: 404 })
     }
 
-    console.log(`✅ Found outbound event: ${outboundEvent.id} (${outboundEvent.event_type}) - Status: ${outboundEvent.status}`)
+    console.log(`✅ Found outbound event:`, {
+      id: outboundEvent.id,
+      event_type: outboundEvent.event_type,
+      status: outboundEvent.status,
+      created_at: outboundEvent.created_at
+    })
 
     // Verificar que el evento esté en estado 'processing' (esperando confirmación)
     if (outboundEvent.status !== 'processing') {
@@ -151,12 +159,16 @@ export async function POST(request: NextRequest) {
     }
 
     // Procesar el siguiente evento pendiente
-    await processNextPendingEvent(supabase)
+    console.log('🔄 Intentando procesar siguiente evento pendiente...')
+    const nextEventResult = await processNextPendingEvent(supabase)
+    console.log('📊 Resultado procesamiento siguiente evento:', nextEventResult)
+    console.log('=== FIN WEBHOOK CONFIRMACIÓN ===\n')
 
     return NextResponse.json({
       success: true,
       message: 'Confirmation processed',
-      id_evento: payload.id_evento
+      id_evento: payload.id_evento,
+      next_event_processed: nextEventResult
     })
 
   } catch (error) {
@@ -174,6 +186,8 @@ export async function POST(request: NextRequest) {
  */
 async function processNextPendingEvent(supabase: ReturnType<typeof createAdminClient>) {
   try {
+    console.log('🔍 Buscando siguiente evento pendiente...')
+    
     // Buscar el evento más antiguo en estado 'pending'
     const { data: nextEvent, error: fetchError } = await supabase
       .from('outbound_events')
@@ -185,22 +199,44 @@ async function processNextPendingEvent(supabase: ReturnType<typeof createAdminCl
 
     if (fetchError) {
       console.error('❌ Error fetching next pending event:', fetchError)
-      return
+      return { success: false, error: fetchError.message }
     }
 
     if (!nextEvent) {
-      console.log('ℹ️ No pending events to process')
-      return
+      console.log('ℹ️ No hay eventos pendientes para procesar')
+      return { success: true, message: 'No pending events' }
     }
 
-    console.log(`🔄 Processing next pending event: ${nextEvent.id} (${nextEvent.event_type})`)
+    console.log(`� Procesando siguiente evento pendiente:`, {
+      id: nextEvent.id,
+      event_type: nextEvent.event_type,
+      created_at: nextEvent.created_at,
+      payload_operario: nextEvent.payload?.operario
+    })
 
     // Importar processOutboundEvent dinámicamente para evitar dependencias circulares
     const { processOutboundEvent } = await import('@/lib/ram-outbound')
     
-    await processOutboundEvent(nextEvent.id)
+    const result = await processOutboundEvent(nextEvent.id)
+    
+    console.log(`✅ Resultado del procesamiento:`, {
+      success: result.success,
+      status: result.status,
+      error: result.error
+    })
+
+    return {
+      success: true,
+      event_id: nextEvent.id,
+      event_type: nextEvent.event_type,
+      result
+    }
 
   } catch (error) {
     console.error('❌ Error processing next pending event:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }
   }
 }
