@@ -288,19 +288,20 @@ export async function processOutboundEvent(eventId: string): Promise<{
       if (response.status === 401 && currentAttempt === 1) {
         console.log(`⚠️ HTTP 401 detectado - Re-encolando evento para reintento automático...`)
         
-        // Marcar como pending con next_retry_at inmediato (2 segundos)
+        // Marcar como pending con next_retry_at en 60 segundos
+        // EVO necesita tiempo significativo para "olvidar" el evento anterior
         await supabase
           .from('outbound_events')
           .update({
             status: 'pending',
-            next_retry_at: new Date(Date.now() + 2000).toISOString(),
+            next_retry_at: new Date(Date.now() + 60000).toISOString(), // 60 segundos
             attempts: 0, // Resetear intentos para que se procese de nuevo
             http_status: null,
-            error_message: 'Reintento automático por HTTP 401',
+            error_message: 'Reintento automático por HTTP 401 - esperando 60s',
           })
           .eq('id', event.id)
         
-        console.log(`✅ Evento re-encolado para procesamiento en 2 segundos`)
+        console.log(`✅ Evento re-encolado para procesamiento en 60 segundos`)
         
         // Retornar indicando que se re-encoló (no es ni success ni failed)
         return {
