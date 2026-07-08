@@ -236,22 +236,38 @@ export async function processOutboundEvent(eventId: string): Promise<{
       console.log(`   Tiene espacios extra al final: ${authHeader !== authHeader.trimEnd()}`)
     }
 
-    // Forzar nueva conexión HTTP para cada request
-    // Esto evita reutilizar conexiones keep-alive que puedan causar problemas con EVO
-    const response = await fetch(event.endpoint, {
-      method: 'POST',
-      headers: {
-        ...headers,
-        'Connection': 'close', // Forzar cierre de conexión después del request
-        'X-Request-Timestamp': new Date().toISOString(), // Timestamp único para cada request
-        'X-Request-ID': `${event.id}-${currentAttempt}-${Date.now()}`, // ID único para este intento específico
-      },
-      body: JSON.stringify(event.payload),
-      signal: controller.signal,
-      keepalive: false, // Deshabilitar keep-alive
+    // FORZAR CONEXIÓN TCP NUEVA:
+    // En Node.js, fetch usa undici que IGNORA 'Connection: close' y 'keepalive: false'.
+    // Undici mantiene un pool de conexiones que REUTILIZA la conexión TCP anterior,
+    // y el servidor de EVO rechaza la segunda petición en la misma conexión con 401.
+    // Solución: crear un Agent nuevo por request (sin keep-alive) y cerrarlo al terminar.
+    const { Agent } = await import('undici')
+    const dispatcher = new Agent({
+      keepAliveTimeout: 1,      // Cerrar conexión inmediatamente después del request
+      keepAliveMaxTimeout: 1,
+      pipelining: 0,            // Sin pipelining, una petición por conexión
     })
 
-    clearTimeout(timeoutId)
+    let response: Response
+    try {
+      console.log(`🔌 Usando conexión TCP NUEVA (Agent dedicado para este request)`)
+      response = await fetch(event.endpoint, {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'X-Request-Timestamp': new Date().toISOString(),
+          'X-Request-ID': `${event.id}-${currentAttempt}-${Date.now()}`,
+        },
+        body: JSON.stringify(event.payload),
+        signal: controller.signal,
+        // @ts-expect-error - dispatcher es una opción válida de undici fetch en Node.js
+        dispatcher,
+      })
+    } finally {
+      clearTimeout(timeoutId)
+      // Cerrar el agent destruye la conexión TCP - la próxima petición usará una nueva
+      dispatcher.close().catch(() => {})
+    }
 
     httpStatus = response.status
     
