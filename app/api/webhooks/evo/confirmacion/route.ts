@@ -160,8 +160,9 @@ export async function POST(request: NextRequest) {
 
     // Procesar el siguiente evento pending (solo uno)
     // Cada confirmación procesa el siguiente en la cola
-    console.log('⏳ Esperando 2 segundos antes de procesar siguiente evento...')
-    await new Promise(resolve => setTimeout(resolve, 2000))
+    // Delay de 60 segundos - simula el reintento manual que funciona
+    console.log('⏳ Esperando 60 segundos antes de procesar siguiente evento (como reintento manual)...')
+    await new Promise(resolve => setTimeout(resolve, 60000))
     
     console.log('🔄 Procesando siguiente evento pendiente...')
     const nextEventResult = await processNextPendingEvent(supabase)
