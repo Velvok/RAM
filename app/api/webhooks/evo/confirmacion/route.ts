@@ -158,16 +158,19 @@ export async function POST(request: NextRequest) {
       // No fallar el flujo principal si falla el log
     }
 
-    // NO procesar el siguiente evento aquí
-    // El worker independiente se encargará de procesar eventos pending
-    // Esto evita el problema de contexto de Vercel que causa HTTP 401
-    console.log('✅ Confirmación procesada. Worker procesará siguiente evento pendiente.')
+    // Procesar automáticamente el siguiente evento pending
+    // Usando función que funciona igual que reintento manual (que funciona)
+    console.log('🔄 Procesando siguiente evento pendiente automáticamente...')
+    const { processNextPendingEventAuto } = await import('@/app/actions/integration-logs')
+    const nextEventResult = await processNextPendingEventAuto()
+    console.log('📊 Resultado:', nextEventResult)
     console.log('=== FIN WEBHOOK CONFIRMACIÓN ===\n')
 
     return NextResponse.json({
       success: true,
       message: 'Confirmation processed',
-      id_evento: payload.id_evento
+      id_evento: payload.id_evento,
+      next_event_processed: nextEventResult
     })
 
   } catch (error) {

@@ -160,6 +160,42 @@ export async function retryOutboundEvent(eventId: string) {
   return result
 }
 
+/**
+ * Procesa automáticamente el siguiente evento pending.
+ * Se puede llamar desde cualquier acción de usuario para procesar
+ * eventos pending automáticamente sin cron job.
+ */
+export async function processNextPendingEventAuto() {
+  const supabase = createAdminClient()
+
+  try {
+    // Buscar el siguiente evento pending que esté listo para procesar
+    const { data: pendingEvent, error } = await supabase
+      .from('outbound_events')
+      .select('*')
+      .eq('status', 'pending')
+      .or('next_retry_at.is.null,next_retry_at.lte.' + new Date().toISOString())
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (error || !pendingEvent) {
+      return { success: true, message: 'No pending events to process' }
+    }
+
+    console.log(`🔄 Procesando evento pending automáticamente: ${pendingEvent.id}`)
+
+    // Procesar el evento igual que reintento manual
+    const { processOutboundEvent } = await import('@/lib/ram-outbound')
+    const result = await processOutboundEvent(pendingEvent.id)
+
+    return { success: true, message: 'Event processed', result }
+  } catch (error) {
+    console.error('Error procesando evento pending automáticamente:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+  }
+}
+
 export async function sendTestEvent() {
   const { enqueueOutboundEvent } = await import('@/lib/ram-outbound')
 
