@@ -45,6 +45,12 @@ function getTokenInfo(token: string) {
     isUndefined: token === 'undefined',
     isNull: token === 'null',
     isEmpty: token === '',
+    // Detectar espacios extra (más de un espacio consecutivo)
+    hasMultipleSpaces: /\s{2,}/.test(token),
+    // Detectar espacios al inicio (después de "Bearer " si es Authorization header)
+    hasLeadingSpaces: token !== token.trimStart(),
+    // Detectar espacios al final
+    hasTrailingSpaces: token !== token.trimEnd(),
   }
 }
 
@@ -259,7 +265,10 @@ export async function processOutboundEvent(eventId: string): Promise<{
       console.log(`   Starts with: "${authInfo.startsWith}"`)
       console.log(`   Ends with: "${authInfo.endsWith}"`)
       console.log(`   SHA256: ${authInfo.sha256}`)
-      console.log(`   Has spaces: ${authInfo.hasSpaces}`)
+      console.log(`   Has spaces: ${authInfo.hasSpaces} (espacio entre "Bearer" y token es normal)`)
+      console.log(`   Has multiple spaces: ${authInfo.hasMultipleSpaces} (anómalo)`)
+      console.log(`   Has leading spaces: ${authInfo.hasLeadingSpaces} (anómalo)`)
+      console.log(`   Has trailing spaces: ${authInfo.hasTrailingSpaces} (anómalo)`)
       console.log(`   Has line breaks: ${authInfo.hasLineBreaks}`)
       console.log(`   Has double Bearer: ${authInfo.hasDoubleBearer}`)
       console.log(`   Has quotes: ${authInfo.hasQuotes}`)
