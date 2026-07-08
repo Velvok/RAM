@@ -236,13 +236,23 @@ export async function processOutboundEvent(eventId: string): Promise<{
     }
 
     // Enviar request a EVO
+    const requestStartTime = Date.now()
+    const requestId = `${event.id}-${currentAttempt}-${Date.now()}`
+    
+    console.log(`🚀 Iniciando request HTTP a EVO:`)
+    console.log(`   Request ID: ${requestId}`)
+    console.log(`   Timestamp: ${new Date().toISOString()}`)
+    console.log(`   Endpoint: ${event.endpoint}`)
+    console.log(`   Connection header: close`)
+    console.log(`   keepalive: false`)
+    
     const response = await fetch(event.endpoint, {
       method: 'POST',
       headers: {
         ...headers,
         'Connection': 'close',
         'X-Request-Timestamp': new Date().toISOString(),
-        'X-Request-ID': `${event.id}-${currentAttempt}-${Date.now()}`,
+        'X-Request-ID': requestId,
       },
       body: JSON.stringify(event.payload),
       signal: controller.signal,
@@ -252,11 +262,14 @@ export async function processOutboundEvent(eventId: string): Promise<{
 
     clearTimeout(timeoutId)
 
+    const requestDuration = Date.now() - requestStartTime
     httpStatus = response.status
     
     console.log(`📨 Respuesta recibida:`)
+    console.log(`   Request ID: ${requestId}`)
     console.log(`   HTTP Status: ${httpStatus}`)
     console.log(`   Status Text: ${response.statusText}`)
+    console.log(`   Duration: ${requestDuration}ms`)
     
     // Capturar headers de respuesta
     const responseHeaders: Record<string, string> = {}
@@ -264,6 +277,7 @@ export async function processOutboundEvent(eventId: string): Promise<{
       responseHeaders[key] = value
     })
     console.log(`   Response Headers:`, responseHeaders)
+    console.log(`   Connection header en respuesta: ${responseHeaders['connection'] || 'no presente'}`)
     
     const contentType = response.headers.get('content-type')
     if (contentType?.includes('application/json')) {
