@@ -194,11 +194,13 @@ async function processNextPendingEvent(supabase: ReturnType<typeof createAdminCl
   try {
     console.log('🔍 Buscando siguiente evento pendiente...')
     
-    // Buscar el evento más antiguo en estado 'pending'
+    // Buscar el evento más antiguo en estado 'pending' que esté listo para procesar
+    // (retry_at es null o ya pasó)
     const { data: nextEvent, error: fetchError } = await supabase
       .from('outbound_events')
       .select('*')
       .eq('status', 'pending')
+      .or(`retry_at.is.null,retry_at.lte.${new Date().toISOString()}`)
       .order('created_at', { ascending: true })
       .limit(1)
       .maybeSingle()

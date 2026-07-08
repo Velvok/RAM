@@ -283,55 +283,30 @@ export async function processOutboundEvent(eventId: string): Promise<{
       console.log(`❌ Request falló: HTTP ${response.status}, currentAttempt: ${currentAttempt}`)
       
       // REINTENTO AUTOMÁTICO para HTTP 401
-      // El reintento manual inmediato funciona, así que replicamos ese comportamiento
+      // Estrategia: Re-encolar como pending para que se procese como evento completamente nuevo
+      // Esto simula el reintento manual que funciona
       if (response.status === 401 && currentAttempt === 1) {
-        console.log(`⚠️ HTTP 401 detectado - Reintentando automáticamente en 2 segundos...`)
-        await new Promise(resolve => setTimeout(resolve, 2000))
+        console.log(`⚠️ HTTP 401 detectado - Re-encolando evento para reintento automático...`)
         
-        console.log(`🔄 REINTENTO AUTOMÁTICO (intento 2)`)
-        
-        // Crear nuevo timeout controller para el reintento
-        const retryController = new AbortController()
-        const retryTimeoutId = setTimeout(() => retryController.abort(), RAM_TIMEOUT_MS)
-        
-        try {
-          // Hacer el mismo request de nuevo
-          const retryResponse = await fetch(event.endpoint, {
-            method: 'POST',
-            headers: {
-              ...headers,
-              'Connection': 'close',
-              'X-Request-Timestamp': new Date().toISOString(),
-              'X-Request-ID': `${event.id}-retry-${Date.now()}`,
-            },
-            body: JSON.stringify(event.payload),
-            signal: retryController.signal,
-            keepalive: false,
+        // Marcar como pending con retry_at inmediato (2 segundos)
+        await supabase
+          .from('outbound_events')
+          .update({
+            status: 'pending',
+            retry_at: new Date(Date.now() + 2000).toISOString(),
+            attempts: 0, // Resetear intentos para que se procese de nuevo
+            http_status: null,
+            error_message: 'Reintento automático por HTTP 401',
           })
-          
-          clearTimeout(retryTimeoutId)
+          .eq('id', event.id)
         
-          httpStatus = retryResponse.status
-          const retryContentType = retryResponse.headers.get('content-type')
-          if (retryContentType?.includes('application/json')) {
-            responseBody = await retryResponse.json().catch(() => null)
-          } else {
-            responseBody = { raw: await retryResponse.text().catch(() => '') }
-          }
-          
-          console.log(`📨 Respuesta del reintento: HTTP ${httpStatus}`)
-          console.log(`📄 Response Body:`, JSON.stringify(responseBody, null, 2))
-          
-          if (retryResponse.ok) {
-            success = true
-            errorMessage = null
-            console.log(`✅ Reintento exitoso!`)
-          } else {
-            console.log(`❌ Reintento también falló`)
-          }
-        } catch (retryErr: any) {
-          console.error(`❌ Error en reintento automático:`, retryErr.message)
-          clearTimeout(retryTimeoutId)
+        console.log(`✅ Evento re-encolado para procesamiento en 2 segundos`)
+        
+        // Retornar indicando que se re-encoló (no es ni success ni failed)
+        return {
+          success: false,
+          status: 401,
+          error: 'Re-encolado para reintento automático'
         }
       }
     }
