@@ -149,29 +149,8 @@ export async function prepareItem(
     )
   }
 
-  // 4. Actualizar preparation_item
-  const isCompleted = newTotal === item.quantity_requested
-  const { error: updateError } = await supabase
-    .from('preparation_items')
-    .update({
-      quantity_prepared: newTotal,
-      status: isCompleted ? 'completada' : 'en_proceso',
-      // assigned_to se puede dejar null o asignar desde el cliente si es necesario
-      started_at: item.started_at || new Date().toISOString(),
-      finished_at: isCompleted ? new Date().toISOString() : null,
-      updated_at: new Date().toISOString()
-    })
-    .eq('id', itemId)
-
-  if (updateError) {
-    console.error('Error actualizando preparation_item:', updateError)
-    throw updateError
-  }
-
-  console.log(`✅ Artículo actualizado: ${newTotal}/${item.quantity_requested} preparadas`)
-
-  // 5. Enviar evento PREP a EVO en cada actualización
-  console.log(`📤 Enviando evento PREP a EVO (artículo preparado)`)
+  // 4. Preparar datos para EVO ANTES de actualizar la BD
+  console.log(`📤 Preparando evento PREP para EVO (artículo preparado)`)
   
   const orderData = Array.isArray(item.order) ? item.order[0] : item.order
   
@@ -199,6 +178,8 @@ export async function prepareItem(
     operario = (opData as any)?.code || opData?.name || operatorId
   }
   
+  // 5. Encolar evento a EVO PRIMERO (antes de actualizar BD)
+  // Si esto falla, no se actualiza el preparation_item
   try {
     await notifyChapaPreparada({
       cutOrderId: itemId, // Usamos el preparation_item_id como referencia
@@ -208,11 +189,31 @@ export async function prepareItem(
       operario,
       movimientos,
     })
-    console.log(`✅ Evento PREP enviado a EVO`)
+    console.log(`✅ Evento PREP encolado para EVO`)
   } catch (error) {
-    console.error('❌ Error enviando evento PREP a EVO:', error)
-    // No fallar la preparación si falla el envío a EVO
+    console.error('❌ Error encolando evento PREP a EVO:', error)
+    throw new Error(`No se pudo encolar el evento a EVO: ${error instanceof Error ? error.message : 'Error desconocido'}`)
   }
+
+  // 6. Solo si el evento se encoló correctamente, actualizar preparation_item
+  const isCompleted = newTotal === item.quantity_requested
+  const { error: updateError } = await supabase
+    .from('preparation_items')
+    .update({
+      quantity_prepared: newTotal,
+      status: isCompleted ? 'completada' : 'en_proceso',
+      started_at: item.started_at || new Date().toISOString(),
+      finished_at: isCompleted ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', itemId)
+
+  if (updateError) {
+    console.error('Error actualizando preparation_item:', updateError)
+    throw updateError
+  }
+
+  console.log(`✅ Artículo actualizado: ${newTotal}/${item.quantity_requested} preparadas`)
 
   // 6. Registrar actividad
   await supabase.from('order_activity_log').insert({
