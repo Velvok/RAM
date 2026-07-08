@@ -10,6 +10,7 @@
  */
 
 import { createAdminClient } from '@/lib/supabase/server'
+import { createHash } from 'crypto'
 
 // ============================================
 // CONFIGURACIÓN
@@ -25,6 +26,26 @@ const RAM_TIMEOUT_MS = 30000
 if (RAM_API_KEY_RAW !== RAM_API_KEY) {
   console.warn(`⚠️ RAM_API_KEY tenía espacios extra - se limpiaron automáticamente`)
   console.warn(`   Original length: ${RAM_API_KEY_RAW.length}, Limpio: ${RAM_API_KEY.length}`)
+}
+
+// Función para obtener información del token sin exponerlo
+function getTokenInfo(token: string) {
+  const cleanToken = token.trim()
+  return {
+    length: token.length,
+    cleanLength: cleanToken.length,
+    startsWith: token.slice(0, 8),
+    endsWith: token.slice(-8),
+    sha256: createHash('sha256').update(token).digest('hex'),
+    hasSpaces: /\s/.test(token),
+    hasLineBreaks: /[\r\n]/.test(token),
+    hasBearerInside: /^Bearer\s+/i.test(token),
+    hasDoubleBearer: /^Bearer\s+Bearer/i.test(token),
+    hasQuotes: /^["']|["']$/.test(token),
+    isUndefined: token === 'undefined',
+    isNull: token === 'null',
+    isEmpty: token === '',
+  }
 }
 
 // Tipos de eventos que enviamos a RAM/EVO
@@ -183,8 +204,34 @@ export async function processOutboundEvent(eventId: string): Promise<{
     console.log(`📍 Endpoint: ${event.endpoint}`)
     console.log(`🏷️ Evento: ${event.event_type}`)
     console.log(`🔢 Intento: ${currentAttempt}/${event.max_attempts}`)
-    console.log(`🔑 Token presente: ${RAM_API_KEY ? 'SÍ (primeros 10 chars: ' + RAM_API_KEY.substring(0, 10) + '...)' : 'NO'}`)
-    console.log(`📦 Payload enviado:`, JSON.stringify(event.payload, null, 2))
+    console.log(`🔑 Token presente: ${RAM_API_KEY ? 'SÍ' : 'NO'}`)
+    
+    // Logging detallado del token sin exponerlo
+    if (RAM_API_KEY) {
+      const tokenInfo = getTokenInfo(RAM_API_KEY)
+      console.log(`🔍 Token INFO:`)
+      console.log(`   Length: ${tokenInfo.length}`)
+      console.log(`   Clean Length: ${tokenInfo.cleanLength}`)
+      console.log(`   Starts with: "${tokenInfo.startsWith}"`)
+      console.log(`   Ends with: "${tokenInfo.endsWith}"`)
+      console.log(`   SHA256: ${tokenInfo.sha256}`)
+      console.log(`   Has spaces: ${tokenInfo.hasSpaces}`)
+      console.log(`   Has line breaks: ${tokenInfo.hasLineBreaks}`)
+      console.log(`   Has Bearer inside: ${tokenInfo.hasBearerInside}`)
+      console.log(`   Has double Bearer: ${tokenInfo.hasDoubleBearer}`)
+      console.log(`   Has quotes: ${tokenInfo.hasQuotes}`)
+      console.log(`   Is undefined: ${tokenInfo.isUndefined}`)
+      console.log(`   Is null: ${tokenInfo.isNull}`)
+      console.log(`   Is empty: ${tokenInfo.isEmpty}`)
+    }
+    
+    // Logging del payload
+    const payloadString = JSON.stringify(event.payload)
+    const payloadSha256 = createHash('sha256').update(payloadString).digest('hex')
+    console.log(`📦 Payload INFO:`)
+    console.log(`   Length: ${payloadString.length}`)
+    console.log(`   SHA256: ${payloadSha256}`)
+    console.log(`   Payload:`, JSON.stringify(event.payload, null, 2))
     
     const headers = {
       'Content-Type': 'application/json',
@@ -205,13 +252,26 @@ export async function processOutboundEvent(eventId: string): Promise<{
     // Debug detallado del Authorization header para validación exacta de EVO
     if (headers['Authorization']) {
       const authHeader = headers['Authorization']
-      console.log(`🔍 Authorization DEBUG:`)
-      console.log(`   Longitud total: ${authHeader.length} caracteres`)
-      console.log(`   Primeros 20 chars: "${authHeader.substring(0, 20)}"`)
-      console.log(`   Últimos 10 chars: "${authHeader.substring(authHeader.length - 10)}"`)
-      console.log(`   Tiene espacios extra al inicio: ${authHeader !== authHeader.trimStart()}`)
-      console.log(`   Tiene espacios extra al final: ${authHeader !== authHeader.trimEnd()}`)
+      const authInfo = getTokenInfo(authHeader)
+      console.log(`🔍 Authorization Header INFO:`)
+      console.log(`   Length: ${authInfo.length}`)
+      console.log(`   Clean Length: ${authInfo.cleanLength}`)
+      console.log(`   Starts with: "${authInfo.startsWith}"`)
+      console.log(`   Ends with: "${authInfo.endsWith}"`)
+      console.log(`   SHA256: ${authInfo.sha256}`)
+      console.log(`   Has spaces: ${authInfo.hasSpaces}`)
+      console.log(`   Has line breaks: ${authInfo.hasLineBreaks}`)
+      console.log(`   Has double Bearer: ${authInfo.hasDoubleBearer}`)
+      console.log(`   Has quotes: ${authInfo.hasQuotes}`)
     }
+    
+    // Logging del runtime
+    console.log(`🖥️ Runtime INFO:`)
+    console.log(`   Node version: ${process.version}`)
+    console.log(`   Platform: ${process.platform}`)
+    console.log(`   Architecture: ${process.arch}`)
+    console.log(`   Environment: ${process.env.NODE_ENV}`)
+    console.log(`   Vercel region: ${process.env.VERCEL_REGION || 'unknown'}`)
 
     // Enviar request a EVO
     const requestStartTime = Date.now()
