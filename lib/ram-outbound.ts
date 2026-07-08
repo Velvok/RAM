@@ -193,20 +193,33 @@ export async function processOutboundEvent(eventId: string): Promise<{
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), RAM_TIMEOUT_MS)
 
-    console.log(`\n=== ENVIANDO A EVO ===`)
-    console.log(`Endpoint: ${event.endpoint}`)
-    console.log(`Evento: ${event.event_type}`)
-    console.log(`Payload enviado:`, JSON.stringify(event.payload, null, 2))
+    console.log(`\n=== 📤 ENVIANDO A EVO ===`)
+    console.log(`🆔 Event ID: ${event.id}`)
+    console.log(`📍 Endpoint: ${event.endpoint}`)
+    console.log(`🏷️ Evento: ${event.event_type}`)
+    console.log(`🔢 Intento: ${currentAttempt}/${event.max_attempts}`)
+    console.log(`🔑 Token presente: ${RAM_API_KEY ? 'SÍ (primeros 10 chars: ' + RAM_API_KEY.substring(0, 10) + '...)' : 'NO'}`)
+    console.log(`📦 Payload enviado:`, JSON.stringify(event.payload, null, 2))
+    
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': RAM_API_KEY ? `Bearer ${RAM_API_KEY}` : '',
+      'X-Velvok-Event-Id': event.id,
+      'X-Velvok-Event-Type': event.event_type,
+      'X-Velvok-Attempt': String(currentAttempt),
+    }
+    
+    console.log(`📋 Headers enviados:`, {
+      'Content-Type': headers['Content-Type'],
+      'Authorization': headers['Authorization'] ? `Bearer ${headers['Authorization'].substring(7, 17)}...` : 'none',
+      'X-Velvok-Event-Id': headers['X-Velvok-Event-Id'],
+      'X-Velvok-Event-Type': headers['X-Velvok-Event-Type'],
+      'X-Velvok-Attempt': headers['X-Velvok-Attempt'],
+    })
 
     const response = await fetch(event.endpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': RAM_API_KEY ? `Bearer ${RAM_API_KEY}` : '',
-        'X-Velvok-Event-Id': event.id,
-        'X-Velvok-Event-Type': event.event_type,
-        'X-Velvok-Attempt': String(currentAttempt),
-      },
+      headers,
       body: JSON.stringify(event.payload),
       signal: controller.signal,
     })
@@ -214,6 +227,18 @@ export async function processOutboundEvent(eventId: string): Promise<{
     clearTimeout(timeoutId)
 
     httpStatus = response.status
+    
+    console.log(`📨 Respuesta recibida:`)
+    console.log(`   HTTP Status: ${httpStatus}`)
+    console.log(`   Status Text: ${response.statusText}`)
+    
+    // Capturar headers de respuesta
+    const responseHeaders: Record<string, string> = {}
+    response.headers.forEach((value, key) => {
+      responseHeaders[key] = value
+    })
+    console.log(`   Response Headers:`, responseHeaders)
+    
     const contentType = response.headers.get('content-type')
     if (contentType?.includes('application/json')) {
       responseBody = await response.json().catch(() => null)
@@ -221,8 +246,7 @@ export async function processOutboundEvent(eventId: string): Promise<{
       responseBody = { raw: await response.text().catch(() => '') }
     }
 
-    console.log(`Respuesta de EVO:`, JSON.stringify(responseBody, null, 2))
-    console.log(`HTTP Status: ${httpStatus}`)
+    console.log(`📄 Response Body:`, JSON.stringify(responseBody, null, 2))
     console.log(`=== FIN COMUNICACION EVO ===\n`)
 
     if (response.ok) {
