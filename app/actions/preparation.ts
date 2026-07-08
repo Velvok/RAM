@@ -149,61 +149,54 @@ export async function prepareItem(
     )
   }
 
-  // 4. Verificar si el item se completará con esta preparación
-  const isCompleted = newTotal === item.quantity_requested
+  // 4. Preparar datos para EVO ANTES de actualizar la BD
+  console.log(`📤 Preparando evento PREP para EVO (artículo preparado)`)
   
-  // 5. Solo enviar evento a EVO cuando se COMPLETE el item (no en preparaciones parciales)
-  // Esto evita el error 401 que EVO devuelve cuando enviamos múltiples eventos PREP del mismo item
-  if (isCompleted) {
-    console.log(`📤 Item completado - Preparando evento PREP para EVO con cantidad total: ${newTotal}`)
+  const orderData = Array.isArray(item.order) ? item.order[0] : item.order
+  
+  // Obtener nro_item desde ref_evo o evo_item_number del preparation_item
+  const refEvo = orderData.ref_evo || {}
+  const nroItem = item.evo_item_number || refEvo.nro_item || refEvo.item_number || 1
+  
+  // Construir movimiento PREP con la cantidad preparada en esta operación
+  const movimientos = [{
+    tipo: 'PREP' as const,
+    nro_item: nroItem,
+    id_articulo: item.product.code,
+    cantidad: quantityPrepared,
+  }]
+  
+  // Obtener código del operario si se proporcionó
+  let operario = operatorId || 'operario' // Fallback si no se proporciona operatorId
+  if (operatorId) {
+    const { data: opData } = await supabase
+      .from('plant_operators')
+      .select('name, code')
+      .eq('id', operatorId)
+      .single()
     
-    const orderData = Array.isArray(item.order) ? item.order[0] : item.order
-    
-    // Obtener nro_item desde ref_evo o evo_item_number del preparation_item
-    const refEvo = orderData.ref_evo || {}
-    const nroItem = item.evo_item_number || refEvo.nro_item || refEvo.item_number || 1
-    
-    // Construir movimiento PREP con la cantidad TOTAL preparada
-    const movimientos = [{
-      tipo: 'PREP' as const,
-      nro_item: nroItem,
-      id_articulo: item.product.code,
-      cantidad: newTotal, // Cantidad total, no solo la preparada ahora
-    }]
-    
-    // Obtener código del operario si se proporcionó
-    let operario = operatorId || 'operario' // Fallback si no se proporciona operatorId
-    if (operatorId) {
-      const { data: opData } = await supabase
-        .from('plant_operators')
-        .select('name, code')
-        .eq('id', operatorId)
-        .single()
-      
-      operario = (opData as any)?.code || opData?.name || operatorId
-    }
-    
-    // Encolar evento a EVO PRIMERO (antes de actualizar BD)
-    // Si esto falla, no se actualiza el preparation_item
-    try {
-      await notifyChapaPreparada({
-        cutOrderId: itemId, // Usamos el preparation_item_id como referencia
-        orderId: orderData.id,
-        idPedido: orderData.evo_order_id || orderData.order_number,
-        refEvo: refEvo,
-        operario,
-        movimientos,
-      })
-      console.log(`✅ Evento PREP encolado para EVO (item completado)`)
-    } catch (error) {
-      console.error('❌ Error encolando evento PREP a EVO:', error)
-      throw new Error(`No se pudo encolar el evento a EVO: ${error instanceof Error ? error.message : 'Error desconocido'}`)
-    }
-  } else {
-    console.log(`ℹ️ Preparación parcial (${newTotal}/${item.quantity_requested}) - NO se envía a EVO hasta completar`)
+    operario = (opData as any)?.code || opData?.name || operatorId
+  }
+  
+  // 5. Encolar evento a EVO PRIMERO (antes de actualizar BD)
+  // Si esto falla, no se actualiza el preparation_item
+  try {
+    await notifyChapaPreparada({
+      cutOrderId: itemId, // Usamos el preparation_item_id como referencia
+      orderId: orderData.id,
+      idPedido: orderData.evo_order_id || orderData.order_number,
+      refEvo: refEvo,
+      operario,
+      movimientos,
+    })
+    console.log(`✅ Evento PREP encolado para EVO`)
+  } catch (error) {
+    console.error('❌ Error encolando evento PREP a EVO:', error)
+    throw new Error(`No se pudo encolar el evento a EVO: ${error instanceof Error ? error.message : 'Error desconocido'}`)
   }
 
-  // 6. Actualizar preparation_item (si llegamos aquí, el evento se encoló correctamente o no era necesario)
+  // 6. Actualizar preparation_item (si llegamos aquí, el evento se encoló correctamente)
+  const isCompleted = newTotal === item.quantity_requested
   const { error: updateError } = await supabase
     .from('preparation_items')
     .update({

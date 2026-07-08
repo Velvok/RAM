@@ -537,10 +537,15 @@ export async function notifyChapaPreparada(params: {
   operario: string                        // código/nombre del operario
   movimientos: CorteMovimiento[]
 }) {
+  // Generar UUID completamente único para evitar duplicados
+  // EVO rechaza eventos con el mismo id_evento
+  const { randomUUID } = await import('crypto')
+  const uniqueId = randomUUID()
+  
   return enqueueOutboundEvent({
     eventType: 'chapa_preparada',
     payload: {
-      id_evento: `prep_${params.cutOrderId}_${Date.now()}`,
+      id_evento: `prep_${uniqueId}`,
       tipo_evento: 'corte_realizado', // EVO espera corte_realizado
       id_pedido: params.idPedido,
       ref_evo: params.refEvo,
