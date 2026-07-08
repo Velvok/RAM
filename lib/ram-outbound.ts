@@ -15,8 +15,16 @@ import { createAdminClient } from '@/lib/supabase/server'
 // ============================================
 
 const RAM_BASE_URL = process.env.RAM_API_URL || process.env.EVO_API_URL || ''
-const RAM_API_KEY = process.env.RAM_API_KEY || process.env.EVO_API_KEY || ''
+const RAM_API_KEY_RAW = process.env.RAM_API_KEY || process.env.EVO_API_KEY || ''
+// Limpiar el token de espacios extra que puedan venir del .env
+const RAM_API_KEY = RAM_API_KEY_RAW.trim()
 const RAM_TIMEOUT_MS = 30000
+
+// Log de inicialización para debug
+if (RAM_API_KEY_RAW !== RAM_API_KEY) {
+  console.warn(`⚠️ RAM_API_KEY tenía espacios extra - se limpiaron automáticamente`)
+  console.warn(`   Original length: ${RAM_API_KEY_RAW.length}, Limpio: ${RAM_API_KEY.length}`)
+}
 
 // Tipos de eventos que enviamos a RAM/EVO
 export type OutboundEventType =
@@ -216,6 +224,17 @@ export async function processOutboundEvent(eventId: string): Promise<{
       'X-Velvok-Event-Type': headers['X-Velvok-Event-Type'],
       'X-Velvok-Attempt': headers['X-Velvok-Attempt'],
     })
+    
+    // Debug detallado del Authorization header para validación exacta de EVO
+    if (headers['Authorization']) {
+      const authHeader = headers['Authorization']
+      console.log(`🔍 Authorization DEBUG:`)
+      console.log(`   Longitud total: ${authHeader.length} caracteres`)
+      console.log(`   Primeros 20 chars: "${authHeader.substring(0, 20)}"`)
+      console.log(`   Últimos 10 chars: "${authHeader.substring(authHeader.length - 10)}"`)
+      console.log(`   Tiene espacios extra al inicio: ${authHeader !== authHeader.trimStart()}`)
+      console.log(`   Tiene espacios extra al final: ${authHeader !== authHeader.trimEnd()}`)
+    }
 
     const response = await fetch(event.endpoint, {
       method: 'POST',
