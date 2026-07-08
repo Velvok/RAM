@@ -235,7 +235,7 @@ export async function processOutboundEvent(eventId: string): Promise<{
     
     const headers = {
       'Content-Type': 'application/json',
-      'Authorization': RAM_API_KEY ? `Bearer ${RAM_API_KEY}` : '',
+      'Authorization': RAM_API_KEY ? `Bearer ${RAM_API_KEY.trim()}` : '',
       'X-Velvok-Event-Id': event.id,
       'X-Velvok-Event-Type': event.event_type,
       'X-Velvok-Attempt': String(currentAttempt),
