@@ -102,39 +102,12 @@ export async function enqueueOutboundEvent({
     throw error
   }
 
-  // Solo procesar inmediatamente si NO hay otro evento en processing
-  // Esto implementa la cola secuencial para evitar saturar a EVO
-  // Verificamos dos veces para evitar race conditions
-  const { data: processingEvents } = await supabase
-    .from('outbound_events')
-    .select('id')
-    .eq('status', 'processing')
-    .limit(1)
-
-  if (!processingEvents || processingEvents.length === 0) {
-    // Pequeño delay para evitar race conditions con eventos creados casi simultáneamente
-    await new Promise(resolve => setTimeout(resolve, 100))
-    
-    // Verificar nuevamente justo antes de procesar
-    const { data: recheck } = await supabase
-      .from('outbound_events')
-      .select('id')
-      .eq('status', 'processing')
-      .limit(1)
-    
-    if (!recheck || recheck.length === 0) {
-      // No hay eventos en proceso, podemos procesar este inmediatamente
-      console.log(`🚀 No hay eventos en proceso, procesando ${data.id} inmediatamente`)
-      processOutboundEvent(data.id).catch(err => {
-        console.error('Error procesando evento inmediatamente:', err)
-      })
-    } else {
-      console.log(`⏸️ Evento ${data.id} encolado (detectado evento en proceso en recheck)`)
-    }
-  } else {
-    // Hay un evento en proceso, este quedará pending hasta que el webhook de confirmación lo procese
-    console.log(`⏸️ Evento ${data.id} encolado, esperando confirmación de evento en proceso`)
-  }
+  // PROCESAR SIEMPRE INMEDIATAMENTE - sin cola
+  // Para probar comportamiento de EVO con múltiples envíos simultáneos
+  console.log(`🚀 Procesando ${data.id} inmediatamente (sin cola)`)
+  processOutboundEvent(data.id).catch(err => {
+    console.error('Error procesando evento:', err)
+  })
 
   return data.id
 }
