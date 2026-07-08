@@ -280,6 +280,48 @@ export async function processOutboundEvent(eventId: string): Promise<{
       success = true
     } else {
       errorMessage = `HTTP ${response.status}: ${responseBody?.error || responseBody?.message || 'Error desconocido'}`
+      
+      // REINTENTO AUTOMÁTICO para HTTP 401
+      // El reintento manual inmediato funciona, así que replicamos ese comportamiento
+      if (response.status === 401 && currentAttempt === 1) {
+        console.log(`⚠️ HTTP 401 detectado - Reintentando automáticamente en 2 segundos...`)
+        await new Promise(resolve => setTimeout(resolve, 2000))
+        
+        console.log(`🔄 REINTENTO AUTOMÁTICO (intento 2)`)
+        
+        // Hacer el mismo request de nuevo
+        const retryResponse = await fetch(event.endpoint, {
+          method: 'POST',
+          headers: {
+            ...headers,
+            'Connection': 'close',
+            'X-Request-Timestamp': new Date().toISOString(),
+            'X-Request-ID': `${event.id}-retry-${Date.now()}`,
+          },
+          body: JSON.stringify(event.payload),
+          signal: controller.signal,
+          keepalive: false,
+        })
+        
+        httpStatus = retryResponse.status
+        const retryContentType = retryResponse.headers.get('content-type')
+        if (retryContentType?.includes('application/json')) {
+          responseBody = await retryResponse.json().catch(() => null)
+        } else {
+          responseBody = { raw: await retryResponse.text().catch(() => '') }
+        }
+        
+        console.log(`📨 Respuesta del reintento: HTTP ${httpStatus}`)
+        console.log(`📄 Response Body:`, JSON.stringify(responseBody, null, 2))
+        
+        if (retryResponse.ok) {
+          success = true
+          errorMessage = null
+          console.log(`✅ Reintento exitoso!`)
+        } else {
+          console.log(`❌ Reintento también falló`)
+        }
+      }
     }
   } catch (err: any) {
     errorMessage = err.name === 'AbortError'
