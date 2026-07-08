@@ -160,11 +160,7 @@ export async function POST(request: NextRequest) {
 
     // Procesar el siguiente evento pending (solo uno)
     // Cada confirmación procesa el siguiente en la cola
-    // Delay de 60 segundos - simula el reintento manual que funciona
-    console.log('⏳ Esperando 60 segundos antes de procesar siguiente evento (como reintento manual)...')
-    await new Promise(resolve => setTimeout(resolve, 60000))
-    
-    console.log('🔄 Procesando siguiente evento pendiente...')
+    console.log('🔄 Procesando siguiente evento pendiente inmediatamente...')
     const nextEventResult = await processNextPendingEvent(supabase)
     console.log('📊 Resultado:', nextEventResult)
     console.log('=== FIN WEBHOOK CONFIRMACIÓN ===\n')
