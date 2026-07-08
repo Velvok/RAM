@@ -159,10 +159,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Esperar antes de procesar el siguiente evento
-    // Ahora forzamos nueva conexión HTTP (Connection: close, keepalive: false)
-    // Esto debería resolver el problema sin necesitar tanto delay
-    console.log('⏳ Esperando 5 segundos antes de procesar siguiente evento...')
-    await new Promise(resolve => setTimeout(resolve, 5000))
+    // Evidencia: 12.6s funcionó ✅, 9-11s falló ❌
+    // Usando 15s para margen de seguridad
+    console.log('⏳ Esperando 15 segundos antes de procesar siguiente evento...')
+    await new Promise(resolve => setTimeout(resolve, 15000))
     
     // Procesar el siguiente evento pendiente
     console.log('🔄 Intentando procesar siguiente evento pendiente...')
