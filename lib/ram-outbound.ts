@@ -289,37 +289,48 @@ export async function processOutboundEvent(eventId: string): Promise<{
         
         console.log(`🔄 REINTENTO AUTOMÁTICO (intento 2)`)
         
-        // Hacer el mismo request de nuevo
-        const retryResponse = await fetch(event.endpoint, {
-          method: 'POST',
-          headers: {
-            ...headers,
-            'Connection': 'close',
-            'X-Request-Timestamp': new Date().toISOString(),
-            'X-Request-ID': `${event.id}-retry-${Date.now()}`,
-          },
-          body: JSON.stringify(event.payload),
-          signal: controller.signal,
-          keepalive: false,
-        })
+        // Crear nuevo timeout controller para el reintento
+        const retryController = new AbortController()
+        const retryTimeoutId = setTimeout(() => retryController.abort(), RAM_TIMEOUT_MS)
         
-        httpStatus = retryResponse.status
-        const retryContentType = retryResponse.headers.get('content-type')
-        if (retryContentType?.includes('application/json')) {
-          responseBody = await retryResponse.json().catch(() => null)
-        } else {
-          responseBody = { raw: await retryResponse.text().catch(() => '') }
-        }
+        try {
+          // Hacer el mismo request de nuevo
+          const retryResponse = await fetch(event.endpoint, {
+            method: 'POST',
+            headers: {
+              ...headers,
+              'Connection': 'close',
+              'X-Request-Timestamp': new Date().toISOString(),
+              'X-Request-ID': `${event.id}-retry-${Date.now()}`,
+            },
+            body: JSON.stringify(event.payload),
+            signal: retryController.signal,
+            keepalive: false,
+          })
+          
+          clearTimeout(retryTimeoutId)
         
-        console.log(`📨 Respuesta del reintento: HTTP ${httpStatus}`)
-        console.log(`📄 Response Body:`, JSON.stringify(responseBody, null, 2))
-        
-        if (retryResponse.ok) {
-          success = true
-          errorMessage = null
-          console.log(`✅ Reintento exitoso!`)
-        } else {
-          console.log(`❌ Reintento también falló`)
+          httpStatus = retryResponse.status
+          const retryContentType = retryResponse.headers.get('content-type')
+          if (retryContentType?.includes('application/json')) {
+            responseBody = await retryResponse.json().catch(() => null)
+          } else {
+            responseBody = { raw: await retryResponse.text().catch(() => '') }
+          }
+          
+          console.log(`📨 Respuesta del reintento: HTTP ${httpStatus}`)
+          console.log(`📄 Response Body:`, JSON.stringify(responseBody, null, 2))
+          
+          if (retryResponse.ok) {
+            success = true
+            errorMessage = null
+            console.log(`✅ Reintento exitoso!`)
+          } else {
+            console.log(`❌ Reintento también falló`)
+          }
+        } catch (retryErr: any) {
+          console.error(`❌ Error en reintento automático:`, retryErr.message)
+          clearTimeout(retryTimeoutId)
         }
       }
     }
@@ -620,6 +631,7 @@ export async function notifyChapaPreparada(params: {
       ref_evo: params.refEvo,
       operario: params.operario,
       movimientos: params.movimientos,
+      timestamp: new Date().toISOString(), // Timestamp único para cada evento
     },
     relatedEntityType: 'cut_order',
     relatedEntityId: params.cutOrderId,
