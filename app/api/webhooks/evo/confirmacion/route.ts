@@ -160,8 +160,9 @@ export async function POST(request: NextRequest) {
 
     // Esperar un poco antes de procesar el siguiente evento
     // Esto da tiempo a EVO para terminar de procesar el evento anterior internamente
-    console.log('⏳ Esperando 2 segundos antes de procesar siguiente evento...')
-    await new Promise(resolve => setTimeout(resolve, 2000))
+    // 5 segundos para evitar que EVO rechace eventos del mismo tipo muy seguidos
+    console.log('⏳ Esperando 5 segundos antes de procesar siguiente evento...')
+    await new Promise(resolve => setTimeout(resolve, 5000))
     
     // Procesar el siguiente evento pendiente
     console.log('🔄 Intentando procesar siguiente evento pendiente...')
