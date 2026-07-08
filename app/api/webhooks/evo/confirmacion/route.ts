@@ -160,10 +160,11 @@ export async function POST(request: NextRequest) {
 
     // Esperar antes de procesar el siguiente evento
     // EVO necesita tiempo para actualizar su estado interno después de confirmar
-    // Si procesamos muy rápido (6 segundos), falla con 401
-    // Si esperamos más tiempo (manual retry después de minutos), funciona
-    console.log('⏳ Esperando 10 segundos antes de procesar siguiente evento...')
-    await new Promise(resolve => setTimeout(resolve, 10000))
+    // Probado: 6s → 401, 10s → 401
+    // Reintento manual (minutos después) → 200
+    // Aumentando a 30 segundos para dar más margen
+    console.log('⏳ Esperando 30 segundos antes de procesar siguiente evento...')
+    await new Promise(resolve => setTimeout(resolve, 30000))
     
     // Procesar el siguiente evento pendiente
     console.log('🔄 Intentando procesar siguiente evento pendiente...')
