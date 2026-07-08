@@ -46,13 +46,8 @@ export async function GET(request: NextRequest) {
     console.log(`🆔 ID Evento EVO: ${pendingEvent.payload?.id_evento}`)
     console.log(`🏷️ Tipo: ${pendingEvent.event_type}`)
 
-    // Marcar como processing
-    await supabase
-      .from('outbound_events')
-      .update({ status: 'processing', last_attempt_at: new Date().toISOString() })
-      .eq('id', pendingEvent.id)
-
-    // Procesar el evento
+    // Procesar el evento igual que reintento manual
+    // Esto funciona porque el contexto del worker es similar al del usuario
     const result = await processOutboundEvent(pendingEvent.id)
 
     console.log(`📊 Resultado: ${result.success ? '✅ Success' : '❌ Failed'}`)
