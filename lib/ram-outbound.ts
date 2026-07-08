@@ -103,8 +103,7 @@ export async function enqueueOutboundEvent({
   }
 
   // Solo procesar inmediatamente si NO hay otro evento en processing
-  // Esto implementa la cola secuencial para evitar saturar a EVO
-  // El worker independiente procesará eventos pending
+  // Esto implementa la cola secuencial para evitar el problema de HTTP 401
   const { data: processingEvents } = await supabase
     .from('outbound_events')
     .select('id')
@@ -112,7 +111,7 @@ export async function enqueueOutboundEvent({
     .limit(1)
 
   if (!processingEvents || processingEvents.length === 0) {
-    // Pequeño delay para evitar race conditions con eventos creados casi simultáneamente
+    // Pequeño delay para evitar race conditions
     await new Promise(resolve => setTimeout(resolve, 100))
     
     // Verificar nuevamente justo antes de procesar
@@ -132,7 +131,7 @@ export async function enqueueOutboundEvent({
       console.log(`⏸️ Evento ${data.id} encolado (detectado evento en proceso en recheck)`)
     }
   } else {
-    console.log(`⏸️ Evento ${data.id} encolado, esperando worker`)
+    console.log(`⏸️ Evento ${data.id} encolado, esperando confirmación del evento anterior`)
   }
 
   return data.id

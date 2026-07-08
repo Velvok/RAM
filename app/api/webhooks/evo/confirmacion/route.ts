@@ -158,11 +158,8 @@ export async function POST(request: NextRequest) {
       // No fallar el flujo principal si falla el log
     }
 
-    // Procesar automáticamente el siguiente evento pending
-    // Usando función que funciona igual que reintento manual (que funciona)
-    // Delay de 10 segundos para evitar HTTP 401 del contexto de Vercel
-    console.log('⏱️ Esperando 10 segundos antes de procesar siguiente evento...')
-    await new Promise(resolve => setTimeout(resolve, 10000))
+    // Procesar automáticamente el siguiente evento pending tras confirmación
+    // El segundo evento se encola mientras el primero está en processing
     console.log('🔄 Procesando siguiente evento pendiente automáticamente...')
     const { processNextPendingEventAuto } = await import('@/app/actions/integration-logs')
     const nextEventResult = await processNextPendingEventAuto()
