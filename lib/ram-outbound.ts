@@ -280,6 +280,7 @@ export async function processOutboundEvent(eventId: string): Promise<{
       success = true
     } else {
       errorMessage = `HTTP ${response.status}: ${responseBody?.error || responseBody?.message || 'Error desconocido'}`
+      console.log(`❌ Request falló: HTTP ${response.status}, currentAttempt: ${currentAttempt}`)
       
       // REINTENTO AUTOMÁTICO para HTTP 401
       // El reintento manual inmediato funciona, así que replicamos ese comportamiento
