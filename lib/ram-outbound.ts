@@ -111,8 +111,8 @@ export async function enqueueOutboundEvent({
     .limit(1)
 
   if (!processingEvents || processingEvents.length === 0) {
-    // Pequeño delay para evitar race conditions
-    await new Promise(resolve => setTimeout(resolve, 100))
+    // Delay más largo para dar tiempo al primer evento a marcarse como processing
+    await new Promise(resolve => setTimeout(resolve, 500))
     
     // Verificar nuevamente justo antes de procesar
     const { data: recheck } = await supabase
