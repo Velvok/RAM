@@ -160,9 +160,8 @@ export async function POST(request: NextRequest) {
 
     // Procesar el siguiente evento pending (solo uno)
     // Cada confirmación procesa el siguiente en la cola
-    // Delay de 30 segundos para dar tiempo a EVO a procesar el evento anterior
-    console.log('⏳ Esperando 30 segundos antes de procesar siguiente evento...')
-    await new Promise(resolve => setTimeout(resolve, 30000))
+    console.log('⏳ Esperando 2 segundos antes de procesar siguiente evento...')
+    await new Promise(resolve => setTimeout(resolve, 2000))
     
     console.log('🔄 Procesando siguiente evento pendiente...')
     const nextEventResult = await processNextPendingEvent(supabase)
