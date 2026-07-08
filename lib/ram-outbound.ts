@@ -158,7 +158,7 @@ export async function enqueueOutboundEvent({
  * Procesa un evento outbound: envía a RAM y actualiza el estado.
  * Implementa retry con backoff exponencial.
  */
-export async function processOutboundEvent(eventId: string): Promise<{
+export async function processOutboundEvent(eventId: string, triggeredBy: 'automatic' | 'manual' = 'automatic'): Promise<{
   success: boolean
   status: number
   error?: string
@@ -343,6 +343,35 @@ export async function processOutboundEvent(eventId: string): Promise<{
     console.log(`📄 Response Body:`, JSON.stringify(responseBody, null, 2))
     console.log(`=== FIN COMUNICACION EVO ===\n`)
 
+    // 6. Registrar el intento en la base de datos
+    const tokenInfo = RAM_API_KEY ? getTokenInfo(RAM_API_KEY) : null
+    const authHeader = headers['Authorization'] || ''
+    const authInfo = authHeader ? getTokenInfo(authHeader) : null
+    
+    await recordOutboundAttempt({
+      outboundEventId: eventId,
+      attemptNumber: currentAttempt,
+      triggeredBy: triggeredBy,
+      requestUrl: event.endpoint,
+      requestHeaders: headers,
+      requestBody: event.payload,
+      requestBodySha256: payloadSha256,
+      tokenPresent: !!RAM_API_KEY,
+      tokenLength: tokenInfo?.length,
+      tokenSha256: tokenInfo?.sha256,
+      authorizationHeader: authHeader,
+      authorizationHeaderSha256: authInfo?.sha256,
+      httpStatus: httpStatus,
+      responseHeaders: responseHeaders,
+      responseBody: responseBody,
+      durationMs: requestDuration,
+      errorMessage: errorMessage,
+      nodeVersion: process.version,
+      platform: process.platform,
+      architecture: process.arch,
+      vercelRegion: process.env.VERCEL_REGION || 'unknown',
+    })
+
     if (response.ok) {
       success = true
     } else {
@@ -356,7 +385,7 @@ export async function processOutboundEvent(eventId: string): Promise<{
     console.error(`Error en comunicacion con EVO:`, errorMessage)
   }
 
-  // 6. Actualizar el evento con el resultado
+  // 7. Actualizar el evento con el resultado
   const isLastAttempt = currentAttempt >= event.max_attempts
   
   // Si el envío fue exitoso, dejarlo en 'processing' esperando confirmación de EVO
@@ -384,6 +413,71 @@ export async function processOutboundEvent(eventId: string): Promise<{
   console.log(`📊 Evento ${eventId} actualizado a estado: ${nextStatus}${success ? ' (esperando confirmación de EVO)' : ''}`)
 
   return { success, status: httpStatus, error: errorMessage || undefined }
+}
+
+// ============================================
+// REGISTRAR INTENTOS EN BASE DE DATOS
+// ============================================
+
+async function recordOutboundAttempt(params: {
+  outboundEventId: string
+  attemptNumber: number
+  triggeredBy: 'automatic' | 'manual'
+  requestUrl: string
+  requestHeaders: Record<string, string>
+  requestBody: any
+  requestBodySha256: string
+  tokenPresent: boolean
+  tokenLength?: number
+  tokenSha256?: string
+  authorizationHeader?: string
+  authorizationHeaderSha256?: string
+  httpStatus?: number
+  responseHeaders?: Record<string, string>
+  responseBody?: any
+  responseBodyText?: string
+  durationMs?: number
+  errorMessage?: string | null
+  errorType?: string
+  nodeVersion?: string
+  platform?: string
+  architecture?: string
+  vercelRegion?: string
+}) {
+  const supabase = createAdminClient()
+  
+  const { error } = await supabase
+    .from('outbound_event_attempts')
+    .insert({
+      outbound_event_id: params.outboundEventId,
+      attempt_number: params.attemptNumber,
+      triggered_by: params.triggeredBy,
+      request_url: params.requestUrl,
+      request_method: 'POST',
+      request_headers: params.requestHeaders,
+      request_body: params.requestBody,
+      request_body_sha256: params.requestBodySha256,
+      token_present: params.tokenPresent,
+      token_length: params.tokenLength,
+      token_sha256: params.tokenSha256,
+      authorization_header: params.authorizationHeader,
+      authorization_header_sha256: params.authorizationHeaderSha256,
+      http_status: params.httpStatus,
+      response_headers: params.responseHeaders,
+      response_body: params.responseBody,
+      response_body_text: params.responseBodyText,
+      duration_ms: params.durationMs,
+      error_message: params.errorMessage,
+      error_type: params.errorType,
+      node_version: params.nodeVersion,
+      platform: params.platform,
+      architecture: params.architecture,
+      vercel_region: params.vercelRegion,
+    })
+
+  if (error) {
+    console.error('Error registrando intento en outbound_event_attempts:', error)
+  }
 }
 
 // ============================================

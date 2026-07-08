@@ -159,9 +159,9 @@ export async function retryOutboundEvent(eventId: string) {
 
   console.log(`✅ Event reset to pending status`)
 
-  // Procesar inmediatamente
+  // Procesar inmediatamente con triggeredBy: 'manual'
   const { processOutboundEvent } = await import('@/lib/ram-outbound')
-  const result = await processOutboundEvent(eventId)
+  const result = await processOutboundEvent(eventId, 'manual')
 
   console.log(`🔄 === MANUAL RETRY COMPLETED ===`)
   console.log(`📊 Result: ${JSON.stringify(result)}`)
