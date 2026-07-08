@@ -104,8 +104,14 @@ export async function enqueueOutboundEvent({
   }
 
   // NO procesar inmediatamente - arquitectura Outbox
-  // El evento se guardará en cola y será procesado por un worker externo
+  // El evento se guardará en cola y será procesado por processOnePendingPrep()
   console.log(`📝 Evento ${data.id} guardado en cola (arquitectura Outbox)`)
+
+  // Intentar procesar un evento pending (puede ser este u otro)
+  // Esto se ejecuta en background para no bloquear el request
+  processOnePendingPrep().catch(err => {
+    console.error('Error en processOnePendingPrep background:', err)
+  })
 
   return data.id
 }
