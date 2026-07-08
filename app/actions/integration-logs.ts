@@ -137,6 +137,10 @@ export async function getEventTypes() {
 }
 
 export async function retryOutboundEvent(eventId: string) {
+  console.log(`🔄 === MANUAL RETRY INITIATED ===`)
+  console.log(`🆔 Event ID: ${eventId}`)
+  console.log(`⏰ Timestamp: ${new Date().toISOString()}`)
+
   const supabase = createAdminClient()
 
   const { error } = await supabase
@@ -153,9 +157,14 @@ export async function retryOutboundEvent(eventId: string) {
 
   if (error) throw error
 
+  console.log(`✅ Event reset to pending status`)
+
   // Procesar inmediatamente
   const { processOutboundEvent } = await import('@/lib/ram-outbound')
   const result = await processOutboundEvent(eventId)
+
+  console.log(`🔄 === MANUAL RETRY COMPLETED ===`)
+  console.log(`📊 Result: ${JSON.stringify(result)}`)
 
   return result
 }
