@@ -6,6 +6,7 @@
  * - Reintentos automáticos con backoff exponencial
  * - Idempotencia mediante ID único
  * - Logs detallados de cada intento
+ * - Lock interno para evitar envíos secuenciales en mismo request
  */
 
 import { createAdminClient } from '@/lib/supabase/server'
@@ -102,37 +103,9 @@ export async function enqueueOutboundEvent({
     throw error
   }
 
-  // Solo procesar inmediatamente si NO hay otro evento en processing
-  // Esto implementa la cola secuencial para evitar el problema de HTTP 401
-  const { data: processingEvents } = await supabase
-    .from('outbound_events')
-    .select('id')
-    .eq('status', 'processing')
-    .limit(1)
-
-  if (!processingEvents || processingEvents.length === 0) {
-    // Delay más largo para dar tiempo al primer evento a marcarse como processing
-    await new Promise(resolve => setTimeout(resolve, 500))
-    
-    // Verificar nuevamente justo antes de procesar
-    const { data: recheck } = await supabase
-      .from('outbound_events')
-      .select('id')
-      .eq('status', 'processing')
-      .limit(1)
-    
-    if (!recheck || recheck.length === 0) {
-      // No hay eventos en proceso, podemos procesar este inmediatamente
-      console.log(`🚀 No hay eventos en proceso, procesando ${data.id} inmediatamente`)
-      processOutboundEvent(data.id).catch(err => {
-        console.error('Error procesando evento inmediatamente:', err)
-      })
-    } else {
-      console.log(`⏸️ Evento ${data.id} encolado (detectado evento en proceso en recheck)`)
-    }
-  } else {
-    console.log(`⏸️ Evento ${data.id} encolado, esperando confirmación del evento anterior`)
-  }
+  // NO procesar inmediatamente - arquitectura Outbox
+  // El evento se guardará en cola y será procesado por un worker externo
+  console.log(`📝 Evento ${data.id} guardado en cola (arquitectura Outbox)`)
 
   return data.id
 }
@@ -596,4 +569,107 @@ export async function notifyChapaPreparada(params: {
     relatedEntityType: 'cut_order',
     relatedEntityId: params.cutOrderId,
   })
+}
+
+// ============================================
+// PROCESAR UN SOLO EVENTO PENDING CON LOCK
+// ============================================
+
+/**
+ * Procesa un solo evento pending con lock interno.
+ * Regla: Nunca enviar dos PREP en la misma ejecución de Vercel.
+ * Regla: Nunca enviar un PREP nuevo hasta que el anterior esté confirmado.
+ */
+export async function processOnePendingPrep() {
+  const supabase = createAdminClient()
+
+  try {
+    console.log('=== 🔄 PROCESS ONE PENDING PREP ===')
+
+    // 1. Intentar adquirir lock
+    const lockName = 'evo_prep_dispatcher'
+    const lockTimeout = 60 // segundos
+
+    const { data: currentLock } = await supabase
+      .from('evo_locks')
+      .select('*')
+      .eq('name', lockName)
+      .single()
+
+    if (currentLock && currentLock.locked_until && new Date(currentLock.locked_until) > new Date()) {
+      console.log('⏸️ Lock activo, no se puede procesar evento')
+      return { success: true, message: 'Lock active, skipping' }
+    }
+
+    // Adquirir lock
+    const lockedUntil = new Date(Date.now() + lockTimeout * 1000).toISOString()
+    await supabase
+      .from('evo_locks')
+      .update({
+        locked_until: lockedUntil,
+        locked_by: 'processOnePendingPrep',
+        updated_at: new Date().toISOString()
+      })
+      .eq('name', lockName)
+
+    console.log('🔒 Lock adquirido')
+
+    try {
+      // 2. Verificar si hay un evento enviado esperando confirmación
+      const { data: activeEvent } = await supabase
+        .from('outbound_events')
+        .select('*')
+        .eq('status', 'processing')
+        .limit(1)
+        .maybeSingle()
+
+      if (activeEvent) {
+        console.log('⏸️ Hay un evento activo esperando confirmación, no enviar otro')
+        return { success: true, message: 'Active event waiting for confirmation' }
+      }
+
+      // 3. Buscar el evento pending más antiguo
+      const { data: pendingEvent, error } = await supabase
+        .from('outbound_events')
+        .select('*')
+        .eq('status', 'pending')
+        .or('next_retry_at.is.null,next_retry_at.lte.' + new Date().toISOString())
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+
+      if (error || !pendingEvent) {
+        console.log('ℹ️ No hay eventos pending para procesar')
+        return { success: true, message: 'No pending events' }
+      }
+
+      console.log(`📋 Procesando evento: ${pendingEvent.id}`)
+      console.log(`🆔 ID Evento EVO: ${pendingEvent.payload?.id_evento}`)
+
+      // 4. Procesar el evento
+      const result = await processOutboundEvent(pendingEvent.id)
+
+      console.log(`📊 Resultado: ${result.success ? '✅ Success' : '❌ Failed'}`)
+      console.log('=== FIN PROCESS ONE PENDING PREP ===\n')
+
+      return { success: true, message: 'Event processed', result }
+
+    } finally {
+      // 5. Liberar lock
+      await supabase
+        .from('evo_locks')
+        .update({
+          locked_until: null,
+          locked_by: null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('name', lockName)
+
+      console.log('🔓 Lock liberado')
+    }
+
+  } catch (error) {
+    console.error('❌ Error en processOnePendingPrep:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+  }
 }

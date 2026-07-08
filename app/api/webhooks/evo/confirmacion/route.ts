@@ -158,11 +158,11 @@ export async function POST(request: NextRequest) {
       // No fallar el flujo principal si falla el log
     }
 
-    // Procesar automáticamente el siguiente evento pending tras confirmación
-    // El segundo evento se encola mientras el primero está en processing
-    console.log('🔄 Procesando siguiente evento pendiente automáticamente...')
-    const { processNextPendingEventAuto } = await import('@/app/actions/integration-logs')
-    const nextEventResult = await processNextPendingEventAuto()
+    // Disparar el siguiente evento pending tras confirmación
+    // Esto asegura que solo se envíe un PREP a la vez y en requests diferentes
+    console.log('🔄 Disparando siguiente evento pending tras confirmación...')
+    const { processOnePendingPrep } = await import('@/lib/ram-outbound')
+    const nextEventResult = await processOnePendingPrep()
     console.log('📊 Resultado:', nextEventResult)
     console.log('=== FIN WEBHOOK CONFIRMACIÓN ===\n')
 
