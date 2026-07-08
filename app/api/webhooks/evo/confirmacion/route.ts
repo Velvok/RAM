@@ -159,10 +159,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Esperar antes de procesar el siguiente evento
-    // Evidencia: 12.6s funcionó ✅, 9-11s falló ❌
-    // Usando 15s para margen de seguridad
-    console.log('⏳ Esperando 15 segundos antes de procesar siguiente evento...')
-    await new Promise(resolve => setTimeout(resolve, 15000))
+    // Sistema de re-encolar maneja errores 401 automáticamente
+    console.log('⏳ Esperando 2 segundos antes de procesar siguiente evento...')
+    await new Promise(resolve => setTimeout(resolve, 2000))
     
     // Procesar el siguiente evento pendiente
     console.log('🔄 Intentando procesar siguiente evento pendiente...')
