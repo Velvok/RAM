@@ -1537,7 +1537,7 @@ export default function PlantaPedidoDetallePage() {
 
                           try {
                             const { prepareItem } = await import('@/app/actions/preparation')
-                            await prepareItem(item.id, quantity)
+                            await prepareItem(item.id, quantity, operator?.id)
                             // Recargar pedido para actualizar el estado
                             await loadPedido()
                           } catch (error: any) {

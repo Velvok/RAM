@@ -114,7 +114,8 @@ export async function createPreparationItem(
  */
 export async function prepareItem(
   itemId: string,
-  quantityPrepared: number
+  quantityPrepared: number,
+  operatorId?: string
 ) {
   // Usar admin client para bypass RLS
   const { createAdminClient } = await import('@/lib/supabase/server')
@@ -186,13 +187,25 @@ export async function prepareItem(
     cantidad: quantityPrepared,
   }]
   
+  // Obtener código del operario si se proporcionó
+  let operario = operatorId || 'operario' // Fallback si no se proporciona operatorId
+  if (operatorId) {
+    const { data: opData } = await supabase
+      .from('plant_operators')
+      .select('name, code')
+      .eq('id', operatorId)
+      .single()
+    
+    operario = (opData as any)?.code || opData?.name || operatorId
+  }
+  
   try {
     await notifyChapaPreparada({
       cutOrderId: itemId, // Usamos el preparation_item_id como referencia
       orderId: orderData.id,
       idPedido: orderData.evo_order_id || orderData.order_number,
       refEvo: refEvo,
-      operario: 'operario', // TODO: Obtener del usuario autenticado
+      operario,
       movimientos,
     })
     console.log(`✅ Evento PREP enviado a EVO`)

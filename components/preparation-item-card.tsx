@@ -8,10 +8,11 @@ import { prepareItem } from '@/app/actions/preparation'
 
 interface PreparationItemCardProps {
   item: any
+  operatorId?: string
   onUpdate?: () => void
 }
 
-export function PreparationItemCard({ item, onUpdate }: PreparationItemCardProps) {
+export function PreparationItemCard({ item, operatorId, onUpdate }: PreparationItemCardProps) {
   const [quantity, setQuantity] = useState(1)
   const [isLoading, setIsLoading] = useState(false)
   
@@ -24,7 +25,7 @@ export function PreparationItemCard({ item, onUpdate }: PreparationItemCardProps
     
     setIsLoading(true)
     try {
-      await prepareItem(item.id, quantity)
+      await prepareItem(item.id, quantity, operatorId)
       setQuantity(1)
       onUpdate?.()
     } catch (error: any) {
