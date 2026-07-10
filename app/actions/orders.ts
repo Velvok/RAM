@@ -121,24 +121,13 @@ export async function approveOrderOnHold(orderId: string) {
     // Cantidad de unidades que pide el cliente
     const units = line.units || Math.ceil(line.quantity) || 1
 
-    // Identificar si es chapa usando categoría como criterio principal
-    let isChapa = false
-    
-    if (line.product?.category === 'chapa') {
-      // Categoría explícita: chapa
-      isChapa = true
-    } else if (line.product?.category === 'accesorios' || line.product?.category?.includes('accesorio')) {
-      // Categoría explícita: accesorios
-      isChapa = false
-    } else {
-      // Sin categoría o categoría desconocida: usar prefijos de código como fallback
-      const { isChapaProduct } = await import('@/lib/product-utils')
-      isChapa = isChapaProduct(
-        line.product?.code || '',
-        line.product?.category,
-        line.product?.name
-      )
-    }
+    // Identificar si es chapa usando la tabla de productos de corte (isChapaProduct)
+    const { isChapaProduct } = await import('@/lib/product-utils')
+    const isChapa = isChapaProduct(
+      line.product?.code || '',
+      line.product?.category,
+      line.product?.name
+    )
 
     console.log(`\n🔍 Procesando línea (EN PAUSA):`, {
       product_name: line.product?.name,
@@ -262,24 +251,13 @@ export async function approveOrder(orderId: string) {
     // Cantidad de unidades que pide el cliente
     const units = line.units || Math.ceil(line.quantity) || 1
 
-    // Identificar si es chapa usando categoría como criterio principal
-    let isChapa = false
-    
-    if (line.product?.category === 'chapa') {
-      // Categoría explícita: chapa
-      isChapa = true
-    } else if (line.product?.category === 'accesorios' || line.product?.category?.includes('accesorio')) {
-      // Categoría explícita: accesorios
-      isChapa = false
-    } else {
-      // Sin categoría o categoría desconocida: usar prefijos de código como fallback
-      const { isChapaProduct } = await import('@/lib/product-utils')
-      isChapa = isChapaProduct(
-        line.product?.code || '',
-        line.product?.category,
-        line.product?.name
-      )
-    }
+    // Identificar si es chapa usando la tabla de productos de corte (isChapaProduct)
+    const { isChapaProduct } = await import('@/lib/product-utils')
+    const isChapa = isChapaProduct(
+      line.product?.code || '',
+      line.product?.category,
+      line.product?.name
+    )
 
     console.log(`\n🔍 Procesando línea:`, {
       product_name: line.product?.name,
