@@ -29,6 +29,7 @@ export function isChapaProduct(code: string, category?: string | null, name?: st
     'ACPOLI.BL',
     'ACPOLI.CR',
     'ACPOLI.FU',
+    'ACUSTIVERR60',
     'AG25110',
     'AG27110',
     'CP T101',
