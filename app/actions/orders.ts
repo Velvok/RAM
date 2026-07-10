@@ -260,11 +260,18 @@ export async function approveOrder(orderId: string) {
     )
 
     if (isChapa) {
-      // Para chapas, verificar que hay stock disponible de la familia
-      const { findBestStockMatch } = await import('@/app/actions/stock-management')
-      const stockMatch = await findBestStockMatch(line.product_id, units)
-      if (!stockMatch) {
-        errors.push(`No hay stock disponible para ${line.product?.name} (${line.product?.code}). Sugiero aprobar el pedido en pausa.`)
+      // Para chapas, verificar que hay stock disponible del producto exacto
+      const { data: inventory } = await supabase
+        .from('inventory')
+        .select('stock_total, stock_reservado, stock_en_proceso')
+        .eq('product_id', line.product_id)
+        .limit(1)
+        .maybeSingle()
+
+      const stockDisponible = inventory ? (inventory.stock_total || 0) - (inventory.stock_reservado || 0) - (inventory.stock_en_proceso || 0) : 0
+      
+      if (!inventory || stockDisponible < units) {
+        errors.push(`No hay stock suficiente para ${line.product?.name} (${line.product?.code}). Disponible: ${stockDisponible}, Solicitado: ${units}. Sugiero aprobar el pedido en pausa.`)
       }
     } else {
       // Para artículos normales, verificar que hay stock disponible del producto exacto
