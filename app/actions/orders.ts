@@ -121,13 +121,24 @@ export async function approveOrderOnHold(orderId: string) {
     // Cantidad de unidades que pide el cliente
     const units = line.units || Math.ceil(line.quantity) || 1
 
-    // Identificar si es chapa usando la función isChapaProduct
-    const { isChapaProduct } = await import('@/lib/product-utils')
-    const isChapa = isChapaProduct(
-      line.product?.code || '',
-      line.product?.category,
-      line.product?.name
-    )
+    // Identificar si es chapa usando categoría como criterio principal
+    let isChapa = false
+    
+    if (line.product?.category === 'chapa') {
+      // Categoría explícita: chapa
+      isChapa = true
+    } else if (line.product?.category === 'accesorios' || line.product?.category?.includes('accesorio')) {
+      // Categoría explícita: accesorios
+      isChapa = false
+    } else {
+      // Sin categoría o categoría desconocida: usar prefijos de código como fallback
+      const { isChapaProduct } = await import('@/lib/product-utils')
+      isChapa = isChapaProduct(
+        line.product?.code || '',
+        line.product?.category,
+        line.product?.name
+      )
+    }
 
     console.log(`\n🔍 Procesando línea (EN PAUSA):`, {
       product_name: line.product?.name,
@@ -251,13 +262,24 @@ export async function approveOrder(orderId: string) {
     // Cantidad de unidades que pide el cliente
     const units = line.units || Math.ceil(line.quantity) || 1
 
-    // Identificar si es chapa usando la función isChapaProduct
-    const { isChapaProduct } = await import('@/lib/product-utils')
-    const isChapa = isChapaProduct(
-      line.product?.code || '',
-      line.product?.category,
-      line.product?.name
-    )
+    // Identificar si es chapa usando categoría como criterio principal
+    let isChapa = false
+    
+    if (line.product?.category === 'chapa') {
+      // Categoría explícita: chapa
+      isChapa = true
+    } else if (line.product?.category === 'accesorios' || line.product?.category?.includes('accesorio')) {
+      // Categoría explícita: accesorios
+      isChapa = false
+    } else {
+      // Sin categoría o categoría desconocida: usar prefijos de código como fallback
+      const { isChapaProduct } = await import('@/lib/product-utils')
+      isChapa = isChapaProduct(
+        line.product?.code || '',
+        line.product?.category,
+        line.product?.name
+      )
+    }
 
     console.log(`\n🔍 Procesando línea:`, {
       product_name: line.product?.name,
@@ -370,6 +392,11 @@ export async function approveOrder(orderId: string) {
       console.log(`   → Product ID: ${line.product_id}`)
       console.log(`   → Order Line ID: ${line.id}`)
       
+      // Fallback: Si el producto no es reconocido como chapa ni accesorio, generar preparation_item por defecto
+      if (line.product?.category !== 'accesorios' && !line.product?.category?.includes('accesorio')) {
+        console.warn(`⚠️ Producto ${line.product?.code} (${line.product?.name}) no reconocido como chapa ni accesorio, generando preparation_item por defecto`)
+      }
+      
       try {
         const { createPreparationItem } = await import('./preparation')
         console.log(`   → Llamando a createPreparationItem...`)
@@ -385,6 +412,38 @@ export async function approveOrder(orderId: string) {
     
     // Pequeño delay para evitar duplicados en el timestamp
     await new Promise(resolve => setTimeout(resolve, 10))
+  }
+
+  // Validación post-aprobación: verificar que todos los items generaron algo
+  const { data: validation } = await supabase
+    .from('orders')
+    .select(`
+      order_lines(id),
+      cut_orders(id),
+      preparation_items(id)
+    `)
+    .eq('id', orderId)
+    .single()
+
+  if (validation) {
+    const totalLines = validation.order_lines?.length || 0
+    const totalGenerated = (validation.cut_orders?.length || 0) + (validation.preparation_items?.length || 0)
+    
+    if (totalLines !== totalGenerated) {
+      const warning = `⚠️ DISCREPANCIA: ${totalLines} items vs ${totalGenerated} generados (${validation.cut_orders?.length || 0} cortes + ${validation.preparation_items?.length || 0} preparaciones)`
+      console.warn(warning)
+      errors.push(warning)
+      
+      // Agregar warning a las notas del pedido
+      await supabase
+        .from('orders')
+        .update({
+          notes: `DISCREPANCIA DETECTADA: ${totalLines} items en pedido vs ${totalGenerated} generados. Revisar manualmente.`
+        })
+        .eq('id', orderId)
+    } else {
+      console.log(`✅ Validación OK: ${totalLines} items = ${totalGenerated} generados`)
+    }
   }
 
   // Actualizar estado del pedido a "aprobado"
