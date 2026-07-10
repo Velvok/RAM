@@ -94,10 +94,8 @@ export async function createPreparationItem(
 
   // 4. Reservar stock solo si reserveStock es true
   if (reserveStock && selectedInventory) {
-    const { reserveStock: reserveStockFn } = await import('@/app/actions/stock-management')
-    for (let i = 0; i < quantityRequested; i++) {
-      await reserveStockFn(selectedInventory.id)
-    }
+    const { reserveStockBatch } = await import('@/app/actions/stock-management')
+    await reserveStockBatch(selectedInventory.id, quantityRequested)
     console.log(`   ✅ Stock reservado: ${quantityRequested} unidades`)
   } else {
     console.log(`   ⏭️ Stock NO reservado (modo pausa)`)

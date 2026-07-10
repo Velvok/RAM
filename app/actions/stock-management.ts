@@ -259,6 +259,63 @@ async function checkAndActivateOrderOnHold(orderId: string) {
 }
 
 /**
+ * Reservar stock en lote (total → reservado)
+ * Reserva múltiples unidades en una sola operación
+ */
+export async function reserveStockBatch(inventoryId: string, quantity: number) {
+  const supabase = createAdminClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  // Obtener stock actual de esta pieza específica
+  const { data: current, error: fetchError } = await supabase
+    .from('inventory')
+    .select('*, product:products(*)')
+    .eq('id', inventoryId)
+    .maybeSingle()
+
+  if (fetchError) throw fetchError
+  if (!current) {
+    throw new Error(`Inventory con ID ${inventoryId} no encontrado`)
+  }
+
+  const stockBefore = current.stock_reservado || 0
+  const stockAfter = stockBefore + quantity
+
+  const { error } = await supabase
+    .from('inventory')
+    .update({
+      stock_reservado: stockAfter
+    })
+    .eq('id', inventoryId)
+    .select()
+    .single()
+
+  if (error) {
+    console.error(`❌ Error reservando stock en lote:`, error)
+    throw error
+  }
+
+  // Registrar movimiento único
+  await supabase.from('stock_movements').insert({
+    product_id: current.product_id,
+    movement_type: 'reserva',
+    quantity: quantity,
+    stock_before: stockBefore,
+    stock_after: stockAfter,
+    user_id: user?.id,
+    notes: `Reserva de ${quantity} unidades de ${current.product?.name || 'pieza'} (${current.stock_total}m)`,
+  })
+
+  console.log(`✅ Stock reservado en lote: ${quantity} unidades`)
+
+  // Revalidar todas las rutas relevantes
+  revalidatePath('/admin', 'page')
+  revalidatePath('/admin/stock', 'page')
+  revalidatePath('/admin/stock', 'layout')
+  revalidatePath('/admin/pedidos', 'page')
+}
+
+/**
  * Reservar stock (total → reservado)
  * Se llama al aprobar un pedido
  * NOTA: Reserva UNA UNIDAD completa (la pieza entera)
@@ -272,9 +329,12 @@ export async function reserveStock(inventoryId: string) {
     .from('inventory')
     .select('*, product:products(*)')
     .eq('id', inventoryId)
-    .single()
+    .maybeSingle() // Usar maybeSingle en lugar de single para manejar caso cuando no existe
 
   if (fetchError) throw fetchError
+  if (!current) {
+    throw new Error(`Inventory con ID ${inventoryId} no encontrado`)
+  }
 
   const stockBefore = current.stock_reservado || 0
   const stockAfter = stockBefore + 1 // Reservamos 1 unidad (la pieza completa)
