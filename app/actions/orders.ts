@@ -424,6 +424,14 @@ export async function approveOrder(orderId: string) {
     }
   }
 
+  // Si hay errores de stock, no aprobar el pedido y retornar error
+  if (errors.length > 0) {
+    return { 
+      success: false,
+      errors: errors
+    }
+  }
+
   // Actualizar estado del pedido a "aprobado"
   await supabase
     .from('orders')
@@ -439,8 +447,7 @@ export async function approveOrder(orderId: string) {
   revalidateStock()
   
   return { 
-    success: true,
-    warnings: errors.length > 0 ? errors : undefined
+    success: true
   }
 }
 

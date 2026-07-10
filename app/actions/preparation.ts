@@ -48,25 +48,24 @@ export async function createPreparationItem(
         .eq('id', productId)
         .single()
       
-      console.warn(`⚠️ No hay stock disponible de ${product?.name || productId}, creando preparation_item sin stock asignado`)
-      // No lanzar error, continuar sin stock asignado
-    } else {
-      selectedInventory = inventory[0]
-      console.log(`   → Inventario seleccionado:`, selectedInventory)
+      throw new Error(`No hay stock disponible de ${product?.name || productId}. Sugiero aprobar el pedido en pausa.`)
+    }
 
-      // 2. Verificar que hay suficiente stock
-      console.log(`   → Verificando stock suficiente (${selectedInventory.stock_disponible} >= ${quantityRequested})...`)
-      if (selectedInventory.stock_disponible < quantityRequested) {
-        const { data: product } = await supabase
-          .from('products')
-          .select('name')
-          .eq('id', productId)
-          .single()
-        
-        console.warn(`⚠️ Stock insuficiente de ${product?.name}. Disponible: ${selectedInventory.stock_disponible}, Solicitado: ${quantityRequested}. Creando preparation_item sin stock asignado`)
-        // No lanzar error, continuar sin stock asignado
-        selectedInventory = null
-      }
+    selectedInventory = inventory[0]
+    console.log(`   → Inventario seleccionado:`, selectedInventory)
+
+    // 2. Verificar que hay suficiente stock
+    console.log(`   → Verificando stock suficiente (${selectedInventory.stock_disponible} >= ${quantityRequested})...`)
+    if (selectedInventory.stock_disponible < quantityRequested) {
+      const { data: product } = await supabase
+        .from('products')
+        .select('name')
+        .eq('id', productId)
+        .single()
+      
+      throw new Error(
+        `Stock insuficiente de ${product?.name}. Disponible: ${selectedInventory.stock_disponible}, Solicitado: ${quantityRequested}. Sugiero aprobar el pedido en pausa.`
+      )
     }
   }
 
