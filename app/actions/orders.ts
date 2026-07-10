@@ -246,6 +246,52 @@ export async function approveOrder(orderId: string) {
 
   const errors: string[] = []
 
+  // Importar isChapaProduct para verificar stock
+  const { isChapaProduct } = await import('@/lib/product-utils')
+
+  // PRIMERO: Verificar stock disponible para todos los productos antes de crear items
+  console.log(`\n🔍 Verificando stock disponible para todas las líneas...`)
+  for (const line of order.order_lines || []) {
+    const units = Number(line.quantity) || 0
+    const isChapa = isChapaProduct(
+      line.product?.code || '',
+      line.product?.category,
+      line.product?.name
+    )
+
+    if (isChapa) {
+      // Para chapas, verificar que hay stock disponible de la familia
+      const { findBestStockMatch } = await import('@/app/actions/stock-management')
+      const stockMatch = await findBestStockMatch(line.product_id, units)
+      if (!stockMatch) {
+        errors.push(`No hay stock disponible para ${line.product?.name} (${line.product?.code}). Sugiero aprobar el pedido en pausa.`)
+      }
+    } else {
+      // Para artículos normales, verificar que hay stock disponible del producto exacto
+      const { data: inventory } = await supabase
+        .from('inventory')
+        .select('stock_disponible')
+        .eq('product_id', line.product_id)
+        .gt('stock_disponible', 0)
+        .limit(1)
+        .maybeSingle()
+
+      if (!inventory || inventory.stock_disponible < units) {
+        errors.push(`No hay stock suficiente para ${line.product?.name} (${line.product?.code}). Disponible: ${inventory?.stock_disponible || 0}, Solicitado: ${units}. Sugiero aprobar el pedido en pausa.`)
+      }
+    }
+  }
+
+  // Si hay errores de stock, no procesar y retornar error
+  if (errors.length > 0) {
+    return { 
+      success: false,
+      errors: errors
+    }
+  }
+
+  console.log(`✅ Stock verificado correctamente para todas las líneas`)
+
   // NUEVO: Crear órdenes de corte para CHAPAS y preparation_items para ARTÍCULOS NORMALES
   for (const line of order.order_lines) {
     // Cantidad de unidades que pide el cliente
