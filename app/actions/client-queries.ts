@@ -54,7 +54,9 @@ export async function getOrderById(orderId: string) {
 export async function getOrdersForPlanta() {
   const supabase = createAdminClient()
 
-  const { data, error } = await supabase
+  // Pedidos activos: aprobados, en corte, finalizados
+  // Y pedidos aprobados en pausa que tengan al menos una línea con stock asignado
+  const { data: activeOrders, error: activeError } = await supabase
     .from('orders')
     .select(`
       *,
@@ -63,14 +65,50 @@ export async function getOrdersForPlanta() {
         id,
         status,
         quantity_requested,
-        quantity_cut
+        quantity_cut,
+        material_base_id
+      ),
+      preparation_items!preparation_items_order_id_fkey(
+        id,
+        assigned_inventory_id
       )
     `)
     .in('status', ['aprobado', 'en_corte', 'finalizado'])
     .order('created_at', { ascending: false })
 
-  if (error) throw error
-  return data || []
+  if (activeError) throw activeError
+
+  const { data: onHoldOrders, error: onHoldError } = await supabase
+    .from('orders')
+    .select(`
+      *,
+      client:clients(business_name),
+      cut_orders!cut_orders_order_id_fkey(
+        id,
+        status,
+        quantity_requested,
+        quantity_cut,
+        material_base_id
+      ),
+      preparation_items!preparation_items_order_id_fkey(
+        id,
+        assigned_inventory_id
+      )
+    `)
+    .eq('status', 'aprobado_en_pausa')
+    .order('created_at', { ascending: false })
+
+  if (onHoldError) throw onHoldError
+
+  // Filtrar pedidos en pausa: solo aquellos con cut_orders con material_base_id
+  // o preparation_items con assigned_inventory_id
+  const onHoldWithStock = (onHoldOrders || []).filter((order: any) => {
+    const hasCutOrderWithStock = order.cut_orders?.some((co: any) => co.material_base_id)
+    const hasPrepItemWithStock = order.preparation_items?.some((pi: any) => pi.assigned_inventory_id)
+    return hasCutOrderWithStock || hasPrepItemWithStock
+  })
+
+  return [...(activeOrders || []), ...onHoldWithStock]
 }
 
 // =====================================================

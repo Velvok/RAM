@@ -203,41 +203,65 @@ async function processPedidoEntregado(payload: PedidoEntregadoPayload, id_evento
 
     console.log('✅ Order status is valid, proceeding with delivery')
 
-    // Determinar si es entrega completa o parcial
+    // Buscar eventos de entrega anteriores para este pedido
+    const { data: previousDeliveries } = await supabase
+      .from('evo_events')
+      .select('payload')
+      .eq('order_id', order.id)
+      .eq('tipo_evento', 'pedido_entregado')
+      .eq('success', true)
+      .neq('id_evento', id_evento) // Excluir el evento actual
+      .order('processed_at', { ascending: true })
+
+    // Calcular entregas acumuladas
+    const accumulatedDeliveries = new Map<string, number>()
+    
+    // Sumar entregas anteriores
+    for (const prevEvent of previousDeliveries || []) {
+      const prevPayload = prevEvent.payload as any
+      if (prevPayload.articulos) {
+        for (const articulo of prevPayload.articulos) {
+          const currentQty = accumulatedDeliveries.get(articulo.codart) || 0
+          accumulatedDeliveries.set(articulo.codart, currentQty + articulo.cantidad)
+        }
+      }
+    }
+
+    // Sumar entrega actual
+    if (payload.articulos && payload.articulos.length > 0) {
+      for (const articulo of payload.articulos) {
+        const currentQty = accumulatedDeliveries.get(articulo.codart) || 0
+        accumulatedDeliveries.set(articulo.codart, currentQty + articulo.cantidad)
+      }
+    }
+
+    console.log('📦 Accumulated deliveries:', Object.fromEntries(accumulatedDeliveries))
+
+    // Verificar si es entrega completa comparando acumulado vs pedido
     let isCompleteDelivery = true
     let isPartialDelivery = false
 
-    if (payload.articulos && payload.articulos.length > 0) {
-      const deliveredItems = new Map<string, number>()
+    for (const line of order.order_lines || []) {
+      const product = Array.isArray(line.product) ? line.product[0] : line.product
+      if (!product || !product.evo_product_id) continue
 
-      for (const articulo of payload.articulos) {
-        deliveredItems.set(articulo.codart, articulo.cantidad)
+      const accumulatedQty = accumulatedDeliveries.get(product.evo_product_id) || 0
+      const requestedQty = Number(line.quantity)
+
+      console.log(`📦 Product ${product.evo_product_id}: accumulated=${accumulatedQty}, requested=${requestedQty}`)
+
+      if (accumulatedQty < requestedQty) {
+        isCompleteDelivery = false
       }
-
-      // Verificar si es entrega completa o parcial
-      for (const line of order.order_lines || []) {
-        const product = Array.isArray(line.product) ? line.product[0] : line.product
-        if (!product || !product.evo_product_id) continue
-
-        const deliveredQty = deliveredItems.get(product.evo_product_id) || 0
-        const requestedQty = line.quantity
-
-        if (deliveredQty !== requestedQty) {
-          isCompleteDelivery = false
-          if (deliveredQty > 0) {
-            isPartialDelivery = true
-          }
-        }
+      if (accumulatedQty > 0 && accumulatedQty < requestedQty) {
+        isPartialDelivery = true
       }
-
-      console.log(`📦 Delivery type: ${isCompleteDelivery ? 'COMPLETA' : (isPartialDelivery ? 'PARCIAL' : 'SIN ARTÍCULOS')}`)
-    } else {
-      // Si no se proporcionan artículos, asumimos entrega completa
-      console.log('📦 No articles provided, assuming complete delivery')
     }
 
+    console.log(`📦 Delivery type: ${isCompleteDelivery ? 'COMPLETA' : (isPartialDelivery ? 'PARCIAL' : 'SIN ARTÍCULOS')}`)
+
     // Si es entrega parcial, procesar con lógica de retirada parcial
-    if (isPartialDelivery) {
+    if (!isCompleteDelivery) {
       console.log('🔄 Processing partial delivery...')
       const articlesForPartial = payload.articulos?.map(a => ({ id_articulo: a.codart, cantidad: a.cantidad })) || []
       await processPartialDelivery(supabase, order, articlesForPartial, payload, errors)

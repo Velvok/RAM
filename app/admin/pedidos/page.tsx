@@ -23,7 +23,6 @@ export default async function PedidosPage() {
 
   try {
     orders = await getOrders()
-    console.log('✅ Pedidos cargados:', orders?.length || 0)
   } catch (error) {
     console.error('❌ Error fatal loading orders:', error)
   }

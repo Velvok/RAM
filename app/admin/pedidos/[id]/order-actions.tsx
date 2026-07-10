@@ -55,7 +55,7 @@ export default function OrderActions({
     
     setLoading(true)
     try {
-      const result = await generateCutOrders(order.id)
+      await generateCutOrders(order.id)
       await reloadOrder()
       
       // Revalidar para sincronizar con tablet
@@ -66,19 +66,12 @@ export default function OrderActions({
         console.log('Revalidación fallida')
       }
       
-      if (result.warnings && result.warnings.length > 0) {
-        // Mostrar advertencias si hay problemas de stock
-        showError(
-          `Pedido aprobado con advertencias:\n\n${result.warnings.join('\n')}`,
-          'Advertencias de Stock'
-        )
-      } else {
-        showSuccess(
-          'Pedido aprobado. Órdenes de corte creadas y stock asignado correctamente.',
-          'Pedido Aprobado'
-        )
-      }
+      showSuccess(
+        'Pedido aprobado. Órdenes de corte creadas y stock asignado correctamente.',
+        'Pedido Aprobado'
+      )
     } catch (error: any) {
+      console.error('🔴 Error en handleGenerateCutOrders:', error)
       showError(error?.message || 'No se pudo aprobar el pedido', 'Error al Aprobar')
     } finally {
       setLoading(false)
@@ -118,39 +111,6 @@ export default function OrderActions({
     }
   }
 
-  async function handleMarkAsDelivered() {
-    const confirmed = await confirm(
-      'Marcar como Entregado',
-      '¿Marcar este pedido como entregado? Se consumirá el stock reservado de todas las órdenes completadas.',
-      { variant: 'success', confirmText: 'Sí, marcar como entregado' }
-    )
-    
-    if (!confirmed) return
-    
-    setLoading(true)
-    try {
-      const { markOrderAsDelivered } = await import('@/app/actions/orders')
-      await markOrderAsDelivered(order.id)
-      await reloadOrder()
-      
-      // Revalidar para sincronizar con tablet
-      try {
-        await fetch(`/api/revalidate?path=/admin/pedidos/${order.id}`, { method: 'POST' })
-        await fetch(`/api/revalidate?path=/planta/pedidos/${order.id}`, { method: 'POST' })
-      } catch (e) {
-        console.log('Revalidación fallida')
-      }
-      
-      showSuccess(
-        'Pedido marcado como entregado. El stock reservado ha sido consumido.',
-        '✓ Pedido Entregado'
-      )
-    } catch (error: any) {
-      showError(error?.message || 'No se pudo marcar como entregado', 'Error al Entregar')
-    } finally {
-      setLoading(false)
-    }
-  }
 
   async function handleUndoDelivery() {
     const confirmed = await confirm(
@@ -187,6 +147,12 @@ export default function OrderActions({
   // Verificar si se puede deshacer la entrega (dentro de 24h y estado entregado)
   const canUndoDelivery = order.status === 'entregado'
 
+  // Verificar si el pedido en pausa tiene stock parcialmente asignado
+  const hasPartialStock = order.status === 'aprobado_en_pausa' && (
+    (order.cut_orders?.some((co: any) => co.material_base_id) || false) ||
+    (order.preparation_items?.some((pi: any) => pi.assigned_inventory_id) || false)
+  )
+
   // Modo header: solo botones sin cuadro
   if (isHeaderMode) {
     return (
@@ -218,20 +184,10 @@ export default function OrderActions({
           {/* Estado Aprobado en Pausa */}
           {order.status === 'aprobado_en_pausa' && (
             <div className="px-4 py-2 bg-orange-100 text-orange-800 rounded-lg text-sm font-semibold">
-              ⏸️ En Pausa - Sin stock asignado
+              ⏸️ En Pausa - {hasPartialStock ? 'Parcialmente asignado' : 'Sin stock asignado'}
             </div>
           )}
 
-          {/* Marcar como Entregado */}
-          {order.status === 'finalizado' && (
-            <button
-              onClick={handleMarkAsDelivered}
-              disabled={loading}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Marcar como Entregado
-            </button>
-          )}
 
           {/* Deshacer Entrega */}
           {canUndoDelivery && (
@@ -288,20 +244,10 @@ export default function OrderActions({
 
           {order.status === 'aprobado_en_pausa' && (
             <div className="px-4 py-3 bg-orange-100 text-orange-800 rounded-lg font-semibold text-center">
-              ⏸️ Pedido en Pausa - Sin stock asignado
+              ⏸️ Pedido en Pausa - {hasPartialStock ? 'Parcialmente asignado' : 'Sin stock asignado'}
             </div>
           )}
 
-          {/* Marcar como Entregado */}
-          {order.status === 'finalizado' && (
-            <button
-              onClick={handleMarkAsDelivered}
-              disabled={loading}
-              className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Marcar como Entregado
-            </button>
-          )}
 
           {order.status === 'entregado' && (
             <div className="space-y-3">

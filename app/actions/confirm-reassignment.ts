@@ -37,7 +37,7 @@ export async function confirmReassignmentPickup(cutOrderId: string) {
 
   if (materialError) throw materialError
 
-  const chapaSize = materialInfo.length_meters
+  const chapaSize = materialInfo.length_meters || cutOrder.quantity_requested // Si length_meters es null, asumir mismo tamaño
   const productSize = cutOrder.quantity_requested
   const remnantSize = chapaSize - productSize
   const isSameSize = Math.abs(chapaSize - productSize) < 0.01 // Tolerancia de 1cm
@@ -68,18 +68,18 @@ export async function confirmReassignmentPickup(cutOrderId: string) {
   
   console.log(`✅ Orden confirmada: ${newQuantityCut}/${cutOrder.quantity_requested} → estado: ${isCompleted ? 'completada' : 'pendiente'}`)
 
-  // NUEVO: Si la chapa es del mismo tamaño, enviar evento PREP a EVO
+  // NUEVO: Si la chapa es del mismo tamaño, enviar eventos PREP a EVO (origen y destino)
   if (isSameSize) {
-    console.log(`📤 Enviando evento PREP a EVO (chapa del mismo tamaño)`)
+    console.log(`📤 Enviando eventos PREP a EVO (chapa del mismo tamaño)`)
     
     const orderData = Array.isArray(cutOrder.order) ? cutOrder.order[0] : cutOrder.order
     
-    // Obtener nro_item desde ref_evo
+    // Obtener nro_item desde ref_evo del pedido destino
     const refEvo = orderData.ref_evo || {}
     const nroItem = refEvo.nro_item || refEvo.item_number || 1
     
-    // Construir movimiento PREP
-    const movimientos = [{
+    // Evento 1: Pedido destino - PREP positivo (material que entra)
+    const movimientosDestino = [{
       tipo: 'PREP' as const,
       nro_item: nroItem,
       id_articulo: materialInfo.code,
@@ -93,12 +93,52 @@ export async function confirmReassignmentPickup(cutOrderId: string) {
         idPedido: orderData.evo_order_id || orderData.order_number,
         refEvo: refEvo,
         operario: 'operario', // TODO: Obtener del usuario autenticado
-        movimientos,
+        movimientos: movimientosDestino,
       })
-      console.log(`✅ Evento PREP enviado a EVO`)
+      console.log(`✅ Evento PREP (+${quantityToAdd}) enviado a EVO para pedido destino`)
     } catch (error) {
-      console.error('❌ Error enviando evento PREP a EVO:', error)
+      console.error('❌ Error enviando evento PREP a EVO (destino):', error)
       // No fallar la confirmación si falla el envío a EVO
+    }
+
+    // Evento 2: Pedido origen - PREP negativo (material que sale)
+    if (cutOrder.reassigned_from_cut_order_id) {
+      const { data: fromCutOrder } = await supabase
+        .from('cut_orders')
+        .select(`
+          *,
+          order:orders!cut_orders_order_id_fkey(id, order_number, evo_order_id, ref_evo)
+        `)
+        .eq('id', cutOrder.reassigned_from_cut_order_id)
+        .single()
+
+      if (fromCutOrder) {
+        const fromOrderData = Array.isArray(fromCutOrder.order) ? fromCutOrder.order[0] : fromCutOrder.order
+        const fromRefEvo = fromOrderData.ref_evo || {}
+        const fromNroItem = fromRefEvo.nro_item || fromRefEvo.item_number || 1
+
+        const movimientosOrigen = [{
+          tipo: 'PREP' as const,
+          nro_item: fromNroItem,
+          id_articulo: materialInfo.code,
+          cantidad: -quantityToAdd, // Cantidad negativa
+        }]
+
+        try {
+          await notifyChapaPreparada({
+            cutOrderId: fromCutOrder.id,
+            orderId: fromOrderData.id,
+            idPedido: fromOrderData.evo_order_id || fromOrderData.order_number,
+            refEvo: fromRefEvo,
+            operario: 'operario',
+            movimientos: movimientosOrigen,
+          })
+          console.log(`✅ Evento PREP (-${quantityToAdd}) enviado a EVO para pedido origen`)
+        } catch (error) {
+          console.error('❌ Error enviando evento PREP a EVO (origen):', error)
+          // No fallar la confirmación si falla el envío a EVO
+        }
+      }
     }
   }
 

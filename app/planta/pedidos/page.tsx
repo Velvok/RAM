@@ -192,6 +192,16 @@ export default function PlantaPedidosPage() {
                     Aprobado
                   </button>
                   <button
+                    onClick={() => setStatusFilter('aprobado_en_pausa')}
+                    className={`px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${
+                      statusFilter === 'aprobado_en_pausa'
+                        ? 'bg-orange-600 text-white'
+                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                    }`}
+                  >
+                    En Pausa
+                  </button>
+                  <button
                     onClick={() => setStatusFilter('en_corte')}
                     className={`px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${
                       statusFilter === 'en_corte'
@@ -301,11 +311,13 @@ export default function PlantaPedidosPage() {
                         <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
                           pedido.status === 'aprobado' 
                             ? 'bg-yellow-900/50 text-yellow-300' 
+                            : pedido.status === 'aprobado_en_pausa'
+                            ? 'bg-orange-900/50 text-orange-300'
                             : pedido.status === 'en_corte'
                             ? 'bg-blue-900/50 text-blue-300'
                             : 'bg-green-900/50 text-green-300'
                         }`}>
-                          {pedido.status === 'aprobado' ? 'Aprobado' : pedido.status === 'en_corte' ? 'En Corte' : 'Finalizado'}
+                          {pedido.status === 'aprobado' ? 'Aprobado' : pedido.status === 'aprobado_en_pausa' ? 'En Pausa' : pedido.status === 'en_corte' ? 'En Corte' : 'Finalizado'}
                         </span>
                       </td>
                     </tr>

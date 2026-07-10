@@ -470,17 +470,6 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
                             )}
                           </button>
                         )}
-                        {order.status === 'finalizado' && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              router.push(`/admin/pedidos/${order.id}`)
-                            }}
-                            className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
-                          >
-                            Marcar como Entregado
-                          </button>
-                        )}
                       </div>
                     )
                   })}
@@ -575,17 +564,6 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
                     )}
                   </button>
                 )}
-                {order.status === 'finalizado' && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      router.push(`/admin/pedidos/${order.id}`)
-                    }}
-                    className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
-                  >
-                    Marcar como Entregado
-                  </button>
-                )}
               </div>
             )
           })}
@@ -678,17 +656,6 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
                               className="px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded-lg text-xs font-semibold transition-colors disabled:opacity-50"
                             >
                               {loading === order.id ? 'Aprobando...' : 'Aprobar'}
-                            </button>
-                          )}
-                          {order.status === 'finalizado' && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                router.push(`/admin/pedidos/${order.id}`)
-                              }}
-                              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold transition-colors"
-                            >
-                              Marcar como Entregado
                             </button>
                           )}
                         </td>

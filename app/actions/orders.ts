@@ -250,7 +250,6 @@ export async function approveOrder(orderId: string) {
   const { isChapaProduct } = await import('@/lib/product-utils')
 
   // PRIMERO: Verificar stock disponible para todos los productos antes de crear items
-  console.log(`\n🔍 Verificando stock disponible para todas las líneas...`)
   for (const line of order.order_lines || []) {
     const units = Number(line.quantity) || 0
     const isChapa = isChapaProduct(
@@ -279,25 +278,22 @@ export async function approveOrder(orderId: string) {
         .from('inventory')
         .select('stock_disponible')
         .eq('product_id', line.product_id)
-        .gt('stock_disponible', 0)
         .limit(1)
         .maybeSingle()
 
-      if (!inventory || inventory.stock_disponible < units) {
-        errors.push(`No hay stock suficiente para ${line.product?.name} (${line.product?.code}). Disponible: ${inventory?.stock_disponible || 0}, Solicitado: ${units}. Sugiero aprobar el pedido en pausa.`)
+      const stockDisponible = inventory?.stock_disponible || 0
+
+      if (!inventory || stockDisponible < units) {
+        errors.push(`No hay stock suficiente para ${line.product?.name} (${line.product?.code}). Disponible: ${stockDisponible}, Solicitado: ${units}. Sugiero aprobar el pedido en pausa.`)
       }
     }
   }
 
-  // Si hay errores de stock, no procesar y retornar error
+  // Si hay errores de stock, no procesar y lanzar error
   if (errors.length > 0) {
-    return { 
-      success: false,
-      errors: errors
-    }
+    console.log('❌ Errores de stock detectados:', errors)
+    throw new Error(errors.join('\n'))
   }
-
-  console.log(`✅ Stock verificado correctamente para todas las líneas`)
 
   // NUEVO: Crear órdenes de corte para CHAPAS y preparation_items para ARTÍCULOS NORMALES
   for (const line of order.order_lines) {
@@ -454,7 +450,7 @@ export async function approveOrder(orderId: string) {
       preparation_items(id)
     `)
     .eq('id', orderId)
-    .single()
+    .maybeSingle()
 
   if (validation) {
     const totalLines = validation.order_lines?.length || 0
@@ -506,7 +502,10 @@ export async function approveOrder(orderId: string) {
 
 // Mantener función legacy para compatibilidad (ahora llama a approveOrder)
 export async function generateCutOrders(orderId: string) {
-  return approveOrder(orderId)
+  console.log('🔵 generateCutOrders llamado con orderId:', orderId)
+  const result = await approveOrder(orderId)
+  console.log('🔵 generateCutOrders retornando:', result)
+  return result
 }
 
 // Actualizar estado del pedido basado en el estado de sus órdenes de corte Y preparation_items

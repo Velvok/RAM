@@ -20,18 +20,10 @@ export async function createPreparationItem(
   const { createAdminClient } = await import('@/lib/supabase/server')
   const supabase = createAdminClient()
 
-  console.log(`\n📦 === CREANDO PREPARATION_ITEM ===`)
-  console.log(`   Order ID: ${orderId}`)
-  console.log(`   Order Line ID: ${orderLineId}`)
-  console.log(`   Product ID: ${productId}`)
-  console.log(`   Quantity Requested: ${quantityRequested}`)
-  console.log(`   Reserve Stock: ${reserveStock}`)
-
   let selectedInventory: any = null
 
   if (reserveStock) {
     // 1. Buscar stock exacto del producto (match por product_id)
-    console.log(`   → Buscando stock disponible...`)
     const { data: inventory, error: inventoryError } = await supabase
       .from('inventory')
       .select('id, product_id, stock_disponible')
@@ -39,8 +31,6 @@ export async function createPreparationItem(
       .gt('stock_disponible', 0)
       .limit(1)
     
-    console.log(`   → Resultado búsqueda:`, { inventory, inventoryError })
-
     if (inventoryError || !inventory || inventory.length === 0) {
       const { data: product } = await supabase
         .from('products')
@@ -52,10 +42,8 @@ export async function createPreparationItem(
     }
 
     selectedInventory = inventory[0]
-    console.log(`   → Inventario seleccionado:`, selectedInventory)
 
     // 2. Verificar que hay suficiente stock
-    console.log(`   → Verificando stock suficiente (${selectedInventory.stock_disponible} >= ${quantityRequested})...`)
     if (selectedInventory.stock_disponible < quantityRequested) {
       const { data: product } = await supabase
         .from('products')
@@ -70,7 +58,6 @@ export async function createPreparationItem(
   }
 
   // 3. Crear preparation_item
-  console.log(`   → Insertando preparation_item en BD...`)
   const { data: prepItem, error: prepError } = await supabase
     .from('preparation_items')
     .insert({
@@ -89,20 +76,12 @@ export async function createPreparationItem(
     console.error('❌ Error creando preparation_item:', prepError)
     throw prepError
   }
-  
-  console.log(`   ✅ Preparation_item insertado:`, prepItem)
 
   // 4. Reservar stock solo si reserveStock es true
   if (reserveStock && selectedInventory) {
     const { reserveStockBatch } = await import('@/app/actions/stock-management')
     await reserveStockBatch(selectedInventory.id, quantityRequested)
-    console.log(`   ✅ Stock reservado: ${quantityRequested} unidades`)
-  } else {
-    console.log(`   ⏭️ Stock NO reservado (modo pausa)`)
   }
-
-  console.log(`✅ === PREPARATION_ITEM COMPLETADO ===`)
-  console.log(`   ID: ${prepItem.id}\n`)
 
   return prepItem
 }

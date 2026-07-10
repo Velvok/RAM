@@ -42,8 +42,6 @@ export default function PlantaPedidoDetallePage() {
   const [quantityToChange, setQuantityToChange] = useState<Record<string, number>>({})
   const [loadingStock, setLoadingStock] = useState<Record<string, boolean>>({})
   const [loadingSuggestions, setLoadingSuggestions] = useState<Record<string, boolean>>({})
-  const [markingAsDelivered, setMarkingAsDelivered] = useState(false)
-  const [undoingDelivery, setUndoingDelivery] = useState(false)
 
   useEffect(() => {
     const operatorData = localStorage.getItem('operator')
@@ -102,85 +100,6 @@ export default function PlantaPedidoDetallePage() {
     enabled: true,
     interval: 10, // Verificar cada 10 segundos
   })
-
-  async function handleMarkAsDelivered() {
-    if (!pedido) return
-    
-    // Verificar que todas las órdenes estén completadas
-    const allCompleted = pedido.cut_orders?.every((co: any) => 
-      co.status === 'completada' && (co.quantity_cut || 0) >= co.quantity_requested
-    )
-    
-    if (!allCompleted) {
-      alert('No se puede marcar como entregado: hay órdenes pendientes de completar')
-      return
-    }
-    
-    setMarkingAsDelivered(true)
-    
-    try {
-      const { markOrderAsDelivered } = await import('@/app/actions/orders')
-      await markOrderAsDelivered(pedido.id)
-      
-      // Recargar el pedido para ver el nuevo estado
-      await loadPedido()
-
-      // Revalidar para sincronizar con admin
-      try {
-        await fetch(`/api/revalidate?path=/planta/pedidos/${pedidoId}`, { method: 'POST' })
-        await fetch(`/api/revalidate?path=/admin/pedidos/${pedido.id}`, { method: 'POST' })
-      } catch (e) {
-        console.log('Revalidación fallida')
-      }
-
-      // Mostrar mensaje de éxito
-      alert('¡Pedido marcado como entregado correctamente!')
-      
-    } catch (error: any) {
-      console.error('Error marcando como entregado:', error)
-      alert('Error: ' + (error?.message || 'No se pudo marcar el pedido como entregado'))
-    } finally {
-      setMarkingAsDelivered(false)
-    }
-  }
-
-  async function handleUndoDelivery() {
-    if (!pedido) return
-
-    const confirmed = confirm(
-      '¿Estás seguro de deshacer esta entrega?\n\n' +
-      'Esta acción restaurará el stock consumido y revertirá el estado del pedido.'
-    )
-
-    if (!confirmed) return
-
-    setUndoingDelivery(true)
-
-    try {
-      const { undoOrderDelivery } = await import('@/app/actions/orders')
-      await undoOrderDelivery(pedido.id)
-
-      // Recargar el pedido para ver el nuevo estado
-      await loadPedido()
-
-      // Revalidar para sincronizar con admin
-      try {
-        await fetch(`/api/revalidate?path=/planta/pedidos/${pedidoId}`, { method: 'POST' })
-        await fetch(`/api/revalidate?path=/admin/pedidos/${pedido.id}`, { method: 'POST' })
-      } catch (e) {
-        console.log('Revalidación fallida')
-      }
-
-      // Mostrar mensaje de éxito
-      alert('¡Entrega deshecha correctamente! El stock ha sido restaurado.')
-
-    } catch (error: any) {
-      console.error('Error deshaciendo entrega:', error)
-      alert('Error: ' + (error?.message || 'No se pudo deshacer la entrega'))
-    } finally {
-      setUndoingDelivery(false)
-    }
-  }
 
   async function loadAvailableStockForCutOrder(cutOrderId: string, cutOrder: any) {
     try {
@@ -827,30 +746,6 @@ export default function PlantaPedidoDetallePage() {
             </div>
             
             <div className="flex items-center gap-3">
-              {/* Botón Marcar como Entregado */}
-              {pedido.status === 'finalizado' && (
-                <button
-                  onClick={handleMarkAsDelivered}
-                  disabled={markingAsDelivered}
-                  className="flex items-center gap-2 px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg border border-blue-500 text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Truck className="w-4 h-4" />
-                  {markingAsDelivered ? 'Entregando...' : 'Entregado'}
-                </button>
-              )}
-              
-              {/* Botón Deshacer Entrega */}
-              {pedido.status === 'entregado' && (
-                <button
-                  onClick={handleUndoDelivery}
-                  disabled={undoingDelivery}
-                  className="flex items-center gap-2 px-4 py-1.5 bg-orange-600 hover:bg-orange-500 text-white rounded-lg border border-orange-500 text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  {undoingDelivery ? 'Deshaciendo...' : 'Deshacer'}
-                </button>
-              )}
-              
               {/* Reloj */}
               <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900/50 rounded-lg border border-slate-700">
                 <Clock className="w-4 h-4 text-slate-400" />
@@ -869,9 +764,10 @@ export default function PlantaPedidoDetallePage() {
 
       {/* Lista de Órdenes de Corte */}
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-4">
-        {pedido.cut_orders && pedido.cut_orders.length > 0 ? (
-          // Mostrar todas las órdenes de corte (incluidas las hijas de reasignación parcial)
+        {pedido.cut_orders && pedido.cut_orders.filter((co: any) => co.material_base_id || co.assigned_inventory_id).length > 0 ? (
+          // Mostrar solo órdenes de corte con stock asignado
           pedido.cut_orders
+            .filter((co: any) => co.material_base_id || co.assigned_inventory_id)
             .sort((a: any, b: any) => {
               // Primero las pendientes (no completadas), luego las completadas
               const aIsCompleted = a.status === 'completada'
@@ -1446,14 +1342,16 @@ export default function PlantaPedidoDetallePage() {
         )}
 
         {/* Sección de Artículos a Preparar */}
-        {pedido.preparation_items && pedido.preparation_items.length > 0 && (
+        {pedido.preparation_items && pedido.preparation_items.filter((item: any) => item.assigned_inventory_id).length > 0 && (
           <div className="mt-8 space-y-4">
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
               <Package className="w-6 h-6" />
               Artículos a Preparar
             </h2>
             
-            {pedido.preparation_items.map((item: any) => {
+            {pedido.preparation_items
+              .filter((item: any) => item.assigned_inventory_id)
+              .map((item: any) => {
               const isCompleted = item.status === 'completada'
               const progress = (item.quantity_prepared / item.quantity_requested) * 100
               const remaining = item.quantity_requested - item.quantity_prepared
