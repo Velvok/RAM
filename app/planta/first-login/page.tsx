@@ -1,64 +1,95 @@
 'use client'
 
 import { useState } from 'react'
-import { loginWithPin } from '@/app/actions/auth'
 import { useRouter } from 'next/navigation'
+import { changePin } from '@/app/actions/auth'
 
-export default function PlantaLoginPage() {
+export default function PlantaFirstLoginPage() {
   const [pin, setPin] = useState('')
+  const [confirmPin, setConfirmPin] = useState('')
+  const [step, setStep] = useState<'new' | 'confirm'>('new')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const router = useRouter()
 
+  const operatorData = typeof window !== 'undefined' ? localStorage.getItem('operator') : null
+  const operator = operatorData ? JSON.parse(operatorData) : null
+
   const handleNumberClick = (num: string) => {
-    if (pin.length < 6) {
-      setPin(pin + num)
+    const currentPin = step === 'new' ? pin : confirmPin
+    if (currentPin.length < 6) {
+      if (step === 'new') {
+        setPin(currentPin + num)
+      } else {
+        setConfirmPin(currentPin + num)
+      }
     }
   }
 
   const handleDelete = () => {
-    setPin(pin.slice(0, -1))
+    if (step === 'new') {
+      setPin(pin.slice(0, -1))
+    } else {
+      setConfirmPin(confirmPin.slice(0, -1))
+    }
   }
 
   const handleClear = () => {
-    setPin('')
+    if (step === 'new') {
+      setPin('')
+    } else {
+      setConfirmPin('')
+    }
     setError(null)
   }
 
   const handleSubmit = async () => {
-    if (pin.length < 4) {
+    const currentPin = step === 'new' ? pin : confirmPin
+
+    if (currentPin.length < 4) {
       setError('El PIN debe tener al menos 4 dígitos')
       return
     }
 
-    setLoading(true)
-    setError(null)
+    if (step === 'new') {
+      setStep('confirm')
+      setError(null)
+    } else {
+      if (pin !== confirmPin) {
+        setError('Los PINs no coinciden')
+        setConfirmPin('')
+        return
+      }
 
-    const result = await loginWithPin(pin)
+      setLoading(true)
+      setError(null)
 
-    if (result.error) {
-      setError(result.error)
-      setLoading(false)
-      setPin('')
-    } else if (result.success && result.user) {
-      localStorage.setItem('operator', JSON.stringify(result.user))
-      if (result.firstLogin) {
-        router.push('/planta/first-login')
-      } else {
-        router.push('/planta/ordenes')
+      try {
+        const result = await changePin(operator.id, pin)
+        if (result.error) {
+          setError(result.error)
+          setLoading(false)
+        } else {
+          router.push('/planta/ordenes')
+        }
+      } catch (e) {
+        setError('Error al cambiar el PIN')
+        setLoading(false)
       }
     }
   }
+
+  const currentPin = step === 'new' ? pin : confirmPin
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="max-w-md w-full space-y-8">
         <div className="text-center">
           <h1 className="text-4xl font-bold text-white mb-2">
-            Acceso Operarios
+            Primer Login
           </h1>
           <p className="text-slate-300">
-            Ingresa tu PIN de 4-6 dígitos
+            {step === 'new' ? 'Ingresa tu nuevo PIN' : 'Confirma tu nuevo PIN'}
           </p>
         </div>
 
@@ -75,12 +106,12 @@ export default function PlantaLoginPage() {
                 <div
                   key={i}
                   className={`w-12 h-12 rounded-lg border-2 flex items-center justify-center text-2xl font-bold ${
-                    pin.length > i
+                    currentPin.length > i
                       ? 'bg-blue-500 border-blue-400 text-white'
                       : 'bg-slate-700/50 border-slate-600 text-slate-500'
                   }`}
                 >
-                  {pin.length > i ? '•' : ''}
+                  {currentPin.length > i ? '•' : ''}
                 </div>
               ))}
             </div>
@@ -122,10 +153,10 @@ export default function PlantaLoginPage() {
 
           <button
             onClick={handleSubmit}
-            disabled={loading || pin.length < 4}
+            disabled={loading || currentPin.length < 4}
             className="w-full h-16 text-xl font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? 'Verificando...' : 'Ingresar'}
+            {loading ? 'Guardando...' : step === 'new' ? 'Continuar' : 'Confirmar'}
           </button>
         </div>
       </div>

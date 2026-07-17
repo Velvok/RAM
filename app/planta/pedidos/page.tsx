@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Package, LogOut, Search, X, Clock } from 'lucide-react'
+import { Package, LogOut, Search, X, Clock, MessageSquare } from 'lucide-react'
 
 export default function PlantaPedidosPage() {
   const router = useRouter()
@@ -14,6 +14,7 @@ export default function PlantaPedidosPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('todos')
   const [currentTime, setCurrentTime] = useState('')
+  const [unreadNotes, setUnreadNotes] = useState<Record<string, number>>({})
 
   useEffect(() => {
     const operatorData = localStorage.getItem('operator')
@@ -48,20 +49,43 @@ export default function PlantaPedidosPage() {
   async function loadPedidos() {
     try {
       const { getOrdersForPlanta } = await import('@/app/actions/client-queries')
-      
-      console.log('🔍 Buscando pedidos en estados: aprobado, en_corte, finalizado')
-      
-      // Agregar timestamp para evitar caché del navegador
       const data = await getOrdersForPlanta()
-      
-      console.log('✅ Pedidos encontrados:', data?.length || 0, data)
       setPedidos(data || [])
+      if (data && data.length > 0) {
+        const { getUnreadNotesCountByOrders } = await import('@/app/actions/order-notes')
+        const counts = await getUnreadNotesCountByOrders(data.map((p: any) => p.id))
+        setUnreadNotes(counts)
+      }
     } catch (error) {
       console.error('❌ Error loading pedidos:', error)
     } finally {
       setLoading(false)
     }
   }
+
+  async function refreshUnreadNotes(orderIds: string[]) {
+    if (!orderIds.length) return
+    try {
+      const { getUnreadNotesCountByOrders } = await import('@/app/actions/order-notes')
+      const counts = await getUnreadNotesCountByOrders(orderIds)
+      setUnreadNotes(counts)
+    } catch (e) {}
+  }
+
+  useEffect(() => {
+    if (!pedidos.length) return
+    const supabase = createClient()
+    const channel = supabase
+      .channel('order_notes_list')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'order_notes' },
+        () => refreshUnreadNotes(pedidos.map(p => p.id))
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [pedidos])
 
   function handleLogout() {
     localStorage.removeItem('operator')
@@ -275,6 +299,9 @@ export default function PlantaPedidosPage() {
                   <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                     Estado
                   </th>
+                  <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+                    Notas
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700">
@@ -319,6 +346,16 @@ export default function PlantaPedidosPage() {
                         }`}>
                           {pedido.status === 'aprobado' ? 'Aprobado' : pedido.status === 'aprobado_en_pausa' ? 'En Pausa' : pedido.status === 'en_corte' ? 'En Corte' : 'Finalizado'}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {unreadNotes[pedido.id] > 0 ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/20 border border-amber-500/50 rounded-full">
+                            <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
+                            <span className="text-xs font-bold text-amber-300">{unreadNotes[pedido.id]}</span>
+                          </span>
+                        ) : (
+                          <span className="text-slate-600 text-xs">—</span>
+                        )}
                       </td>
                     </tr>
                   )

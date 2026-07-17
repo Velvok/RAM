@@ -12,6 +12,7 @@ import { useSuccess } from '@/components/success-modal'
 import { useError } from '@/components/error-modal'
 import { extractSizeFromName, extractSizeFromCode } from '@/lib/product-utils'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
+import OrderNotesAdmin from '@/components/order-notes-admin'
 
 export default function OrderDetailClient({ initialOrder }: { initialOrder: any }) {
   const [order, setOrder] = useState(initialOrder)
@@ -240,6 +241,11 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Notas para Operario */}
+      <div className="col-span-2">
+        <OrderNotesAdmin orderId={order.id} />
       </div>
 
       {/* Pedido (Líneas del Pedido) */}

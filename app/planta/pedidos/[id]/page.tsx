@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { CheckCircle2, ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, Package, Clock, Truck } from 'lucide-react'
+import { CheckCircle2, ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, Package, Clock, Truck, MessageSquare } from 'lucide-react'
 import { extractSizeFromName, extractSizeFromCode } from '@/lib/product-utils'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 
@@ -41,7 +41,10 @@ export default function PlantaPedidoDetallePage() {
   const [selectedStock, setSelectedStock] = useState<Record<string, any>>({})
   const [quantityToChange, setQuantityToChange] = useState<Record<string, number>>({})
   const [loadingStock, setLoadingStock] = useState<Record<string, boolean>>({})
-  const [loadingSuggestions, setLoadingSuggestions] = useState<Record<string, boolean>>({})
+  const [loadingSuggestions, setLoadingSuggestions] = useState<Record<string, boolean>>({}) 
+  const [notes, setNotes] = useState<any[]>([])
+  const [showNotes, setShowNotes] = useState(false)
+  const [markingRead, setMarkingRead] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     const operatorData = localStorage.getItem('operator')
@@ -51,6 +54,7 @@ export default function PlantaPedidoDetallePage() {
     }
     setOperator(JSON.parse(operatorData))
     loadPedido()
+    loadNotes(pedidoId)
   }, [router, pedidoId])
 
   // Actualizar hora cada segundo
@@ -100,6 +104,46 @@ export default function PlantaPedidoDetallePage() {
     enabled: true,
     interval: 10, // Verificar cada 10 segundos
   })
+
+  async function loadNotes(orderId: string) {
+    try {
+      const { getOrderNotes } = await import('@/app/actions/order-notes')
+      const data = await getOrderNotes(orderId)
+      setNotes(data)
+    } catch (e) {
+      console.error('Error loading notes:', e)
+    }
+  }
+
+  useEffect(() => {
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`order_notes_planta_${pedidoId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'order_notes', filter: `order_id=eq.${pedidoId}` },
+        () => loadNotes(pedidoId)
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [pedidoId])
+
+  async function handleMarkNoteRead(noteId: string) {
+    if (!operator) return
+    setMarkingRead(prev => ({ ...prev, [noteId]: true }))
+    try {
+      const { markNoteAsRead } = await import('@/app/actions/order-notes')
+      await markNoteAsRead(noteId, operator.full_name)
+      setNotes(prev => prev.map(n =>
+        n.id === noteId ? { ...n, read_at: new Date().toISOString(), read_by_operator_name: operator.full_name } : n
+      ))
+    } catch (e) {
+      console.error('Error marking note as read:', e)
+    } finally {
+      setMarkingRead(prev => ({ ...prev, [noteId]: false }))
+    }
+  }
 
   async function loadAvailableStockForCutOrder(cutOrderId: string, cutOrder: any) {
     try {
@@ -746,6 +790,20 @@ export default function PlantaPedidoDetallePage() {
             </div>
             
             <div className="flex items-center gap-3">
+              {/* Notas del Admin */}
+              {notes.length > 0 && (
+                <button
+                  onClick={() => setShowNotes(v => !v)}
+                  className="relative flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 rounded-lg transition-colors"
+                >
+                  <MessageSquare className="w-4 h-4 text-amber-400" />
+                  {notes.filter(n => !n.read_at).length > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-xs font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                      {notes.filter(n => !n.read_at).length}
+                    </span>
+                  )}
+                </button>
+              )}
               {/* Reloj */}
               <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900/50 rounded-lg border border-slate-700">
                 <Clock className="w-4 h-4 text-slate-400" />
@@ -758,6 +816,38 @@ export default function PlantaPedidoDetallePage() {
           
           {operator && (
             <p className="text-slate-400">Operario: <span className="text-white font-semibold">{operator.full_name}</span></p>
+          )}
+
+          {/* Panel de notas expandible */}
+          {showNotes && notes.length > 0 && (
+            <div className="mt-3 space-y-2">
+              {notes.map(note => (
+                <div
+                  key={note.id}
+                  className={`rounded-lg p-3 flex items-start gap-3 ${
+                    note.read_at ? 'bg-slate-700/50 border border-slate-600' : 'bg-amber-500/10 border border-amber-500/40'
+                  }`}
+                >
+                  <MessageSquare className={`w-4 h-4 mt-0.5 flex-shrink-0 ${note.read_at ? 'text-slate-400' : 'text-amber-400'}`} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-white">{note.content}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">{note.created_by_name}</p>
+                  </div>
+                  {!note.read_at && (
+                    <button
+                      onClick={() => handleMarkNoteRead(note.id)}
+                      disabled={markingRead[note.id]}
+                      className="flex-shrink-0 text-xs bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white px-2 py-1 rounded font-medium transition-colors"
+                    >
+                      {markingRead[note.id] ? '...' : 'Leída'}
+                    </button>
+                  )}
+                  {note.read_at && (
+                    <span className="flex-shrink-0 text-xs text-green-400 font-medium">✓</span>
+                  )}
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </div>
@@ -913,7 +1003,7 @@ export default function PlantaPedidoDetallePage() {
                       </>
                     )}
 
-                    {/* BLOQUE A: Sugerencia del Sistema (Happy Path) */}
+                    {/* BLOQUE A: Stock Asignado (Happy Path) */}
                     {cutSuggestions?.best && (
                       <div className={`rounded-2xl p-6 shadow-lg transition-all ${
                         selectedMaterial?.id === cutSuggestions.best.id
@@ -921,7 +1011,7 @@ export default function PlantaPedidoDetallePage() {
                           : 'bg-slate-800/50 border-2 border-blue-500 shadow-blue-500/20'
                       }`}>
                         <div className="flex items-center justify-center gap-3 mb-4">
-                          <h4 className="text-xl font-bold text-white uppercase">Sugerencia del Sistema</h4>
+                          <h4 className="text-xl font-bold text-white uppercase">Stock Asignado</h4>
                         </div>
                         
                         <div className="bg-slate-900/70 rounded-xl p-5 space-y-3 mb-6">
@@ -935,7 +1025,7 @@ export default function PlantaPedidoDetallePage() {
                               <span className="font-bold ml-2 text-white text-xl">{cutSuggestions.best.length}m</span>
                             </div>
                             <div>
-                              <span className="text-slate-400">Desperdicio:</span>
+                              <span className="text-slate-400">Chapa Restante:</span>
                               <span className={`font-bold ml-2 text-xl ${
                                 cutSuggestions.best.waste > 0 ? 'text-orange-400' : 'text-green-400'
                               }`}>
@@ -1020,81 +1110,6 @@ export default function PlantaPedidoDetallePage() {
                         Usa los botones + y − para ajustar la cantidad
                       </p>
                     </div>
-
-                    {/* BLOQUE D: Recorte Generado (Recuadro Colapsable) */}
-                    {selectedMaterial && (
-                      <div className="bg-slate-800/50 border-2 border-slate-600 rounded-2xl shadow-lg overflow-hidden">
-                        {/* Título Clickeable con Cálculo Automático */}
-                        <button
-                          onClick={() => setShowRemnantAdjust(prev => ({ ...prev, [cutOrder.id]: !prev[cutOrder.id] }))}
-                          className="w-full p-6 hover:bg-slate-800/70 transition-all"
-                        >
-                          <div className="flex items-center justify-between">
-                            <h5 className="text-xl font-bold text-white uppercase">Recorte Generado</h5>
-                            <div className="flex items-center gap-3">
-                              <span className="text-3xl font-bold text-white">
-                                {(() => {
-                                  const productSize = extractSizeFromName(cutOrder.product?.name || '') || extractSizeFromCode(cutOrder.product?.code || '') || cutOrder.quantity_requested
-                                  return (remnantInputs[cutOrder.id] || Math.max(0, selectedMaterial.length - productSize).toFixed(1))
-                                })()}m
-                              </span>
-                              <span className="text-xl text-white">{showRemnantAdjust[cutOrder.id] ? '▼' : '▶'}</span>
-                            </div>
-                          </div>
-                        </button>
-                        
-                        {/* Contenido Expandible - Ajuste Manual */}
-                        {showRemnantAdjust[cutOrder.id] && (
-                          <div className="px-6 pb-6 space-y-4 animate-in slide-in-from-top duration-300">
-                            <div className="border-t border-slate-700 pt-4">
-                              <label className="text-sm text-slate-400 mb-3 block">Ajuste manual (opcional):</label>
-                              
-                              {/* Stepper para Recorte */}
-                              <div className="flex items-center">
-                                {/* Botón Menos */}
-                                <button
-                                  onClick={() => {
-                                    const productSize = extractSizeFromName(cutOrder.product?.name || '') || extractSizeFromCode(cutOrder.product?.code || '') || cutOrder.quantity_requested
-                                    const current = parseFloat(remnantInputs[cutOrder.id] || Math.max(0, selectedMaterial.length - productSize).toFixed(1))
-                                    const newValue = Math.max(0, current - 0.5)
-                                    setRemnantInputs(prev => ({ ...prev, [cutOrder.id]: newValue.toFixed(1) }))
-                                  }}
-                                  className="h-14 w-16 bg-slate-900 hover:bg-slate-800 active:bg-slate-700 text-white text-3xl font-bold rounded-l-xl border-2 border-slate-700 transition-all transform active:scale-95"
-                                >
-                                  −
-                                </button>
-
-                                <div className="flex-1 flex items-center justify-center bg-slate-800 border-y-2 border-slate-700">
-                                  <span className="text-4xl font-bold text-white">
-                                    {(() => {
-                                      const productSize = extractSizeFromName(cutOrder.product?.name || '') || extractSizeFromCode(cutOrder.product?.code || '') || cutOrder.quantity_requested
-                                      return (remnantInputs[cutOrder.id] || Math.max(0, selectedMaterial.length - productSize).toFixed(1))
-                                    })()}m
-                                  </span>
-                                </div>
-
-                                {/* Botón Más */}
-                                <button
-                                  onClick={() => {
-                                    const productSize = extractSizeFromName(cutOrder.product?.name || '') || extractSizeFromCode(cutOrder.product?.code || '') || cutOrder.quantity_requested
-                                    const current = parseFloat(remnantInputs[cutOrder.id] || Math.max(0, selectedMaterial.length - productSize).toFixed(1))
-                                    const newValue = current + 0.5
-                                    setRemnantInputs(prev => ({ ...prev, [cutOrder.id]: newValue.toFixed(1) }))
-                                  }}
-                                  className="h-14 w-16 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-white text-3xl font-bold rounded-r-xl border-2 border-slate-600 transition-all transform active:scale-95"
-                                >
-                                  +
-                                </button>
-                              </div>
-                              
-                              <p className="text-xs text-slate-400 mt-3 text-center">
-                                Ajusta en incrementos de 0.5m
-                              </p>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
 
 
                     {/* Botón Confirmar - GIGANTE */}
@@ -1280,7 +1295,7 @@ export default function PlantaPedidoDetallePage() {
                                             <p className="font-bold text-orange-400 text-base">{subRemnant}m</p>
                                           </div>
                                           <div>
-                                            <span className="text-slate-400">Desperdicio:</span>
+                                            <span className="text-slate-400">Chapa Restante:</span>
                                             <p className={`font-bold text-base ${
                                               parseFloat(subRemnant) > 1 ? 'text-orange-400' : 'text-green-400'
                                             }`}>

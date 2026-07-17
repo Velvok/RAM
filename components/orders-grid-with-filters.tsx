@@ -13,7 +13,7 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
   const [loading, setLoading] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>('todos')
   const [searchQuery, setSearchQuery] = useState('')
-  const [viewMode, setViewMode] = useState<'cards' | 'rows'>('cards')
+  const [viewMode, setViewMode] = useState<'cards' | 'rows'>('rows')
   const [currentPage, setCurrentPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(25)
   const [groupByClient, setGroupByClient] = useState(false)

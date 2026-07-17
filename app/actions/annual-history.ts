@@ -44,16 +44,27 @@ export async function getAnnualHistory(
 ): Promise<ProductHistoryData[]> {
   const supabase = createAdminClient()
 
-  // Si no se especifican productos, obtener los 6 con conversión de peso
+  // Si no se especifican productos, obtener los primeros 6 del historial
   let selectedProductIds = productIds
 
   if (!selectedProductIds || selectedProductIds.length === 0) {
-    const { data: defaultProducts } = await supabase
-      .from('product_weight_conversions')
+    const { data: historyProds } = await supabase
+      .from('annual_history')
       .select('product_id')
+      .eq('year', year)
       .limit(6)
 
-    selectedProductIds = defaultProducts?.map(p => p.product_id) || []
+    const uniqueIds = [...new Set(historyProds?.map(p => p.product_id) || [])]
+
+    if (uniqueIds.length === 0) {
+      const { data: convProds } = await supabase
+        .from('product_weight_conversions')
+        .select('product_id')
+        .limit(6)
+      selectedProductIds = convProds?.map(p => p.product_id) || []
+    } else {
+      selectedProductIds = uniqueIds
+    }
   }
 
   if (selectedProductIds.length === 0) {
@@ -81,6 +92,17 @@ export async function getAnnualHistory(
   // Agrupar datos por producto
   const productMap = new Map<string, ProductHistoryData>()
 
+  const emptyMonths = () => Array.from({ length: 12 }, (_, i) => ({
+    month: i + 1,
+    monthName: MONTH_NAMES[i],
+    purchases_kg: 0,
+    sales_kg: 0,
+    purchases_tons: 0,
+    sales_tons: 0,
+    purchases_units: 0,
+    sales_units: 0,
+  }))
+
   historyData?.forEach((record: any) => {
     const productId = record.product_id
     const product = record.product
@@ -91,16 +113,7 @@ export async function getAnnualHistory(
         productName: product.name,
         productCode: product.code,
         category: product.category || 'general',
-        data: Array.from({ length: 12 }, (_, i) => ({
-          month: i + 1,
-          monthName: MONTH_NAMES[i],
-          purchases_kg: 0,
-          sales_kg: 0,
-          purchases_tons: 0,
-          sales_tons: 0,
-          purchases_units: 0,
-          sales_units: 0,
-        }))
+        data: emptyMonths()
       })
     }
 
@@ -121,51 +134,51 @@ export async function getAnnualHistory(
     }
   })
 
-  return Array.from(productMap.values())
+  // Para productos sin historial, añadirlos con datos a cero
+  const missingIds = selectedProductIds.filter(id => !productMap.has(id))
+  if (missingIds.length > 0) {
+    const { data: missingProducts } = await supabase
+      .from('products')
+      .select('id, code, name, category')
+      .in('id', missingIds)
+
+    missingProducts?.forEach(p => {
+      productMap.set(p.id, {
+        productId: p.id,
+        productName: p.name,
+        productCode: p.code,
+        category: p.category || 'general',
+        data: emptyMonths()
+      })
+    })
+  }
+
+  // Mantener el orden de selectedProductIds
+  return selectedProductIds
+    .map(id => productMap.get(id))
+    .filter(Boolean) as ProductHistoryData[]
 }
 
 /**
- * Obtener productos disponibles para el historial
+ * Obtener productos disponibles para el historial (todos los activos)
  */
 export async function getProductsForHistory() {
   const supabase = createAdminClient()
 
-  // Obtener IDs de productos con conversión
-  const { data: conversions, error: convError } = await supabase
-    .from('product_weight_conversions')
-    .select('product_id')
-
-  if (convError) {
-    console.error('Error obteniendo conversiones:', convError)
-    throw convError
-  }
-
-  if (!conversions || conversions.length === 0) {
-    console.warn('No hay conversiones de peso configuradas')
-    return []
-  }
-
-  const productIds = conversions.map(c => c.product_id)
-
-  // Obtener productos
-  const { data: products, error: prodError } = await supabase
+  const { data: products, error } = await supabase
     .from('products')
     .select('id, code, name, category')
-    .in('id', productIds)
     .eq('is_active', true)
     .order('name', { ascending: true })
 
-  if (prodError) {
-    console.error('Error obteniendo productos:', prodError)
-    throw prodError
-  }
+  if (error) throw error
 
-  return products?.map(p => ({
+  return (products || []).map(p => ({
     id: p.id,
     code: p.code,
     name: p.name,
     category: p.category || 'general'
-  })) || []
+  }))
 }
 
 /**
@@ -175,44 +188,53 @@ export async function getDefaultProducts() {
   const supabase = createAdminClient()
 
   // Obtener productos seleccionados de la tabla user_selected_products
-  const { data: selected, error: selError } = await supabase
+  const { data: selected } = await supabase
     .from('user_selected_products')
     .select('product_id')
     .order('display_order', { ascending: true })
 
-  if (selError) {
-    console.error('Error obteniendo productos seleccionados:', selError)
-    throw selError
+  if (selected && selected.length > 0) {
+    const productIds = selected.map(s => s.product_id)
+    const { data: products } = await supabase
+      .from('products')
+      .select('id, code, name, category')
+      .in('id', productIds)
+
+    const orderedProducts = productIds
+      .map(id => products?.find(p => p.id === id))
+      .filter(Boolean)
+
+    return orderedProducts.map(p => ({
+      id: p!.id,
+      code: p!.code,
+      name: p!.name,
+      category: p!.category || 'general'
+    }))
   }
 
-  if (!selected || selected.length === 0) {
-    return []
+  // Fallback: primeros 6 productos que tienen historial
+  const { data: historyProducts } = await supabase
+    .from('annual_history')
+    .select('product_id')
+    .limit(6)
+
+  const historyIds = [...new Set(historyProducts?.map(h => h.product_id) || [])].slice(0, 6)
+
+  if (historyIds.length > 0) {
+    const { data: products } = await supabase
+      .from('products')
+      .select('id, code, name, category')
+      .in('id', historyIds)
+
+    return (products || []).map(p => ({
+      id: p.id,
+      code: p.code,
+      name: p.name,
+      category: p.category || 'general'
+    }))
   }
 
-  const productIds = selected.map(s => s.product_id)
-
-  // Obtener detalles de los productos
-  const { data: products, error: prodError } = await supabase
-    .from('products')
-    .select('id, code, name, category')
-    .in('id', productIds)
-
-  if (prodError) {
-    console.error('Error obteniendo productos:', prodError)
-    throw prodError
-  }
-
-  // Mantener el orden de display_order
-  const orderedProducts = productIds.map(id => 
-    products?.find(p => p.id === id)
-  ).filter(Boolean)
-
-  return orderedProducts.map(p => ({
-    id: p!.id,
-    code: p!.code,
-    name: p!.name,
-    category: p!.category || 'general'
-  }))
+  return []
 }
 
 /**

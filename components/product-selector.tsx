@@ -16,19 +16,19 @@ interface ProductSelectorProps {
   onSelectionChange: (products: Product[]) => void
 }
 
-export function ProductSelector({ 
-  availableProducts, 
+export function ProductSelector({
+  availableProducts,
   selectedProducts,
-  onSelectionChange 
+  onSelectionChange
 }: ProductSelectorProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
 
-  const filteredProducts = availableProducts.filter(p => 
+  const filteredProducts = availableProducts.filter(p =>
     !selectedProducts.find(sp => sp.id === p.id) &&
     (p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
      p.code.toLowerCase().includes(searchTerm.toLowerCase()))
-  )
+  ).slice(0, 10)
 
   const handleAddProduct = (product: Product) => {
     if (selectedProducts.length < 6) {
