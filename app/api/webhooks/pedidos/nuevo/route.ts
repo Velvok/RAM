@@ -255,8 +255,26 @@ async function processPedidoNuevo(payload: PedidoNuevoPayload) {
       if (existingClient) {
         clientId = existingClient.id
         console.log(`✅ Found existing client by evo_client_id: ${clientId}`)
+        // Si es MOSTRADO, asegurar que el nombre esté correcto
+        if (ref_evo.codter === 'MOSTRADO') {
+          let correctName = 'Cliente Mostrador'
+          if (payload.cliente.nombre && payload.cliente.nombre !== 'SinNombre') {
+            correctName = `Cliente Mostrador - ${payload.cliente.nombre}`
+          }
+          await supabase.from('clients').update({ business_name: correctName }).eq('id', clientId)
+        }
       } else {
-        const clientName = payload.cliente.nombre || `Cliente ${ref_evo.codter}`
+        // Lógica especial para MOSTRADO
+        let clientName: string
+        if (ref_evo.codter === 'MOSTRADO') {
+          clientName = 'Cliente Mostrador'
+          if (payload.cliente.nombre && payload.cliente.nombre !== 'SinNombre') {
+            clientName = `Cliente Mostrador - ${payload.cliente.nombre}`
+          }
+        } else {
+          clientName = payload.cliente.nombre || `Cliente ${ref_evo.codter}`
+        }
+
         const { data: newClient, error: clientError } = await supabase
           .from('clients')
           .insert({
@@ -285,11 +303,22 @@ async function processPedidoNuevo(payload: PedidoNuevoPayload) {
         clientId = existingClient.id
         console.log(`✅ Found existing client by codter: ${clientId}`)
       } else {
+        // Lógica especial para MOSTRADO
+        let clientName: string
+        if (ref_evo.codter === 'MOSTRADO') {
+          clientName = 'Cliente Mostrador'
+          if (payload.cliente?.nombre && payload.cliente.nombre !== 'SinNombre') {
+            clientName = `Cliente Mostrador - ${payload.cliente.nombre}`
+          }
+        } else {
+          clientName = `Cliente ${ref_evo.codter}`
+        }
+
         const { data: newClient, error: clientError } = await supabase
           .from('clients')
           .insert({
             evo_client_id: ref_evo.codter,
-            business_name: `Cliente ${ref_evo.codter}`,
+            business_name: clientName,
             is_active: true
           })
           .select('id')

@@ -780,16 +780,36 @@ export async function processOnePendingPrep() {
 
     try {
       // 2. Verificar si hay un evento enviado esperando confirmación
+      // Un evento en 'processing' se considera bloqueado si lleva más de 10 minutos sin confirmación
+      const processingTimeoutMs = 10 * 60 * 1000 // 10 minutos
+      const processingCutoff = new Date(Date.now() - processingTimeoutMs).toISOString()
+
       const { data: activeEvent } = await supabase
         .from('outbound_events')
         .select('*')
         .eq('status', 'processing')
+        .gt('last_attempt_at', processingCutoff) // Solo bloqueante si es reciente
         .limit(1)
         .maybeSingle()
 
       if (activeEvent) {
         console.log('⏸️ Hay un evento activo esperando confirmación, no enviar otro')
         return { success: true, message: 'Active event waiting for confirmation' }
+      }
+
+      // Si hay eventos en 'processing' pero llevan más de 10min sin confirmar, marcarlos como failed
+      const { data: timedOutEvents } = await supabase
+        .from('outbound_events')
+        .select('id')
+        .eq('status', 'processing')
+        .lte('last_attempt_at', processingCutoff)
+
+      if (timedOutEvents && timedOutEvents.length > 0) {
+        console.log(`⚠️ ${timedOutEvents.length} evento(s) en 'processing' expirados por timeout (>10min), marcando como failed para reintento`)
+        await supabase
+          .from('outbound_events')
+          .update({ status: 'failed', next_retry_at: new Date().toISOString() })
+          .in('id', timedOutEvents.map(e => e.id))
       }
 
       // 3. Buscar el evento pending más antiguo
