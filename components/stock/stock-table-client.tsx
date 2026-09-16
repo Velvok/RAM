@@ -293,16 +293,16 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
                     {item.product?.name}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-mono tabular-nums text-slate-900">
                     {item.stock_total?.toFixed(0)} unidades
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-yellow-600">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-mono tabular-nums text-yellow-600">
                     {item.stock_reservado?.toFixed(0)} unidades
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-blue-600">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-mono tabular-nums text-blue-600">
                     {item.stock_generado?.toFixed(0) || 0} unidades
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-slate-900">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-mono tabular-nums font-semibold text-slate-900">
                     {item.stock_disponible?.toFixed(0)} unidades
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">

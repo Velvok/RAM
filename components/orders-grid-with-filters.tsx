@@ -296,7 +296,7 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
                     filter.id === 'entregado' ? 'bg-slate-800' : 'bg-slate-400'
                   }`} />
                   <span>{filter.label}</span>
-                  <span className={`px-2 py-0.5 rounded-lg text-xs font-semibold ${
+                  <span className={`px-2 py-0.5 rounded-lg text-xs font-mono tabular-nums font-semibold ${
                     statusFilter === filter.id
                       ? 'bg-white/30 text-white'
                       : 'bg-slate-100 text-slate-600'
@@ -420,7 +420,7 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
                               })}
                             </div>
                           </div>
-                          <span className={`inline-flex items-center px-3 py-1.5 border-2 ${statusInfo.borderColor} ${statusInfo.textColor} ${statusInfo.bgColor} rounded-lg text-xs font-semibold`}>
+                          <span className={`inline-flex items-center px-3 py-1.5 border ${statusInfo.borderColor} ${statusInfo.textColor} ${statusInfo.bgColor} rounded-lg text-xs font-semibold`}>
                             {statusInfo.text}
                           </span>
                         </div>
@@ -507,7 +507,7 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
                       })}
                     </div>
                   </div>
-                  <span className={`inline-flex items-center px-3 py-1.5 border-2 ${statusInfo.borderColor} ${statusInfo.textColor} ${statusInfo.bgColor} rounded-lg text-xs font-semibold`}>
+                  <span className={`inline-flex items-center px-3 py-1.5 border ${statusInfo.borderColor} ${statusInfo.textColor} ${statusInfo.bgColor} rounded-lg text-xs font-semibold`}>
                     {statusInfo.text}
                   </span>
                 </div>
@@ -644,7 +644,7 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
                           {order.lines?.reduce((sum: number, line: any) => sum + (line.units || 0), 0) || 0}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex items-center px-2.5 py-1 border-2 ${statusInfo.borderColor} ${statusInfo.textColor} ${statusInfo.bgColor} rounded-lg text-xs font-semibold`}>
+                          <span className={`inline-flex items-center px-2.5 py-1 border ${statusInfo.borderColor} ${statusInfo.textColor} ${statusInfo.bgColor} rounded-lg text-xs font-semibold`}>
                             {statusInfo.text}
                           </span>
                         </td>

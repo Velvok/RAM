@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation'
 import { useConfirm } from '@/components/confirm-modal'
 import { useError } from '@/components/error-modal'
 import { useSuccess } from '@/components/success-modal'
+import { Button } from '@/components/ui/button'
+import { PauseCircle } from 'lucide-react'
 
 export default function OrderActions({ 
   order: initialOrder, 
@@ -164,40 +166,29 @@ export default function OrderActions({
           {/* Aprobar Pedido - DOS OPCIONES */}
           {order.status === 'nuevo' && (
             <>
-              <button
-                onClick={handleGenerateCutOrders}
-                disabled={loading}
-                className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
+              <Button variant="success" size="sm" onClick={handleGenerateCutOrders} disabled={loading}>
                 Aprobar Pedido
-              </button>
-              <button
-                onClick={handleApproveOnHold}
-                disabled={loading}
-                className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
+              </Button>
+              <Button variant="pause" size="sm" onClick={handleApproveOnHold} disabled={loading}>
                 Aprobar en Pausa
-              </button>
+              </Button>
             </>
           )}
 
           {/* Estado Aprobado en Pausa */}
           {order.status === 'aprobado_en_pausa' && (
-            <div className="px-4 py-2 bg-orange-100 text-orange-800 rounded-lg text-sm font-semibold">
-              ⏸️ En Pausa - {hasPartialStock ? 'Parcialmente asignado' : 'Sin stock asignado'}
+            <div className="flex items-center gap-1.5 px-4 py-2 bg-orange-100 text-orange-800 rounded-lg text-sm font-semibold">
+              <PauseCircle size={15} strokeWidth={1.75} />
+              En Pausa - {hasPartialStock ? 'Parcialmente asignado' : 'Sin stock asignado'}
             </div>
           )}
 
 
           {/* Deshacer Entrega */}
           {canUndoDelivery && (
-            <button
-              onClick={handleUndoDelivery}
-              disabled={undoingDelivery}
-              className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
+            <Button variant="pause" size="sm" onClick={handleUndoDelivery} disabled={undoingDelivery}>
               {undoingDelivery ? 'Deshaciendo...' : 'Deshacer Entrega'}
-            </button>
+            </Button>
           )}
         </div>
       </>

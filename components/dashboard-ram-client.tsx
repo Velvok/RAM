@@ -463,7 +463,7 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <p className="text-sm font-medium text-slate-500 mb-2">{kpi.title}</p>
-                <p className="text-3xl font-bold text-slate-900 mb-1">{kpi.value}</p>
+                <p className="text-3xl font-bold font-mono tabular-nums text-slate-900 mb-1">{kpi.value}</p>
                 <p className="text-xs text-slate-400">{kpi.subtitle}</p>
               </div>
               <kpi.icon className="w-5 h-5 text-slate-400" strokeWidth={1.5} />
@@ -475,7 +475,7 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
           <div className="flex items-start justify-between">
             <div className="flex-1">
               <p className="text-sm font-medium text-slate-500 mb-2">Total Pedidos</p>
-              <p className="text-3xl font-bold text-slate-900 mb-1">{data.kpis.totalOrders}</p>
+              <p className="text-3xl font-bold font-mono tabular-nums text-slate-900 mb-1">{data.kpis.totalOrders}</p>
               <p className="text-xs text-slate-400">En el sistema</p>
             </div>
             <Package className="w-5 h-5 text-slate-400" strokeWidth={1.5} />
@@ -489,7 +489,7 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
           <div className="flex items-start justify-between">
             <div className="flex-1">
               <p className="text-sm font-medium text-slate-500 mb-2">Stock Roto</p>
-              <p className="text-3xl font-bold text-red-600 mb-1">{stockRoto}</p>
+              <p className="text-3xl font-bold font-mono tabular-nums text-red-600 mb-1">{stockRoto}</p>
               <p className="text-xs text-blue-600 font-medium hover:text-blue-700 underline decoration-dotted underline-offset-2 flex items-center gap-1">
                 <span>Ver productos sin stock</span>
                 <span>→</span>
@@ -579,11 +579,11 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
               ) : dolarData ? (
                 <div className="space-y-2">
                   <div className="flex items-baseline gap-2">
-                    <p className="text-xl font-bold text-slate-900">
+                    <p className="text-xl font-bold font-mono tabular-nums text-slate-900">
                       ${dolarData.compra}
                     </p>
                     <span className="text-sm text-slate-500">/</span>
-                    <p className="text-xl font-bold text-slate-900">
+                    <p className="text-xl font-bold font-mono tabular-nums text-slate-900">
                       ${dolarData.venta}
                     </p>
                   </div>
@@ -833,7 +833,7 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-sm font-medium text-slate-500 mb-2">Cortes Totales (Hoy)</p>
-                <p className="text-3xl font-bold text-slate-900 mb-1">{todayCuts.total}</p>
+                <p className="text-3xl font-bold font-mono tabular-nums text-slate-900 mb-1">{todayCuts.total}</p>
                 <p className="text-xs text-green-600 flex items-center gap-1">
                   <TrendingUp className="w-3 h-3" />
                   <span>+12% vs ayer</span>
