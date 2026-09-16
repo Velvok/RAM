@@ -156,23 +156,23 @@ export default function ReassignStockModal({
   const selectedCutOrder = getSelectedCutOrder()
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-2xl max-w-6xl w-full max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-6xl w-full max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
           <div>
-            <h3 className="text-xl font-bold text-slate-900">
+            <h3 className="text-base font-semibold text-slate-900">
               Reasignar producto de otro pedido
             </h3>
-            <p className="text-sm text-slate-600 mt-1">
+            <p className="text-sm text-slate-500 mt-1">
               Producto: {productCode} • Solo se muestran unidades del mismo producto
             </p>
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 transition-colors"
+            className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
           >
-            <X className="w-6 h-6" />
+            <X size={20} strokeWidth={1.75} />
           </button>
         </div>
 

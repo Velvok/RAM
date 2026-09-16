@@ -126,12 +126,12 @@ export default function ReassignmentModal({
   if (!isOpen || !targetCutOrder) return null
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-6xl w-full max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-6xl w-full max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="p-6 border-b border-slate-200 flex justify-between items-start">
           <div>
-            <h2 className="text-2xl font-bold text-slate-900 mb-2">
+            <h2 className="text-base font-semibold text-slate-900 mb-2">
               Reasignar Material
             </h2>
             <div className="text-sm text-slate-600">
@@ -142,9 +142,9 @@ export default function ReassignmentModal({
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+            className="p-1 hover:bg-slate-100 rounded-lg transition-colors"
           >
-            <X className="w-6 h-6 text-slate-400" />
+            <X size={20} strokeWidth={1.75} className="text-slate-400" />
           </button>
         </div>
 

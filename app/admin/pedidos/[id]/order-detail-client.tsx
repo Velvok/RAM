@@ -850,11 +850,11 @@ function ChangeStockModal({ cutOrder, preparationItem, onClose, onSuccess }: any
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
         {/* Header */}
-        <div className="p-6 border-b">
-          <h3 className="text-xl font-bold mb-2">Seleccionar Stock</h3>
+        <div className="p-6 border-b border-slate-200">
+          <h3 className="text-base font-semibold text-slate-900 mb-2">Seleccionar Stock</h3>
           <p className="text-sm text-slate-600">
             {isCutOrder ? (
               <>Orden: <strong>{cutOrder.cut_number}</strong> - {cutOrder.product?.name}</>

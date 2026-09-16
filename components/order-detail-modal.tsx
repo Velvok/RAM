@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { generateCutOrders } from '@/app/actions/orders'
 import { useRouter } from 'next/navigation'
-import { X, Package, Calendar, User, DollarSign, CheckCircle, Clock, AlertCircle } from 'lucide-react'
+import { X, Package, Calendar, User, DollarSign, CheckCircle, CheckCircle2, Clock, AlertCircle } from 'lucide-react'
 
 interface OrderDetailModalProps {
   order: any
@@ -52,8 +52,8 @@ export default function OrderDetailModal({ order, isOpen, onClose, onUpdate }: O
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-2xl w-full max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center">
           <div>
@@ -201,15 +201,15 @@ export default function OrderDetailModal({ order, isOpen, onClose, onUpdate }: O
             <button
               onClick={handleGenerateCutOrders}
               disabled={loading}
-              className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-500 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 flex items-center justify-center gap-1.5 px-6 py-2.5 bg-green-600 hover:bg-green-500 text-white text-sm rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? 'Aprobando...' : '✓ Aprobar Pedido'}
+              {loading ? 'Aprobando...' : <><CheckCircle2 size={16} strokeWidth={1.75} />Aprobar Pedido</>}
             </button>
           )}
-          
+
           <button
             onClick={() => router.push(`/admin/pedidos/${order.id}`)}
-            className="px-6 py-3 bg-slate-600 hover:bg-slate-500 text-white rounded-lg font-semibold transition-colors"
+            className="px-6 py-2.5 bg-slate-600 hover:bg-slate-500 text-white text-sm rounded-lg font-medium transition-colors"
           >
             Ver Detalle Completo
           </button>

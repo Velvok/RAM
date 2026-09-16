@@ -61,22 +61,22 @@ export function QuickAdjustModal({ inventoryItem }: QuickAdjustModalProps) {
       </Button>
 
       {isOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 max-w-md w-full animate-in zoom-in-95 duration-200">
             <div className="flex justify-between items-start mb-4">
               <div>
-                <h3 className="text-lg font-semibold text-slate-900">
+                <h3 className="text-base font-semibold text-slate-900">
                   Ajustar Stock
                 </h3>
-                <p className="text-sm text-slate-600 mt-1">
+                <p className="text-sm text-slate-500 mt-1">
                   {inventoryItem.product.code} - {inventoryItem.product.name}
                 </p>
               </div>
               <button
                 onClick={() => setIsOpen(false)}
-                className="text-slate-400 hover:text-slate-600"
+                className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
               >
-                <X className="h-5 w-5" />
+                <X size={18} strokeWidth={1.75} />
               </button>
             </div>
 

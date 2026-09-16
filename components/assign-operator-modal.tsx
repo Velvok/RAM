@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { UserCog } from 'lucide-react'
 
 interface AssignOperatorModalProps {
   isOpen: boolean
@@ -42,29 +43,27 @@ export default function AssignOperatorModal({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full animate-in zoom-in duration-200">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200">
         {/* Header */}
-        <div className="p-6 border-b border-slate-200">
-          <div className="flex items-start space-x-4">
-            <div className="flex-shrink-0 w-12 h-12 rounded-full bg-blue-500/20 flex items-center justify-center">
-              <svg className="w-6 h-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
+        <div className="px-6 py-5 border-b border-slate-100">
+          <div className="flex items-start gap-3.5">
+            <div className="shrink-0 w-11 h-11 rounded-full bg-blue-100 flex items-center justify-center">
+              <UserCog size={20} strokeWidth={1.75} className="text-blue-600" />
             </div>
-            <div className="flex-1">
-              <h3 className="text-xl font-bold text-slate-900">
+            <div className="flex-1 min-w-0">
+              <h3 className="text-base font-semibold text-slate-900">
                 Asignar Operario
               </h3>
-              <p className="mt-1 text-sm text-slate-600">
-                Se generarán <span className="font-semibold">{numOrders} orden(es) de corte</span>
+              <p className="mt-1 text-sm text-slate-500">
+                Se generarán <span className="font-medium text-slate-700">{numOrders} orden(es) de corte</span>
               </p>
             </div>
           </div>
         </div>
 
         {/* Body */}
-        <div className="p-6">
+        <div className="px-6 py-5">
           <label className="block text-sm font-medium text-slate-700 mb-2">
             Seleccionar operario (opcional):
           </label>
@@ -101,17 +100,17 @@ export default function AssignOperatorModal({
         </div>
 
         {/* Footer */}
-        <div className="p-6 bg-slate-50 rounded-b-2xl flex space-x-3">
+        <div className="px-6 py-4 flex items-center justify-end gap-2">
           <button
             onClick={onCancel}
-            className="flex-1 px-4 py-3 border-2 border-slate-300 text-slate-700 rounded-lg font-semibold hover:bg-slate-100 transition-colors"
+            className="px-4 py-2 border border-slate-200 text-slate-600 text-sm rounded-lg font-medium hover:bg-slate-50 transition-colors"
           >
             Cancelar
           </button>
           <button
             onClick={() => onConfirm(selectedOperator || null)}
             disabled={loading}
-            className="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold transition-colors disabled:opacity-50"
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg font-medium transition-colors disabled:opacity-50"
           >
             {selectedOperator ? 'Asignar y Lanzar' : 'Lanzar sin Asignar'}
           </button>

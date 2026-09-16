@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { AlertTriangle, Zap, Info, CheckCircle2, type LucideIcon } from 'lucide-react'
 
 interface ConfirmModalProps {
   isOpen: boolean
@@ -33,49 +34,50 @@ export default function ConfirmModal({
 
   if (!show) return null
 
-  const variantStyles = {
+  const variantStyles: Record<string, { bg: string; icon: LucideIcon; iconBg: string; iconText: string }> = {
     danger: {
       bg: 'bg-red-600 hover:bg-red-500',
-      icon: '⚠️',
+      icon: AlertTriangle,
       iconBg: 'bg-red-100',
       iconText: 'text-red-600'
     },
     warning: {
       bg: 'bg-yellow-600 hover:bg-yellow-500',
-      icon: '⚡',
+      icon: Zap,
       iconBg: 'bg-yellow-100',
       iconText: 'text-yellow-600'
     },
     info: {
       bg: 'bg-blue-600 hover:bg-blue-500',
-      icon: 'ℹ️',
+      icon: Info,
       iconBg: 'bg-blue-100',
       iconText: 'text-blue-600'
     },
     success: {
       bg: 'bg-green-600 hover:bg-green-500',
-      icon: '✓',
+      icon: CheckCircle2,
       iconBg: 'bg-green-100',
       iconText: 'text-green-600'
     }
   }
 
   const style = variantStyles[variant]
+  const Icon = style.icon
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-xl shadow-2xl max-w-md w-full animate-in zoom-in duration-200">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200">
         {/* Header con icono */}
-        <div className="p-6 border-b border-slate-200">
-          <div className="flex items-start space-x-4">
-            <div className={`flex-shrink-0 w-12 h-12 rounded-full ${style.iconBg} flex items-center justify-center`}>
-              <span className={`text-2xl ${style.iconText}`}>{style.icon}</span>
+        <div className="px-6 py-5 border-b border-slate-100">
+          <div className="flex items-start gap-3.5">
+            <div className={`shrink-0 w-11 h-11 rounded-full ${style.iconBg} flex items-center justify-center`}>
+              <Icon size={20} strokeWidth={1.75} className={style.iconText} />
             </div>
-            <div className="flex-1">
-              <h3 className="text-xl font-bold text-slate-900">
+            <div className="flex-1 min-w-0">
+              <h3 className="text-base font-semibold text-slate-900">
                 {title}
               </h3>
-              <p className="mt-2 text-sm text-slate-600">
+              <p className="mt-1 text-sm text-slate-500">
                 {message}
               </p>
             </div>
@@ -83,13 +85,13 @@ export default function ConfirmModal({
         </div>
 
         {/* Footer con botones */}
-        <div className="p-6 bg-slate-50 rounded-b-xl flex space-x-3">
+        <div className="px-6 py-4 flex items-center justify-end gap-2">
           <button
             onClick={() => {
               setShow(false)
               setTimeout(onCancel, 200)
             }}
-            className="flex-1 px-4 py-3 border-2 border-slate-300 text-slate-700 rounded-lg font-semibold hover:bg-slate-100 transition-colors"
+            className="px-4 py-2 border border-slate-200 text-slate-600 text-sm rounded-lg font-medium hover:bg-slate-50 transition-colors"
           >
             {cancelText}
           </button>
@@ -98,7 +100,7 @@ export default function ConfirmModal({
               setShow(false)
               setTimeout(onConfirm, 200)
             }}
-            className={`flex-1 px-4 py-3 ${style.bg} text-white rounded-lg font-semibold transition-colors shadow-lg`}
+            className={`px-4 py-2 ${style.bg} text-white text-sm rounded-lg font-medium transition-colors`}
           >
             {confirmText}
           </button>

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { generateTestOrder } from '@/app/actions/test-data'
 import { useRouter } from 'next/navigation'
 import ErrorAlertModal from '@/components/error-alert-modal'
+import { FlaskConical } from 'lucide-react'
 
 export default function GenerateTestOrderButton() {
   const [isOpen, setIsOpen] = useState(false)
@@ -52,15 +53,16 @@ export default function GenerateTestOrderButton() {
 
       <button
         onClick={() => setIsOpen(true)}
-        className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-semibold transition-colors"
+        className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded-lg font-medium transition-colors"
       >
-        🧪 Generar Pedido de Prueba
+        <FlaskConical size={16} strokeWidth={1.75} />
+        Generar Pedido de Prueba
       </button>
 
       {isOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-xl font-bold text-slate-900 mb-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 max-w-md w-full animate-in zoom-in-95 duration-200">
+            <h3 className="text-base font-semibold text-slate-900 mb-4">
               Generar Pedido de Prueba
             </h3>
             
