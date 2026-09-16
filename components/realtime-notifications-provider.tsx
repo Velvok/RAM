@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { getRecentEventsForNotifications } from '@/app/actions/integration-logs'
 import { toast } from 'sonner'
-import { ArrowDownCircle, ArrowUpCircle, Package, ShoppingCart, AlertTriangle } from 'lucide-react'
+import { ArrowDownCircle, ArrowUpCircle, Package, ShoppingCart, CheckCircle2, AlertTriangle } from 'lucide-react'
 
 /**
  * Provider global de notificaciones en tiempo real.
@@ -21,6 +21,8 @@ export function RealtimeNotificationsProvider() {
     // Helper para iconos según tipo de evento
     const getEventLabel = (tipo: string): { label: string; icon: any } => {
       const t = (tipo || '').toLowerCase()
+      if (t === 'pedido_creado') return { label: 'Pedido nuevo', icon: <ShoppingCart className="w-5 h-5 text-green-500" /> }
+      if (t === 'pedido_entregado') return { label: 'Pedido entregado', icon: <CheckCircle2 className="w-5 h-5 text-emerald-600" /> }
       if (t.includes('stock')) return { label: 'Stock actualizado', icon: <Package className="w-5 h-5 text-blue-500" /> }
       if (t.includes('pedido')) return { label: 'Pedido recibido', icon: <ShoppingCart className="w-5 h-5 text-green-500" /> }
       return { label: tipo, icon: <ArrowDownCircle className="w-5 h-5 text-blue-500" /> }
