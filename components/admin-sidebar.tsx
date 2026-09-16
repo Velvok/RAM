@@ -4,6 +4,11 @@ import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
+import {
+  LayoutDashboard, ShoppingCart, Package, History, FileText,
+  Settings, ArrowLeft, ChevronLeft, ChevronRight,
+} from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 interface AdminSidebarProps {
   displayEmail: string
@@ -63,196 +68,130 @@ export function AdminSidebar({ displayEmail, isCollapsed, setIsCollapsed }: Admi
     return pathname.startsWith(path)
   }
 
+  const navItems = [
+    { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
+    { href: '/admin/pedidos', label: 'Pedidos', icon: ShoppingCart },
+    { href: '/admin/stock', label: 'Stock', icon: Package },
+    { href: '/admin/historial', label: 'Historial Anual', icon: History },
+    { href: '/admin/logs', label: 'Logs RAM', icon: FileText, badge: pendingCount },
+  ]
+
   return (
-    <aside className={`${isCollapsed ? 'w-20' : 'w-64'} h-screen bg-white border-r border-slate-200 flex flex-col transition-all duration-300 fixed left-0 top-0`}>
-      <div className={`${isCollapsed ? 'p-4' : 'p-6'} border-b border-slate-200 flex items-center justify-center`}>
+    <aside className={cn(
+      'h-screen bg-white border-r border-slate-200 flex flex-col transition-all duration-300 fixed left-0 top-0',
+      isCollapsed ? 'w-20' : 'w-64'
+    )}>
+      <div className={cn(
+        'h-16 border-b border-slate-200 flex items-center justify-center shrink-0',
+        isCollapsed ? 'px-3' : 'px-6'
+      )}>
         {!isCollapsed ? (
-          <div className="relative h-10 w-48">
-            <Image 
-              src="/logo-horizontal.png" 
-              alt="Comercial RAM" 
+          <div className="relative h-9 w-44">
+            <Image
+              src="/logo-horizontal.png"
+              alt="Comercial RAM"
               fill
               className="object-contain"
               priority
             />
           </div>
         ) : (
-          <div className="relative w-12 h-12">
-            <Image 
-              src="/logo-square.png" 
-              alt="RAM" 
-              width={48}
-              height={48}
+          <div className="relative w-10 h-10">
+            <Image
+              src="/logo-square.png"
+              alt="RAM"
+              width={40}
+              height={40}
               className="object-contain"
               priority
             />
           </div>
         )}
       </div>
-      
-      <nav className="flex-1 p-4">
-        <div className="space-y-1">
-          <a 
-            href="/admin" 
-            className={`flex items-center ${isCollapsed ? 'justify-center px-2' : 'px-4'} py-3 rounded-lg transition-colors font-medium ${
-              isActive('/admin')
-                ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600'
-                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-            }`}
-            title={isCollapsed ? 'Dashboard' : ''}
-          >
-            <svg className={`w-5 h-5 ${!isCollapsed && 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-            </svg>
-            {!isCollapsed && 'Dashboard'}
-          </a>
-          <a 
-            href="/admin/pedidos" 
-            className={`flex items-center ${isCollapsed ? 'justify-center px-2' : 'px-4'} py-3 rounded-lg transition-colors font-medium ${
-              isActive('/admin/pedidos')
-                ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600'
-                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-            }`}
-            title={isCollapsed ? 'Pedidos' : ''}
-          >
-            <svg className={`w-5 h-5 ${!isCollapsed && 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            {!isCollapsed && 'Pedidos'}
-          </a>
-          <a 
-            href="/admin/stock" 
-            className={`flex items-center ${isCollapsed ? 'justify-center px-2' : 'px-4'} py-3 rounded-lg transition-colors font-medium ${
-              isActive('/admin/stock')
-                ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600'
-                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-            }`}
-            title={isCollapsed ? 'Stock' : ''}
-          >
-            <svg className={`w-5 h-5 ${!isCollapsed && 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-            </svg>
-            {!isCollapsed && 'Stock'}
-          </a>
-          <a 
-            href="/admin/historial" 
-            className={`flex items-center ${isCollapsed ? 'justify-center px-2' : 'px-4'} py-3 rounded-lg transition-colors font-medium ${
-              isActive('/admin/historial')
-                ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600'
-                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-            }`}
-            title={isCollapsed ? 'Historial Anual' : ''}
-          >
-            <svg className={`w-5 h-5 ${!isCollapsed && 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
-            {!isCollapsed && 'Historial Anual'}
-          </a>
-          <a 
-            href="/admin/logs" 
-            className={`flex items-center ${isCollapsed ? 'justify-center px-2' : 'px-4'} py-3 rounded-lg transition-colors font-medium relative ${
-              isActive('/admin/logs')
-                ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600'
-                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-            }`}
-            title={isCollapsed ? `Logs RAM${pendingCount > 0 ? ` (${pendingCount} pendientes)` : ''}` : ''}
-          >
-            <svg className={`w-5 h-5 ${!isCollapsed && 'mr-3'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2 1 3 3 3h10c2 0 3-1 3-3V7c0-2-1-3-3-3H7C5 4 4 5 4 7z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9h8M8 13h8M8 17h5" />
-            </svg>
-            {!isCollapsed && (
-              <span className="flex-1 flex items-center justify-between">
-                <span>Logs RAM</span>
-                {pendingCount > 0 && (
-                  <span className="bg-red-500 text-white text-xs rounded-full px-2 py-0.5 font-bold animate-pulse">
-                    {pendingCount}
-                  </span>
-                )}
-              </span>
-            )}
-            {isCollapsed && pendingCount > 0 && (
-              <span className="absolute top-1 right-1 bg-red-500 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-bold">
-                {pendingCount > 9 ? '9+' : pendingCount}
-              </span>
-            )}
-          </a>
-        </div>
+
+      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+        {navItems.map(({ href, label, icon: Icon, badge }) => {
+          const active = isActive(href)
+          return (
+            <a
+              key={href}
+              href={href}
+              className={cn(
+                'flex items-center gap-2.5 py-2 rounded-md text-sm font-medium transition-all duration-200 relative',
+                isCollapsed ? 'justify-center px-0' : 'px-3',
+                active
+                  ? 'bg-primary/10 text-primary border border-primary/20'
+                  : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'
+              )}
+              title={isCollapsed ? `${label}${badge ? ` (${badge} pendientes)` : ''}` : undefined}
+            >
+              <Icon size={16} strokeWidth={1.5} className={cn('shrink-0', active ? 'text-primary' : 'text-slate-400')} />
+              {!isCollapsed && (
+                <span className="flex-1 flex items-center justify-between min-w-0">
+                  <span className="truncate">{label}</span>
+                  {!!badge && badge > 0 && (
+                    <span className="bg-destructive text-destructive-foreground text-[10px] rounded-full px-1.5 py-0.5 font-semibold leading-none">
+                      {badge}
+                    </span>
+                  )}
+                </span>
+              )}
+              {isCollapsed && !!badge && badge > 0 && (
+                <span className="absolute top-1 right-1 bg-destructive text-destructive-foreground text-[9px] rounded-full w-4 h-4 flex items-center justify-center font-semibold leading-none">
+                  {badge > 9 ? '9+' : badge}
+                </span>
+              )}
+            </a>
+          )
+        })}
       </nav>
 
-      <div className="p-4 border-t border-slate-200 space-y-3">
-        {!isCollapsed ? (
-          <>
-            <a
-              href="/admin/configuracion"
-              className={`flex items-center px-4 py-3 rounded-lg transition-colors font-medium ${
-                isActive('/admin/configuracion')
-                  ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600'
-                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-              }`}
-            >
-              <svg className="w-5 h-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              Configuración
-            </a>
-            <div className="px-4">
-              <p className="text-xs text-slate-500 mb-1">Usuario</p>
-              <p className="text-sm text-slate-700 truncate">{displayEmail}</p>
-            </div>
-            <a
-              href="/"
-              className="flex items-center justify-center w-full px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 transition-colors"
-            >
-              <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-              Volver
-            </a>
-            <button
-              onClick={() => setIsCollapsed(!isCollapsed)}
-              className="flex items-center justify-center w-full px-4 py-2 hover:bg-blue-50 rounded-lg transition-colors text-sm font-medium text-slate-700"
-              title="Colapsar menú"
-            >
-              <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-              </svg>
-              Colapsar
-            </button>
-          </>
-        ) : (
-          <>
-            <a
-              href="/admin/configuracion"
-              className="flex items-center justify-center px-2 py-3 rounded-lg transition-colors font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-900"
-              title="Configuración"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </a>
-            <a
-              href="/"
-              className="flex items-center justify-center w-full px-2 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 transition-colors"
-              title="Volver al inicio"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-            </a>
-            <button
-              onClick={() => setIsCollapsed(!isCollapsed)}
-              className="flex items-center justify-center w-full px-2 py-2 hover:bg-blue-50 rounded-lg transition-colors"
-              title="Expandir menú"
-            >
-              <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-              </svg>
-            </button>
-          </>
+      <div className="p-3 border-t border-slate-200 space-y-2">
+        <a
+          href="/admin/configuracion"
+          className={cn(
+            'flex items-center gap-2.5 py-2 rounded-md text-sm font-medium transition-all duration-200',
+            isCollapsed ? 'justify-center px-0' : 'px-3',
+            isActive('/admin/configuracion')
+              ? 'bg-primary/10 text-primary border border-primary/20'
+              : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'
+          )}
+          title={isCollapsed ? 'Configuración' : undefined}
+        >
+          <Settings size={16} strokeWidth={1.5} className={cn('shrink-0', isActive('/admin/configuracion') ? 'text-primary' : 'text-slate-400')} />
+          {!isCollapsed && 'Configuración'}
+        </a>
+
+        {!isCollapsed && (
+          <div className="px-3 py-1.5">
+            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Usuario</p>
+            <p className="text-sm text-slate-700 truncate">{displayEmail}</p>
+          </div>
         )}
+
+        <a
+          href="/"
+          className={cn(
+            'flex items-center gap-2 rounded-md text-xs font-medium text-slate-500 border border-slate-200 hover:bg-slate-50 hover:text-slate-900 transition-all duration-200',
+            isCollapsed ? 'justify-center px-0 py-2' : 'px-3 py-1.5'
+          )}
+          title="Volver al inicio"
+        >
+          <ArrowLeft size={14} strokeWidth={1.5} />
+          {!isCollapsed && 'Volver'}
+        </a>
+
+        <button
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className={cn(
+            'flex items-center gap-2 w-full rounded-md text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-all duration-200',
+            isCollapsed ? 'justify-center px-0 py-2' : 'px-3 py-1.5'
+          )}
+          title={isCollapsed ? 'Expandir menú' : 'Colapsar menú'}
+        >
+          {isCollapsed ? <ChevronRight size={14} strokeWidth={1.5} /> : <ChevronLeft size={14} strokeWidth={1.5} />}
+          {!isCollapsed && 'Colapsar'}
+        </button>
       </div>
     </aside>
   )
