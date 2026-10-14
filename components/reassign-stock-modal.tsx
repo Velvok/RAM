@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { toast } from 'sonner'
 import { X, Package, ArrowRight } from 'lucide-react'
+import { PageLoader } from '@/components/ui/spinner'
 import { extractSizeFromCode } from '@/lib/product-utils'
 
 interface CompletedCutOrder {
@@ -127,7 +129,7 @@ export default function ReassignStockModal({
   async function handleConfirm() {
     if (!selectedCutOrderId) return
     if (selectedQuantity <= 0) {
-      alert('Debe seleccionar al menos 1 unidad')
+      toast.error('Debe seleccionar al menos 1 unidad')
       return
     }
 
@@ -137,7 +139,7 @@ export default function ReassignStockModal({
       onClose()
     } catch (error) {
       console.error('Error reassigning stock:', error)
-      alert('Error al reasignar: ' + (error as Error).message)
+      toast.error('Error al reasignar: ' + (error as Error).message)
     } finally {
       setSubmitting(false)
     }
@@ -157,20 +159,20 @@ export default function ReassignStockModal({
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-6xl w-full max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-200">
+      <div className="bg-card rounded-2xl shadow-2xl border border-border max-w-6xl w-full max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-200">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between flex-shrink-0">
           <div>
-            <h3 className="text-base font-semibold text-slate-900">
+            <h3 className="text-base font-semibold text-foreground">
               Reasignar producto de otro pedido
             </h3>
-            <p className="text-sm text-slate-500 mt-1">
+            <p className="text-sm text-muted-foreground mt-1">
               Producto: {productCode} • Solo se muestran unidades del mismo producto
             </p>
           </div>
           <button
             onClick={onClose}
-            className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+            className="p-1 text-muted-foreground hover:text-muted-foreground hover:bg-muted rounded-lg transition-colors"
           >
             <X size={20} strokeWidth={1.75} />
           </button>
@@ -179,14 +181,11 @@ export default function ReassignStockModal({
         {/* Body */}
         <div className="flex-1 overflow-hidden flex flex-col">
           {loading ? (
-            <div className="flex-1 flex items-center justify-center text-slate-400">
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                <p>Cargando pedidos disponibles...</p>
-              </div>
+            <div className="flex-1 flex items-center justify-center">
+              <PageLoader label="Cargando pedidos disponibles..." />
             </div>
           ) : ordersWithCutOrders.length === 0 ? (
-            <div className="flex-1 flex items-center justify-center text-slate-400">
+            <div className="flex-1 flex items-center justify-center text-muted-foreground">
               <div className="text-center">
                 <Package className="w-16 h-16 mx-auto mb-4 text-slate-300" />
                 <p className="text-lg font-medium">No hay unidades disponibles</p>
@@ -197,42 +196,42 @@ export default function ReassignStockModal({
             <div className="flex-1 overflow-y-auto p-6">
               <div className="space-y-4">
                 {ordersWithCutOrders.map((order) => (
-                  <div key={order.id} className="border border-slate-200 rounded-lg overflow-hidden">
+                  <div key={order.id} className="border border-border rounded-lg overflow-hidden">
                     {/* Pedido Header */}
                     <button
                       onClick={() => setExpandedOrderId(expandedOrderId === order.id ? '' : order.id)}
-                      className="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors flex items-center justify-between"
+                      className="w-full px-4 py-3 bg-muted hover:bg-muted transition-colors flex items-center justify-between"
                     >
                       <div className="flex items-center gap-3">
-                        <Package className="w-5 h-5 text-slate-600" />
+                        <Package className="w-5 h-5 text-muted-foreground" />
                         <div className="text-left">
-                          <div className="font-semibold text-slate-900">
+                          <div className="font-semibold text-foreground">
                             {order.order_number}
                           </div>
-                          <div className="text-sm text-slate-600">
+                          <div className="text-sm text-muted-foreground">
                             {order.customer_name}
                           </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="text-sm text-slate-500">
+                        <span className="text-sm text-muted-foreground">
                           {order.cut_orders.length} {order.cut_orders.length === 1 ? 'chapa' : 'chapas'} disponible{order.cut_orders.length === 1 ? '' : 's'}
                         </span>
-                        <ArrowRight className={`w-5 h-5 text-slate-400 transition-transform ${expandedOrderId === order.id ? 'rotate-90' : ''}`} />
+                        <ArrowRight className={`w-5 h-5 text-muted-foreground transition-transform ${expandedOrderId === order.id ? 'rotate-90' : ''}`} />
                       </div>
                     </button>
 
                     {/* Órdenes de Corte */}
                     {expandedOrderId === order.id && (
-                      <div className="bg-white">
+                      <div className="bg-card">
                         <table className="min-w-full divide-y divide-slate-200">
-                          <thead className="bg-slate-50">
+                          <thead className="bg-muted">
                             <tr>
                               <th className="w-12 px-4 py-2"></th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Orden</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Producto</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Disponibles</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Código</th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Orden</th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Producto</th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Disponibles</th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Código</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-200">
@@ -246,7 +245,7 @@ export default function ReassignStockModal({
                                   className={`cursor-pointer transition-colors ${
                                     selectedCutOrderId === cutOrder.id
                                       ? 'bg-blue-50 border-l-4 border-blue-500'
-                                      : 'hover:bg-slate-50'
+                                      : 'hover:bg-muted'
                                   }`}
                                 >
                                   <td className="px-4 py-3 text-center">
@@ -258,16 +257,16 @@ export default function ReassignStockModal({
                                       className="w-4 h-4 text-blue-600"
                                     />
                                   </td>
-                                  <td className="px-4 py-3 text-sm font-medium text-slate-900">
+                                  <td className="px-4 py-3 text-sm font-medium text-foreground">
                                     {cutOrder.cut_number}
                                   </td>
-                                  <td className="px-4 py-3 text-sm text-slate-600">
+                                  <td className="px-4 py-3 text-sm text-muted-foreground">
                                     {cutOrder.product.name}
                                   </td>
                                   <td className="px-4 py-3 text-sm font-semibold text-green-600">
                                     {cutOrder.quantity_cut || 0} unidad{(cutOrder.quantity_cut || 0) !== 1 ? 'es' : ''}
                                   </td>
-                                  <td className="px-4 py-3 text-sm text-slate-600 font-mono">
+                                  <td className="px-4 py-3 text-sm text-muted-foreground font-mono">
                                     {productCode}
                                   </td>
                                 </tr>
@@ -285,10 +284,10 @@ export default function ReassignStockModal({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex-shrink-0">
+        <div className="px-6 py-4 bg-muted border-t border-border flex-shrink-0">
           {selectedCutOrder && (
             <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <label className="block text-sm font-semibold text-foreground mb-2">
                 ¿Cuántas unidades reasignar?
               </label>
               <div className="flex items-center gap-3">
@@ -300,7 +299,7 @@ export default function ReassignStockModal({
                   onChange={(e) => setSelectedQuantity(Math.min(parseInt(e.target.value) || 1, selectedCutOrder.quantity_cut))}
                   className="w-24 px-3 py-2 border border-slate-300 rounded-lg text-center font-bold text-lg"
                 />
-                <span className="text-sm text-slate-600">
+                <span className="text-sm text-muted-foreground">
                   de {selectedCutOrder.quantity_cut} disponibles
                 </span>
               </div>
@@ -311,7 +310,7 @@ export default function ReassignStockModal({
             <button
               onClick={onClose}
               disabled={submitting}
-              className="flex-1 px-6 py-3 bg-white border-2 border-slate-300 hover:bg-slate-50 disabled:bg-slate-100 text-slate-700 rounded-lg font-semibold transition-colors"
+              className="flex-1 px-6 py-3 bg-card border-2 border-slate-300 hover:bg-muted disabled:bg-muted text-foreground rounded-lg font-semibold transition-colors"
             >
               Cancelar
             </button>

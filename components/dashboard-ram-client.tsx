@@ -2,44 +2,31 @@
 
 import { useState, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { 
-  Package, 
-  TrendingUp, 
-  Clock, 
-  DollarSign, 
+import {
+  Package,
+  TrendingUp,
+  Clock,
+  DollarSign,
   Search,
   ChevronDown,
   ChevronUp,
-  Info,
   Sparkles,
   AlertTriangle,
   RefreshCw,
-  PackageX
+  PackageX,
+  Inbox
 } from 'lucide-react'
 import { AIChatAssistant } from './ai-chat-assistant'
-import { 
-  LineChart, 
-  Line, 
-  BarChart, 
-  Bar, 
-  PieChart,
-  Pie,
-  Cell,
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer,
-  Legend
-} from 'recharts'
-import {
-  mockOperators,
-  generateMockCutData,
-  getTodayCuts,
-  getTopOperatorToday,
-  aggregateByGranularity,
-  getCutDistribution
-} from '@/lib/mock-productivity-data'
+import { MetricCard } from '@/components/metric-card'
+import { Card } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Pagination } from '@/components/ui/pagination'
+import { getOrderStatusConfig } from '@/lib/order-status'
+import { cn } from '@/lib/utils'
 
 interface DolarData {
   compra: number
@@ -97,74 +84,17 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
   const [loadingDolar, setLoadingDolar] = useState(true)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
   const [errorDolar, setErrorDolar] = useState<string | null>(null)
-  const [metricUnit, setMetricUnit] = useState<'metros' | 'unidades'>('metros')
   const [searchQuery, setSearchQuery] = useState('')
   const [searchScope, setSearchScope] = useState<'todo' | 'pedidos' | 'stock'>('todo')
   const [isChatOpen, setIsChatOpen] = useState(false)
-  const [showStockRotoTooltip, setShowStockRotoTooltip] = useState(false)
-  
+
   // Paginación para Últimos Pedidos
   const [pedidosPage, setPedidosPage] = useState(0)
   const [pedidosPerPage, setPedidosPerPage] = useState(20)
-  
+
   // Paginación para Stock por Producto
   const [stockPage, setStockPage] = useState(0)
   const [stockPerPage, setStockPerPage] = useState(20)
-  
-  // Generar últimos 12 meses
-  const last12Months = Array.from({ length: 12 }, (_, i) => {
-    const date = new Date()
-    date.setMonth(date.getMonth() - (11 - i))
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-  })
-  
-  // Análisis por producto (ahora comparación mensual por categorías)
-  const [selectedComparisonMonths, setSelectedComparisonMonths] = useState<string[]>([last12Months[last12Months.length - 1]])
-  const [selectedCategories, setSelectedCategories] = useState<string[]>(['Total'])
-  const [showMonthMenu, setShowMonthMenu] = useState(false)
-
-  // Productividad de planta
-  const [productivityGranularity, setProductivityGranularity] = useState<'day' | 'week' | 'month'>('day')
-  const [selectedOperator, setSelectedOperator] = useState<string>('all')
-  
-  // Generar datos mock SOLO en el cliente para evitar hydration mismatch
-  // (Math.random() produce valores distintos en server vs client)
-  const [mockCutData, setMockCutData] = useState<ReturnType<typeof generateMockCutData>>([])
-  const [isMounted, setIsMounted] = useState(false)
-
-  useEffect(() => {
-    setMockCutData(generateMockCutData())
-    setIsMounted(true)
-  }, [])
-
-  const todayCuts = useMemo(() => getTodayCuts(mockCutData), [mockCutData])
-  const topOperator = useMemo(() => getTopOperatorToday(mockCutData), [mockCutData])
-  const cutDistribution = useMemo(() => getCutDistribution(mockCutData), [mockCutData])
-  const evolutionData = useMemo(() => 
-    aggregateByGranularity(mockCutData, productivityGranularity, selectedOperator),
-    [mockCutData, productivityGranularity, selectedOperator]
-  )
-  
-  const categories = ['Total', 'Sincalum', 'Prepintado', 'Galvanizado', 'Perfiles']
-  
-  // Generar datos mockeados por categoría y mes (solo cliente para evitar hydration mismatch)
-  const categoryData = useMemo(() => {
-    if (!isMounted) return {}
-    const baseData: Record<string, Record<string, number>> = {}
-    
-    last12Months.forEach(month => {
-      baseData[month] = {
-        'Total': Math.floor(Math.random() * 5000) + 3000,
-        'Sincalum': Math.floor(Math.random() * 1500) + 800,
-        'Prepintado': Math.floor(Math.random() * 1200) + 600,
-        'Galvanizado': Math.floor(Math.random() * 1000) + 500,
-        'Perfiles': Math.floor(Math.random() * 800) + 400
-      }
-    })
-    
-    return baseData
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMounted])
 
   // Función para obtener la cotización del dólar con caché inteligente
   const fetchDolarData = async () => {
@@ -302,21 +232,8 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
   ]
 
   const getStatusBadge = (status: string) => {
-    const statusConfig: Record<string, { label: string; className: string }> = {
-      'nuevo': { label: 'Nuevo', className: 'bg-slate-100 text-slate-700' },
-      'aprobado': { label: 'Aprobado', className: 'bg-yellow-100 text-yellow-700' },
-      'aprobado_en_pausa': { label: 'En Pausa', className: 'bg-orange-100 text-orange-700' },
-      'en_corte': { label: 'En Corte', className: 'bg-blue-100 text-blue-700' },
-      'finalizado': { label: 'Finalizado', className: 'bg-green-100 text-green-700' },
-      'entregado': { label: 'Entregado', className: 'bg-purple-100 text-purple-700' },
-      'cancelado': { label: 'Cancelado', className: 'bg-red-100 text-red-700' }
-    }
-    const config = statusConfig[status] || { label: status, className: 'bg-slate-100 text-slate-700' }
-    return (
-      <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${config.className}`}>
-        {config.label}
-      </span>
-    )
+    const config = getOrderStatusConfig(status)
+    return <Badge variant={config.badgeVariant}>{config.label}</Badge>
   }
 
   const filteredPedidos = (() => {
@@ -457,77 +374,53 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-6">
         {kpiData.map((kpi, index) => (
-          <div key={index} className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <p className="text-sm font-medium text-slate-500 mb-2">{kpi.title}</p>
-                <p className="text-3xl font-bold font-mono tabular-nums text-slate-900 mb-1">{kpi.value}</p>
-                <p className="text-xs text-slate-400">{kpi.subtitle}</p>
-              </div>
-              <kpi.icon className="w-5 h-5 text-slate-400" strokeWidth={1.5} />
-            </div>
-          </div>
+          <MetricCard key={index} title={kpi.title} value={kpi.value} icon={kpi.icon} trend={kpi.subtitle} />
         ))}
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 hover:shadow-md transition-shadow">
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <p className="text-sm font-medium text-slate-500 mb-2">Total Pedidos</p>
-              <p className="text-3xl font-bold font-mono tabular-nums text-slate-900 mb-1">{data.kpis.totalOrders}</p>
-              <p className="text-xs text-slate-400">En el sistema</p>
-            </div>
-            <Package className="w-5 h-5 text-slate-400" strokeWidth={1.5} />
-          </div>
-        </div>
+        <MetricCard title="Total Pedidos" value={data.kpis.totalOrders} icon={Package} trend="En el sistema" />
 
-        <div 
-          className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 hover:shadow-md hover:border-red-200 transition-all cursor-pointer relative group"
+        <Card
+          className="group relative cursor-pointer p-6 transition-colors hover:border-destructive/40"
           onClick={handleStockRotoClick}
         >
           <div className="flex items-start justify-between">
             <div className="flex-1">
-              <p className="text-sm font-medium text-slate-500 mb-2">Stock Roto</p>
-              <p className="text-3xl font-bold font-mono tabular-nums text-red-600 mb-1">{stockRoto}</p>
-              <p className="text-xs text-blue-600 font-medium hover:text-blue-700 underline decoration-dotted underline-offset-2 flex items-center gap-1">
+              <p className="mb-2 text-sm font-medium text-muted-foreground">Stock Roto</p>
+              <p className="mb-1 font-mono text-3xl font-bold tabular-nums text-destructive">{stockRoto}</p>
+              <p className="flex items-center gap-1 text-xs font-medium text-primary underline decoration-dotted underline-offset-2">
                 <span>Ver productos sin stock</span>
                 <span>→</span>
               </p>
             </div>
-            <PackageX className="w-5 h-5 text-red-600" strokeWidth={1.5} />
+            <PackageX size={20} strokeWidth={1.5} className="text-destructive" />
           </div>
 
           {/* Tooltip con lista de productos sin stock */}
           {stockRoto > 0 && (
-            <div className="invisible group-hover:visible absolute z-[9999] left-0 top-full mt-2 bg-white rounded-lg shadow-2xl border-2 border-slate-300 p-4 w-96 transition-all">
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="text-sm font-semibold text-slate-900">Productos sin stock</h4>
-                <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded-full">
-                  {stockRoto} total{stockRoto !== 1 ? 'es' : ''}
-                </span>
+            <div className="invisible absolute left-0 top-full z-[9999] mt-2 w-96 rounded-lg border border-border bg-popover p-4 shadow-2xl transition-all group-hover:visible">
+              <div className="mb-3 flex items-center justify-between">
+                <h4 className="text-sm font-semibold text-foreground">Productos sin stock</h4>
+                <Badge variant="muted">{stockRoto} total{stockRoto !== 1 ? 'es' : ''}</Badge>
               </div>
               {stockRotoPreview.length > 0 ? (
                 <>
-                  <div className="space-y-2 max-h-80 overflow-y-auto pr-2">
+                  <div className="max-h-80 space-y-2 overflow-y-auto pr-2">
                     {stockRotoPreview.map((producto: any, idx: number) => (
-                      <div key={idx} className="flex items-start gap-2 p-2 rounded-lg hover:bg-slate-50 transition-colors border border-slate-100">
-                        <PackageX className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-slate-900 truncate">
+                      <div key={idx} className="flex items-start gap-2 rounded-lg border border-border p-2 transition-colors hover:bg-muted/50">
+                        <PackageX size={16} className="mt-0.5 flex-shrink-0 text-destructive" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-foreground">
                             {producto.codigo || 'Sin código'}
                           </p>
-                          <p className="text-xs text-slate-500 truncate">
+                          <p className="truncate text-xs text-muted-foreground">
                             {producto.nombre || 'Sin nombre'}
                           </p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-xs text-red-600 font-medium bg-red-50 px-2 py-0.5 rounded">
-                              Disponible: {producto.disponible}
-                            </span>
+                          <div className="mt-1 flex items-center gap-2">
+                            <Badge variant="destructive">Disponible: {producto.disponible}</Badge>
                             {producto.reservado > 0 && (
-                              <span className="text-xs text-orange-600 bg-orange-50 px-2 py-0.5 rounded">
-                                Reservado: {producto.reservado}
-                              </span>
+                              <Badge variant="warning">Reservado: {producto.reservado}</Badge>
                             )}
                           </div>
                         </div>
@@ -535,133 +428,133 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
                     ))}
                   </div>
                   {stockRoto > 10 && (
-                    <div className="mt-3 pt-3 border-t border-slate-200">
-                      <p className="text-xs text-slate-600 text-center font-medium">
+                    <div className="mt-3 border-t border-border pt-3">
+                      <p className="text-center text-xs font-medium text-muted-foreground">
                         +{stockRoto - 10} productos más sin stock
                       </p>
                     </div>
                   )}
                 </>
               ) : (
-                <p className="text-sm text-slate-400 text-center py-4">No hay productos para mostrar</p>
+                <p className="py-4 text-center text-sm text-muted-foreground">No hay productos para mostrar</p>
               )}
-              <div className="mt-3 pt-3 border-t border-slate-200">
-                <p className="text-xs text-blue-600 font-semibold text-center flex items-center justify-center gap-1">
+              <div className="mt-3 border-t border-border pt-3">
+                <p className="flex items-center justify-center gap-1 text-center text-xs font-semibold text-primary">
                   <span>Click para ver todos</span>
                   <span>→</span>
                 </p>
               </div>
             </div>
           )}
-        </div>
+        </Card>
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 hover:shadow-md transition-shadow">
+        <Card className="p-6">
           <div className="flex items-start justify-between">
             <div className="flex-1">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium text-slate-500">Dólar hoy</p>
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-sm font-medium text-muted-foreground">Dólar hoy</p>
                 <button
                   onClick={fetchDolarData}
                   disabled={loadingDolar}
-                  className="p-1 rounded hover:bg-slate-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="rounded p-1 transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
                   title="Actualizar cotización"
                 >
-                  <RefreshCw className={`w-4 h-4 text-slate-600 ${loadingDolar ? 'animate-spin' : ''}`} />
+                  <RefreshCw size={16} className={cn('text-muted-foreground', loadingDolar && 'animate-spin')} />
                 </button>
               </div>
               {loadingDolar ? (
                 <div className="space-y-1">
-                  <p className="text-sm text-slate-400">Actualizando...</p>
-                  <div className="w-full bg-slate-200 rounded-full h-1">
-                    <div className="bg-blue-600 h-1 rounded-full animate-pulse" style={{ width: '60%' }}></div>
+                  <p className="text-sm text-muted-foreground">Actualizando...</p>
+                  <div className="h-1 w-full rounded-full bg-muted">
+                    <div className="h-1 animate-pulse rounded-full bg-primary" style={{ width: '60%' }}></div>
                   </div>
                 </div>
               ) : dolarData ? (
                 <div className="space-y-2">
                   <div className="flex items-baseline gap-2">
-                    <p className="text-xl font-bold font-mono tabular-nums text-slate-900">
+                    <p className="font-mono text-xl font-bold tabular-nums text-foreground">
                       ${dolarData.compra}
                     </p>
-                    <span className="text-sm text-slate-500">/</span>
-                    <p className="text-xl font-bold font-mono tabular-nums text-slate-900">
+                    <span className="text-sm text-muted-foreground">/</span>
+                    <p className="font-mono text-xl font-bold tabular-nums text-foreground">
                       ${dolarData.venta}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
                     {dolarData.variacion !== 0 && (
-                      <div className={`flex items-center gap-1 text-xs font-medium ${
-                        dolarData.variacion > 0 ? 'text-green-600' : 'text-red-600'
-                      }`}>
+                      <div className={cn(
+                        'flex items-center gap-1 text-xs font-medium',
+                        dolarData.variacion > 0 ? 'text-success' : 'text-destructive'
+                      )}>
                         {dolarData.variacion > 0 ? (
-                          <ChevronUp className="w-3 h-3" />
+                          <ChevronUp size={12} />
                         ) : (
-                          <ChevronDown className="w-3 h-3" />
+                          <ChevronDown size={12} />
                         )}
                         {Math.abs(dolarData.variacion)}%
                       </div>
                     )}
-                    <p className="text-xs text-slate-400">
+                    <p className="text-xs text-muted-foreground/70">
                       {lastUpdate ? `Actualizado: ${lastUpdate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs` : 'Recién actualizado'}
                     </p>
                   </div>
                   {errorDolar && (
-                    <p className="text-xs text-amber-600 flex items-center gap-1">
-                      <AlertTriangle className="w-3 h-3" />
+                    <p className="flex items-center gap-1 text-xs text-warning">
+                      <AlertTriangle size={12} />
                       {errorDolar}
                     </p>
                   )}
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <p className="text-sm text-slate-400">No disponible</p>
+                  <p className="text-sm text-muted-foreground">No disponible</p>
                   <button
                     onClick={fetchDolarData}
-                    className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                    className="text-xs font-medium text-primary hover:text-primary/80"
                   >
                     Reintentar
                   </button>
                 </div>
               )}
             </div>
-            <DollarSign className="w-5 h-5 text-slate-400" strokeWidth={1.5} />
+            <DollarSign size={20} strokeWidth={1.5} className="text-muted-foreground" />
           </div>
-        </div>
+        </Card>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold text-slate-900">Búsqueda Global</h3>
+      <Card className="p-6">
+        <div className="mb-6 flex items-center justify-between">
+          <h3 className="text-base font-semibold text-foreground">Búsqueda Global</h3>
         </div>
-        
-        <div className="flex gap-3 mb-6">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-            <input
+
+        <div className="mb-6 flex gap-3">
+          <div className="relative flex-1">
+            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input
               type="text"
               placeholder="Buscar por cliente, pedido o producto..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="pl-10"
             />
           </div>
-          
+
           <div className="relative">
-            <select
+            <Select
               value={searchScope}
               onChange={(e) => setSearchScope(e.target.value as any)}
-              className="appearance-none pl-4 pr-10 py-2.5 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer"
+              className="w-40"
             >
               <option value="todo">Todo</option>
               <option value="pedidos">Solo Pedidos</option>
               <option value="stock">Solo Stock</option>
-            </select>
-            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+            </Select>
           </div>
         </div>
 
         {searchQuery && (
-          <div className="mb-4 p-3 bg-blue-50 border border-blue-100 rounded-lg">
-            <p className="text-sm text-blue-700">
+          <div className="mb-4 rounded-lg border border-info/20 bg-info/5 p-3">
+            <p className="text-sm text-info">
               <span className="font-medium">Buscando:</span> "{searchQuery}" en{' '}
               <span className="font-medium">
                 {searchScope === 'todo' ? 'Todo el sistema' : searchScope === 'pedidos' ? 'Pedidos' : 'Stock'}
@@ -669,315 +562,111 @@ export function DashboardRAMClient({ data }: DashboardRAMClientProps) {
             </p>
           </div>
         )}
-      </div>
+      </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col" style={{ height: '400px' }}>
-          <h3 className="text-lg font-semibold text-slate-900 mb-4">Últimos Pedidos</h3>
-          <div className="flex-1 overflow-auto">
-            <table className="w-full">
-              <thead className="sticky top-0 bg-white z-10">
-                <tr className="border-b border-slate-100">
-                  <th className="text-left py-3 px-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">Pedido</th>
-                  <th className="text-left py-3 px-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">Cliente</th>
-                  <th className="text-left py-3 px-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredPedidos
-                  .slice(pedidosPage * pedidosPerPage, (pedidosPage + 1) * pedidosPerPage)
-                  .map((pedido, index) => (
-                  <tr key={index} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                    <td className="py-3 px-2">
-                      <div className="text-sm font-medium text-slate-900">{pedido.pedido}</div>
-                      <div className="text-xs text-slate-500">{pedido.fecha}</div>
-                    </td>
-                    <td className="py-3 px-2">
-                      <div className="text-sm text-slate-700">{pedido.cliente}</div>
-                      <div className="text-xs text-slate-500">{pedido.metraje}</div>
-                    </td>
-                    <td className="py-3 px-2">
-                      {getStatusBadge(pedido.estado)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <select
-                value={pedidosPerPage}
-                onChange={(e) => {
-                  setPedidosPerPage(Number(e.target.value))
-                  setPedidosPage(0)
-                }}
-                className="text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value={20}>20 filas</option>
-                <option value={50}>50 filas</option>
-              </select>
-              <span className="text-xs text-slate-500">
-                {filteredPedidos.length} total
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setPedidosPage(Math.max(0, pedidosPage - 1))}
-                disabled={pedidosPage === 0}
-                className="px-3 py-1 text-xs font-medium text-slate-700 bg-slate-50 rounded hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Anterior
-              </button>
-              <span className="text-xs text-slate-600">
-                Página {pedidosPage + 1} de {Math.ceil(filteredPedidos.length / pedidosPerPage) || 1}
-              </span>
-              <button
-                onClick={() => setPedidosPage(Math.min(Math.ceil(filteredPedidos.length / pedidosPerPage) - 1, pedidosPage + 1))}
-                disabled={pedidosPage >= Math.ceil(filteredPedidos.length / pedidosPerPage) - 1}
-                className="px-3 py-1 text-xs font-medium text-slate-700 bg-slate-50 rounded hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Siguiente
-              </button>
-            </div>
-          </div>
-        </div>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card className="flex flex-col p-6" style={{ height: '420px' }}>
+          <h3 className="mb-4 text-base font-semibold text-foreground">Últimos Pedidos</h3>
+          {filteredPedidos.length === 0 ? (
+            <EmptyState icon={Inbox} title="No hay pedidos" description="No se encontraron pedidos con los filtros actuales." />
+          ) : (
+            <>
+              <div className="flex-1 overflow-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 z-10 bg-card">
+                    <TableRow>
+                      <TableHead>Pedido</TableHead>
+                      <TableHead>Cliente</TableHead>
+                      <TableHead>Estado</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredPedidos
+                      .slice(pedidosPage * pedidosPerPage, (pedidosPage + 1) * pedidosPerPage)
+                      .map((pedido, index) => (
+                      <TableRow key={index}>
+                        <TableCell>
+                          <div className="text-sm font-medium text-foreground">{pedido.pedido}</div>
+                          <div className="text-xs text-muted-foreground">{pedido.fecha}</div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm text-foreground">{pedido.cliente}</div>
+                          <div className="text-xs text-muted-foreground">{pedido.metraje}</div>
+                        </TableCell>
+                        <TableCell>{getStatusBadge(pedido.estado)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <Pagination
+                currentPage={pedidosPage}
+                totalItems={filteredPedidos.length}
+                itemsPerPage={pedidosPerPage}
+                itemLabel="pedidos"
+                onPageChange={setPedidosPage}
+                onItemsPerPageChange={setPedidosPerPage}
+                itemsPerPageOptions={[20, 50]}
+              />
+            </>
+          )}
+        </Card>
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col" style={{ height: '400px' }}>
-          <h3 className="text-lg font-semibold text-slate-900 mb-4">Stock por Producto</h3>
-          <div className="flex-1 overflow-auto space-y-4">
-            {filteredProductos
-              .slice(stockPage * stockPerPage, (stockPage + 1) * stockPerPage)
-              .map((producto, index) => (
-              <div key={index} className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-slate-900">{producto.codigo}</span>
-                  <span className="text-xs text-slate-500">{producto.total} unidades</span>
-                </div>
-                <div className="relative h-2 bg-slate-100 rounded-full overflow-hidden">
-                  <div 
-                    className="absolute left-0 top-0 h-full bg-blue-400 transition-all"
-                    style={{ width: `${(producto.disponible / producto.total) * 100}%` }}
-                  />
-                  <div 
-                    className="absolute h-full bg-yellow-400 transition-all"
-                    style={{ 
-                      left: `${(producto.disponible / producto.total) * 100}%`,
-                      width: `${(producto.reservado / producto.total) * 100}%` 
-                    }}
-                  />
-                </div>
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-2 h-2 rounded-full bg-blue-400"></div>
-                      <span className="text-slate-600">Disponible: {producto.disponible}</span>
+        <Card className="flex flex-col p-6" style={{ height: '420px' }}>
+          <h3 className="mb-4 text-base font-semibold text-foreground">Stock por Producto</h3>
+          {filteredProductos.length === 0 ? (
+            <EmptyState icon={Package} title="No hay productos" description="No se encontraron productos con los filtros actuales." />
+          ) : (
+            <>
+              <div className="flex-1 space-y-4 overflow-auto">
+                {filteredProductos
+                  .slice(stockPage * stockPerPage, (stockPage + 1) * stockPerPage)
+                  .map((producto, index) => (
+                  <div key={index} className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-foreground">{producto.codigo}</span>
+                      <span className="text-xs text-muted-foreground">{producto.total} unidades</span>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-2 h-2 rounded-full bg-yellow-400"></div>
-                      <span className="text-slate-600">Reservado: {producto.reservado}</span>
+                    <div className="relative h-2 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="absolute left-0 top-0 h-full bg-info transition-all"
+                        style={{ width: `${(producto.disponible / producto.total) * 100}%` }}
+                      />
+                      <div
+                        className="absolute h-full bg-warning transition-all"
+                        style={{
+                          left: `${(producto.disponible / producto.total) * 100}%`,
+                          width: `${(producto.reservado / producto.total) * 100}%`
+                        }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-1.5">
+                          <div className="h-2 w-2 rounded-full bg-info"></div>
+                          <span className="text-muted-foreground">Disponible: {producto.disponible}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <div className="h-2 w-2 rounded-full bg-warning"></div>
+                          <span className="text-muted-foreground">Reservado: {producto.reservado}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <select
-                value={stockPerPage}
-                onChange={(e) => {
-                  setStockPerPage(Number(e.target.value))
-                  setStockPage(0)
-                }}
-                className="text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value={20}>20 filas</option>
-                <option value={50}>50 filas</option>
-              </select>
-              <span className="text-xs text-slate-500">
-                {filteredProductos.length} total
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setStockPage(Math.max(0, stockPage - 1))}
-                disabled={stockPage === 0}
-                className="px-3 py-1 text-xs font-medium text-slate-700 bg-slate-50 rounded hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Anterior
-              </button>
-              <span className="text-xs text-slate-600">
-                Página {stockPage + 1} de {Math.ceil(filteredProductos.length / stockPerPage) || 1}
-              </span>
-              <button
-                onClick={() => setStockPage(Math.min(Math.ceil(filteredProductos.length / stockPerPage) - 1, stockPage + 1))}
-                disabled={stockPage >= Math.ceil(filteredProductos.length / stockPerPage) - 1}
-                className="px-3 py-1 text-xs font-medium text-slate-700 bg-slate-50 rounded hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Siguiente
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Sección de Productividad de Planta */}
-      <div className="mt-8">
-        <h2 className="text-xl font-bold text-slate-900 mb-6">Productividad de Planta</h2>
-        
-        {/* KPIs Superiores */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-          {/* Cortes Totales (Hoy) */}
-          <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-500 mb-2">Cortes Totales (Hoy)</p>
-                <p className="text-3xl font-bold font-mono tabular-nums text-slate-900 mb-1">{todayCuts.total}</p>
-                <p className="text-xs text-green-600 flex items-center gap-1">
-                  <TrendingUp className="w-3 h-3" />
-                  <span>+12% vs ayer</span>
-                </p>
-              </div>
-              <Package className="w-8 h-8 text-blue-600" strokeWidth={1.5} />
-            </div>
-          </div>
-
-          {/* Operario del Día */}
-          <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-500 mb-2">Operario del Día</p>
-                {topOperator ? (
-                  <>
-                    <p className="text-xl font-bold text-slate-900 mb-1">{topOperator.operator.name}</p>
-                    <p className="text-sm text-slate-600">{topOperator.cuts} cortes realizados</p>
-                  </>
-                ) : (
-                  <p className="text-sm text-slate-400">Sin datos</p>
-                )}
-              </div>
-              <TrendingUp className="w-8 h-8 text-green-600" strokeWidth={1.5} />
-            </div>
-          </div>
-        </div>
-
-        {/* Gráficos */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* PieChart - Distribución de Carga */}
-          <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
-            <h3 className="text-base font-semibold text-slate-800 mb-6">Distribución de Cortes por Operario</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={cutDistribution}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name.split(' ')[0]}: ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={100}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {cutDistribution.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip 
-                  formatter={(value: number) => [`${value} cortes`, 'Total']}
-                  contentStyle={{ 
-                    backgroundColor: 'white', 
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '8px',
-                    padding: '8px 12px'
-                  }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* LineChart - Evolución de Productividad */}
-          <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-base font-semibold text-slate-800">Evolución de Cortes</h3>
-              <div className="flex items-center gap-2">
-                {/* Selector de Granularidad */}
-                <select
-                  value={productivityGranularity}
-                  onChange={(e) => setProductivityGranularity(e.target.value as 'day' | 'week' | 'month')}
-                  className="text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="day">Día</option>
-                  <option value="week">Semana</option>
-                  <option value="month">Mes</option>
-                </select>
-
-                {/* Selector de Operario */}
-                <select
-                  value={selectedOperator}
-                  onChange={(e) => setSelectedOperator(e.target.value)}
-                  className="text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="all">Todos</option>
-                  {mockOperators.map(op => (
-                    <option key={op.id} value={op.id}>{op.name}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={evolutionData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                <XAxis 
-                  dataKey="date" 
-                  stroke="#64748b"
-                  style={{ fontSize: '11px' }}
-                  tickLine={false}
-                  tickFormatter={(value) => {
-                    const date = new Date(value)
-                    if (productivityGranularity === 'day') {
-                      return date.toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })
-                    } else if (productivityGranularity === 'week') {
-                      return `Sem ${date.toLocaleDateString('es-AR', { day: '2-digit', month: 'short' })}`
-                    } else {
-                      return date.toLocaleDateString('es-AR', { month: 'short', year: 'numeric' })
-                    }
-                  }}
-                />
-                <YAxis 
-                  stroke="#64748b"
-                  style={{ fontSize: '11px' }}
-                  tickLine={false}
-                />
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: 'white', 
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '8px',
-                    padding: '8px 12px'
-                  }}
-                  labelFormatter={(value) => {
-                    const date = new Date(value)
-                    return date.toLocaleDateString('es-AR', { 
-                      day: '2-digit', 
-                      month: 'long', 
-                      year: 'numeric' 
-                    })
-                  }}
-                  formatter={(value: number) => [`${value} cortes`, 'Total']}
-                />
-                <Line 
-                  type="monotone" 
-                  dataKey="cuts" 
-                  stroke="#2563eb" 
-                  strokeWidth={2}
-                  dot={{ fill: '#2563eb', r: 4 }}
-                  activeDot={{ r: 6 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+              <Pagination
+                currentPage={stockPage}
+                totalItems={filteredProductos.length}
+                itemsPerPage={stockPerPage}
+                itemLabel="productos"
+                onPageChange={setStockPage}
+                onItemsPerPageChange={setStockPerPage}
+                itemsPerPageOptions={[20, 50]}
+              />
+            </>
+          )}
+        </Card>
       </div>
 
       {/* Botón flotante del chat IA */}

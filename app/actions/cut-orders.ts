@@ -12,7 +12,7 @@ export async function getCutOrders(status?: string) {
     .from('cut_orders')
     .select(`
       *,
-      order:orders(*, client:clients(*)),
+      order:orders!cut_orders_order_id_fkey(*, client:clients(*)),
       product:products!cut_orders_product_id_fkey(*),
       material_base:products!cut_orders_material_base_id_fkey(*),
       assigned_operator:users!cut_orders_assigned_to_fkey(*)
@@ -41,7 +41,7 @@ export async function getCutOrderById(id: string) {
     .from('cut_orders')
     .select(`
       *,
-      order:orders(*, client:clients(*)),
+      order:orders!cut_orders_order_id_fkey(*, client:clients(*)),
       product:products!cut_orders_product_id_fkey(*),
       material_base:products!cut_orders_material_base_id_fkey(*),
       assigned_operator:users!cut_orders_assigned_to_fkey(*),

@@ -1,41 +1,18 @@
-'use client'
+import { redirect } from 'next/navigation'
+import { createClient } from '@/lib/supabase/server'
+import { AdminShell } from '@/components/admin-shell'
 
-import { useState } from 'react'
-import { Toaster } from 'sonner'
-import { AdminSidebar } from '@/components/admin-sidebar'
-import { RealtimeNotificationsProvider } from '@/components/realtime-notifications-provider'
-
-export default function AdminLayout({
+export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const [isCollapsed, setIsCollapsed] = useState(false)
-  const displayEmail = 'admin@velvok.com (modo demo)'
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
 
-  return (
-    <div className="min-h-screen bg-slate-50">
-      <RealtimeNotificationsProvider />
-      <Toaster
-        position="top-right"
-        richColors
-        closeButton
-        expand
-        toastOptions={{
-          duration: 5000,
-        }}
-      />
-      <AdminSidebar 
-        displayEmail={displayEmail} 
-        isCollapsed={isCollapsed}
-        setIsCollapsed={setIsCollapsed}
-      />
+  if (!user) {
+    redirect('/login')
+  }
 
-      <main className={`${isCollapsed ? 'ml-20' : 'ml-64'} min-h-screen overflow-auto transition-all duration-300`}>
-        <div className="w-full px-4 sm:px-6 lg:px-8 py-8">
-          {children}
-        </div>
-      </main>
-    </div>
-  )
+  return <AdminShell displayEmail={user.email ?? 'Sesión sin email'}>{children}</AdminShell>
 }

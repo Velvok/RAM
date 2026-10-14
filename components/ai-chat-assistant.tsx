@@ -109,11 +109,11 @@ export function AIChatAssistant({ isOpen, onClose, dashboardData }: AIChatAssist
       />
       
       {/* Panel lateral */}
-      <div className="relative w-full max-w-md h-full bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+      <div className="relative w-full max-w-md h-full bg-card shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-gradient-to-r from-blue-600 to-blue-700">
+        <div className="flex items-center justify-between p-4 border-b border-border bg-gradient-to-r from-blue-600 to-blue-700">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center">
+            <div className="w-10 h-10 bg-card rounded-full flex items-center justify-center">
               <Sparkles className="w-5 h-5 text-blue-600" />
             </div>
             <div>
@@ -123,14 +123,14 @@ export function AIChatAssistant({ isOpen, onClose, dashboardData }: AIChatAssist
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+            className="p-2 hover:bg-card/10 rounded-lg transition-colors"
           >
             <X className="w-5 h-5 text-white" />
           </button>
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-muted">
           {messages.map((message, index) => (
             <div
               key={index}
@@ -140,12 +140,12 @@ export function AIChatAssistant({ isOpen, onClose, dashboardData }: AIChatAssist
                 className={`max-w-[80%] rounded-2xl px-4 py-3 ${
                   message.role === 'user'
                     ? 'bg-blue-600 text-white'
-                    : 'bg-white border border-slate-200 text-slate-900'
+                    : 'bg-card border border-border text-foreground'
                 }`}
               >
                 <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                 <p className={`text-xs mt-1 ${
-                  message.role === 'user' ? 'text-blue-100' : 'text-slate-400'
+                  message.role === 'user' ? 'text-blue-100' : 'text-muted-foreground'
                 }`}>
                   {message.timestamp.toLocaleTimeString('es-AR', { 
                     hour: '2-digit', 
@@ -158,10 +158,10 @@ export function AIChatAssistant({ isOpen, onClose, dashboardData }: AIChatAssist
           
           {isLoading && (
             <div className="flex justify-start">
-              <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3">
+              <div className="bg-card border border-border rounded-2xl px-4 py-3">
                 <div className="flex items-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                  <p className="text-sm text-slate-600">Analizando...</p>
+                  <p className="text-sm text-muted-foreground">Analizando...</p>
                 </div>
               </div>
             </div>
@@ -171,7 +171,7 @@ export function AIChatAssistant({ isOpen, onClose, dashboardData }: AIChatAssist
         </div>
 
         {/* Input */}
-        <div className="p-4 border-t border-slate-200 bg-white">
+        <div className="p-4 border-t border-border bg-card">
           <div className="flex items-end gap-2">
             <input
               ref={inputRef}
@@ -180,7 +180,7 @@ export function AIChatAssistant({ isOpen, onClose, dashboardData }: AIChatAssist
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={handleKeyPress}
               placeholder="Pregunta sobre pedidos, stock, métricas..."
-              className="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              className="flex-1 px-4 py-3 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
               disabled={isLoading}
             />
             <button
@@ -191,7 +191,7 @@ export function AIChatAssistant({ isOpen, onClose, dashboardData }: AIChatAssist
               <Send className="w-5 h-5" />
             </button>
           </div>
-          <p className="text-xs text-slate-400 mt-2">
+          <p className="text-xs text-muted-foreground mt-2">
             Presiona Enter para enviar. El asistente solo responde basándose en datos reales.
           </p>
         </div>

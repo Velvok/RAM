@@ -4,7 +4,11 @@ import { useEffect, useState } from 'react'
 import { AnnualChart } from '@/components/annual-chart'
 import { ProductSelector } from '@/components/product-selector'
 import { getAnnualHistory, getDefaultProducts, getProductsForHistory, getAvailableYears, updateSelectedProducts, ProductHistoryData } from '@/app/actions/annual-history'
-import { BarChart3, Calendar } from 'lucide-react'
+import { BarChart3, Calendar, Info } from 'lucide-react'
+import { Card } from '@/components/ui/card'
+import { EmptyState } from '@/components/ui/empty-state'
+import { PageLoader } from '@/components/ui/spinner'
+import { cn } from '@/lib/utils'
 
 interface Product {
   id: string
@@ -93,11 +97,8 @@ export default function HistorialAnualPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-slate-600">Cargando historial anual...</p>
-        </div>
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <PageLoader label="Cargando historial anual..." />
       </div>
     )
   }
@@ -108,12 +109,12 @@ export default function HistorialAnualPage() {
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <BarChart3 className="w-6 h-6 text-blue-600" />
+            <div className="p-2 bg-info/10 rounded-lg">
+              <BarChart3 className="w-6 h-6 text-info" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold text-slate-900">Historial Anual</h1>
-              <p className="text-slate-600 mt-1">Análisis de compras y ventas por producto</p>
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">Historial Anual</h1>
+              <p className="text-muted-foreground mt-1">Análisis de compras y ventas por producto</p>
             </div>
           </div>
         </div>
@@ -121,24 +122,22 @@ export default function HistorialAnualPage() {
         {/* Controles */}
         <div className="flex items-center gap-4">
           {/* Toggle de vista */}
-          <div className="flex items-center gap-2 bg-slate-100 rounded-lg p-1">
+          <div className="flex items-center gap-2 bg-muted rounded-lg p-1">
             <button
               onClick={() => setViewMode('purchases')}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                viewMode === 'purchases'
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
+              className={cn(
+                'px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
+                viewMode === 'purchases' ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              )}
             >
               Compras
             </button>
             <button
               onClick={() => setViewMode('sales')}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                viewMode === 'sales'
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
+              className={cn(
+                'px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
+                viewMode === 'sales' ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              )}
             >
               Ventas
             </button>
@@ -146,11 +145,11 @@ export default function HistorialAnualPage() {
 
           {/* Selector de año */}
           <div className="flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-slate-400" />
+            <Calendar className="w-5 h-5 text-muted-foreground" />
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-              className="px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="px-4 py-2 border border-input rounded-lg text-sm font-medium text-foreground bg-card hover:bg-muted focus:outline-none focus:ring-1 focus:ring-ring"
             >
               {availableYears.map(year => (
                 <option key={year} value={year}>
@@ -163,7 +162,7 @@ export default function HistorialAnualPage() {
       </div>
 
       {/* Selector de productos */}
-      <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">
+      <div className="bg-muted rounded-lg p-6 border border-border">
         <ProductSelector
           availableProducts={availableProducts}
           selectedProducts={selectedProducts}
@@ -173,15 +172,9 @@ export default function HistorialAnualPage() {
 
       {/* Gráficas */}
       {historyData.length === 0 ? (
-        <div className="bg-white rounded-lg border border-slate-200 p-12 text-center">
-          <BarChart3 className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-slate-900 mb-2">
-            No hay datos disponibles
-          </h3>
-          <p className="text-slate-600">
-            Selecciona productos para ver su historial anual
-          </p>
-        </div>
+        <Card className="p-12">
+          <EmptyState icon={BarChart3} title="No hay datos disponibles" description="Selecciona productos para ver su historial anual" />
+        </Card>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {historyData.map((productData) => (
@@ -198,17 +191,17 @@ export default function HistorialAnualPage() {
       )}
 
       {/* Info footer */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+      <div className="bg-info/5 border border-info/20 rounded-lg p-4">
         <div className="flex items-start gap-3">
-          <div className="p-1 bg-blue-100 rounded">
-            <BarChart3 className="w-4 h-4 text-blue-600" />
+          <div className="p-1 bg-info/10 rounded">
+            <Info className="w-4 h-4 text-info" />
           </div>
           <div className="flex-1">
-            <h4 className="text-sm font-semibold text-blue-900 mb-1">
+            <h4 className="text-sm font-semibold text-info mb-1">
               Información sobre los datos
             </h4>
-            <p className="text-sm text-blue-700">
-              Los datos se actualizan automáticamente cuando un pedido es marcado como entregado. 
+            <p className="text-sm text-info/90">
+              Los datos se actualizan automáticamente cuando un pedido es marcado como entregado.
               Las conversiones de peso se calculan según las configuraciones de cada producto.
             </p>
           </div>

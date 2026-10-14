@@ -6,9 +6,10 @@ import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import {
   LayoutDashboard, ShoppingCart, Package, History, FileText,
-  Settings, ArrowLeft, ChevronLeft, ChevronRight,
+  Settings, ArrowLeft, ChevronLeft, ChevronRight, Scissors, LogOut,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { logout } from '@/app/actions/auth'
 
 interface AdminSidebarProps {
   displayEmail: string
@@ -71,6 +72,7 @@ export function AdminSidebar({ displayEmail, isCollapsed, setIsCollapsed }: Admi
   const navItems = [
     { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/admin/pedidos', label: 'Pedidos', icon: ShoppingCart },
+    { href: '/admin/recortes', label: 'Recortes', icon: Scissors },
     { href: '/admin/stock', label: 'Stock', icon: Package },
     { href: '/admin/historial', label: 'Historial Anual', icon: History },
     { href: '/admin/logs', label: 'Logs RAM', icon: FileText, badge: pendingCount },
@@ -78,11 +80,11 @@ export function AdminSidebar({ displayEmail, isCollapsed, setIsCollapsed }: Admi
 
   return (
     <aside className={cn(
-      'h-screen bg-white border-r border-slate-200 flex flex-col transition-all duration-300 fixed left-0 top-0',
+      'h-screen bg-card border-r border-border flex flex-col transition-all duration-300 fixed left-0 top-0',
       isCollapsed ? 'w-20' : 'w-64'
     )}>
       <div className={cn(
-        'h-16 border-b border-slate-200 flex items-center justify-center shrink-0',
+        'h-16 border-b border-border flex items-center justify-center shrink-0',
         isCollapsed ? 'px-3' : 'px-6'
       )}>
         {!isCollapsed ? (
@@ -121,11 +123,11 @@ export function AdminSidebar({ displayEmail, isCollapsed, setIsCollapsed }: Admi
                 isCollapsed ? 'justify-center px-0' : 'px-3',
                 active
                   ? 'bg-primary/10 text-primary border border-primary/20'
-                  : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'
+                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
               )}
               title={isCollapsed ? `${label}${badge ? ` (${badge} pendientes)` : ''}` : undefined}
             >
-              <Icon size={16} strokeWidth={1.5} className={cn('shrink-0', active ? 'text-primary' : 'text-slate-400')} />
+              <Icon size={16} strokeWidth={1.5} className={cn('shrink-0', active ? 'text-primary' : 'text-muted-foreground')} />
               {!isCollapsed && (
                 <span className="flex-1 flex items-center justify-between min-w-0">
                   <span className="truncate">{label}</span>
@@ -146,7 +148,7 @@ export function AdminSidebar({ displayEmail, isCollapsed, setIsCollapsed }: Admi
         })}
       </nav>
 
-      <div className="p-3 border-t border-slate-200 space-y-2">
+      <div className="p-3 border-t border-border space-y-2">
         <a
           href="/admin/configuracion"
           className={cn(
@@ -154,25 +156,25 @@ export function AdminSidebar({ displayEmail, isCollapsed, setIsCollapsed }: Admi
             isCollapsed ? 'justify-center px-0' : 'px-3',
             isActive('/admin/configuracion')
               ? 'bg-primary/10 text-primary border border-primary/20'
-              : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'
+              : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
           )}
           title={isCollapsed ? 'Configuración' : undefined}
         >
-          <Settings size={16} strokeWidth={1.5} className={cn('shrink-0', isActive('/admin/configuracion') ? 'text-primary' : 'text-slate-400')} />
+          <Settings size={16} strokeWidth={1.5} className={cn('shrink-0', isActive('/admin/configuracion') ? 'text-primary' : 'text-muted-foreground')} />
           {!isCollapsed && 'Configuración'}
         </a>
 
         {!isCollapsed && (
           <div className="px-3 py-1.5">
-            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Usuario</p>
-            <p className="text-sm text-slate-700 truncate">{displayEmail}</p>
+            <p className="text-[10px] font-semibold text-muted-foreground/70 uppercase tracking-wider">Usuario</p>
+            <p className="text-sm text-foreground truncate">{displayEmail}</p>
           </div>
         )}
 
         <a
           href="/"
           className={cn(
-            'flex items-center gap-2 rounded-md text-xs font-medium text-slate-500 border border-slate-200 hover:bg-slate-50 hover:text-slate-900 transition-all duration-200',
+            'flex items-center gap-2 rounded-md text-xs font-medium text-muted-foreground border border-border hover:bg-accent hover:text-accent-foreground transition-all duration-200',
             isCollapsed ? 'justify-center px-0 py-2' : 'px-3 py-1.5'
           )}
           title="Volver al inicio"
@@ -182,9 +184,21 @@ export function AdminSidebar({ displayEmail, isCollapsed, setIsCollapsed }: Admi
         </a>
 
         <button
+          onClick={() => logout()}
+          className={cn(
+            'flex items-center gap-2 w-full rounded-md text-xs font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-all duration-200',
+            isCollapsed ? 'justify-center px-0 py-2' : 'px-3 py-1.5'
+          )}
+          title="Cerrar sesión"
+        >
+          <LogOut size={14} strokeWidth={1.5} />
+          {!isCollapsed && 'Cerrar sesión'}
+        </button>
+
+        <button
           onClick={() => setIsCollapsed(!isCollapsed)}
           className={cn(
-            'flex items-center gap-2 w-full rounded-md text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-all duration-200',
+            'flex items-center gap-2 w-full rounded-md text-xs font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-all duration-200',
             isCollapsed ? 'justify-center px-0 py-2' : 'px-3 py-1.5'
           )}
           title={isCollapsed ? 'Expandir menú' : 'Colapsar menú'}

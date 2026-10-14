@@ -5,28 +5,28 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950 disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
         default:
-          "bg-slate-900 text-slate-50 shadow hover:bg-slate-900/90",
+          "bg-primary text-primary-foreground shadow hover:bg-primary/90",
         primary:
-          "bg-blue-600 text-white shadow-sm hover:bg-blue-500",
+          "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90",
         success:
-          "bg-green-600 text-white shadow-sm hover:bg-green-500",
+          "bg-success text-success-foreground shadow-sm hover:bg-success/90",
         warning:
-          "bg-yellow-600 text-white shadow-sm hover:bg-yellow-500",
+          "bg-warning text-warning-foreground shadow-sm hover:bg-warning/90",
         pause:
-          "bg-orange-600 text-white shadow-sm hover:bg-orange-500",
+          "bg-warning text-warning-foreground shadow-sm hover:bg-warning/80",
         destructive:
-          "bg-red-600 text-white shadow-sm hover:bg-red-500",
+          "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",
         outline:
-          "border border-slate-200 bg-white shadow-sm hover:bg-slate-50 hover:text-slate-900",
+          "border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground",
         secondary:
-          "bg-slate-100 text-slate-900 shadow-sm hover:bg-slate-100/80",
-        ghost: "hover:bg-slate-100 hover:text-slate-900",
-        link: "text-slate-900 underline-offset-4 hover:underline",
+          "bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80",
+        ghost: "hover:bg-accent hover:text-accent-foreground",
+        link: "text-foreground underline-offset-4 hover:underline",
       },
       size: {
         default: "h-9 px-4 py-2",

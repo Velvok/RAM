@@ -1,24 +1,41 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { Card } from '@/components/ui/card'
 import { adjustStock } from '@/app/actions/inventory'
-import { toast } from '@/components/ui/use-toast'
+import { getAllProducts } from '@/app/actions/client-queries'
 import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
+
+interface ProductOption {
+  id: string
+  code: string
+  name: string
+}
 
 export default function AjustesStockPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
+  const [products, setProducts] = useState<ProductOption[]>([])
   const [formData, setFormData] = useState({
     productId: '',
     quantity: '',
     type: 'entrada' as 'entrada' | 'salida' | 'correccion',
     notes: '',
   })
+
+  useEffect(() => {
+    getAllProducts()
+      .then((data) => setProducts(data as ProductOption[]))
+      .catch((error) => console.error('Error cargando productos:', error))
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -32,18 +49,11 @@ export default function AjustesStockPage() {
 
       await adjustStock(formData.productId, quantity, formData.notes)
 
-      toast({
-        title: 'Ajuste realizado',
-        description: 'El stock ha sido actualizado correctamente',
-      })
+      toast.success('El stock ha sido actualizado correctamente', { description: 'Ajuste realizado' })
 
       router.push('/admin/stock')
     } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'No se pudo realizar el ajuste de stock',
-        variant: 'destructive',
-      })
+      toast.error('No se pudo realizar el ajuste de stock')
     } finally {
       setLoading(false)
     }
@@ -58,36 +68,41 @@ export default function AjustesStockPage() {
           </Button>
         </Link>
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">
+          <h2 className="text-2xl font-bold text-foreground">
             Ajuste de Stock
           </h2>
-          <p className="text-slate-600">
+          <p className="text-muted-foreground">
             Registrar entrada, salida o corrección de inventario
           </p>
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow p-6 max-w-2xl">
+      <Card className="p-6 max-w-2xl">
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
-            <Label htmlFor="productId">Producto (ID)</Label>
-            <Input
+            <Label htmlFor="productId">Producto</Label>
+            <Select
               id="productId"
               required
               value={formData.productId}
               onChange={(e) =>
                 setFormData({ ...formData, productId: e.target.value })
               }
-              placeholder="ID del producto"
-            />
-            <p className="text-xs text-slate-500">
-              Ingresa el ID del producto de la tabla de stock
-            </p>
+            >
+              <option value="" disabled>
+                {products.length === 0 ? 'Cargando productos...' : 'Selecciona un producto'}
+              </option>
+              {products.map((product) => (
+                <option key={product.id} value={product.id}>
+                  {product.code} — {product.name}
+                </option>
+              ))}
+            </Select>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="type">Tipo de Ajuste</Label>
-            <select
+            <Select
               id="type"
               required
               value={formData.type}
@@ -97,12 +112,11 @@ export default function AjustesStockPage() {
                   type: e.target.value as 'entrada' | 'salida' | 'correccion',
                 })
               }
-              className="flex h-9 w-full rounded-md border border-slate-200 bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950"
             >
               <option value="entrada">Entrada</option>
               <option value="salida">Salida</option>
               <option value="correccion">Corrección</option>
-            </select>
+            </Select>
           </div>
 
           <div className="space-y-2">
@@ -122,7 +136,7 @@ export default function AjustesStockPage() {
 
           <div className="space-y-2">
             <Label htmlFor="notes">Notas (opcional)</Label>
-            <textarea
+            <Textarea
               id="notes"
               value={formData.notes}
               onChange={(e) =>
@@ -130,7 +144,6 @@ export default function AjustesStockPage() {
               }
               placeholder="Motivo del ajuste..."
               rows={3}
-              className="flex w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950"
             />
           </div>
 
@@ -145,7 +158,7 @@ export default function AjustesStockPage() {
             </Link>
           </div>
         </form>
-      </div>
+      </Card>
     </div>
   )
 }

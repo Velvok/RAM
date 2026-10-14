@@ -35,7 +35,7 @@ export default async function PedidoDetallePage({
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">
+          <h2 className="text-2xl font-bold text-foreground mb-2">
             Pedido no encontrado
           </h2>
           <Link href="/admin/pedidos">

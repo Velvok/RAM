@@ -59,7 +59,7 @@ export default function LoginPage() {
                 type="email"
                 required
                 className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                placeholder="admin@velvok.com"
+                placeholder="tu@email.com"
               />
             </div>
 
@@ -95,11 +95,6 @@ export default function LoginPage() {
           </div>
         </form>
 
-        <div className="mt-6 pt-6 border-t border-slate-200">
-          <p className="text-xs text-center text-slate-500">
-            Usuario de prueba: admin@velvok.com
-          </p>
-        </div>
       </div>
     </div>
   )

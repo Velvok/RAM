@@ -1,9 +1,18 @@
 import { getRemnantById, markAsScrap } from '@/app/actions/remnants'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { formatDate } from '@/lib/utils'
-import { ArrowLeft, Trash2 } from 'lucide-react'
+import { ArrowLeft, Lightbulb } from 'lucide-react'
 import Link from 'next/link'
 import { MarkAsScrapButton } from './mark-as-scrap-button'
+
+const STATUS_BADGE: Record<string, { label: string; variant: 'success' | 'warning' | 'info' | 'destructive' }> = {
+  disponible: { label: 'Disponible', variant: 'success' },
+  reservado: { label: 'Reservado', variant: 'warning' },
+  consumido: { label: 'Consumido', variant: 'info' },
+  descartado: { label: 'Descartado', variant: 'destructive' },
+}
 
 // Deshabilitar caché
 export const dynamic = 'force-dynamic'
@@ -21,7 +30,7 @@ export default async function RemnantDetallePage({
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">
+          <h2 className="text-2xl font-bold text-foreground mb-2">
             Recorte no encontrado
           </h2>
           <Link href="/admin/recortes">
@@ -46,28 +55,18 @@ export default async function RemnantDetallePage({
             </Button>
           </Link>
           <div>
-            <h2 className="text-2xl font-bold text-slate-900">
+            <h2 className="text-2xl font-bold text-foreground">
               Recorte #{remnant.id.slice(0, 8)}
             </h2>
-            <p className="text-slate-600">
+            <p className="text-muted-foreground">
               Producto: {remnant.product?.name}
             </p>
           </div>
         </div>
         <div className="flex items-center space-x-2">
-          <span
-            className={`px-3 py-1 rounded-full text-sm font-semibold ${
-              remnant.status === 'disponible'
-                ? 'bg-green-100 text-green-800'
-                : remnant.status === 'reservado'
-                ? 'bg-yellow-100 text-yellow-800'
-                : remnant.status === 'consumido'
-                ? 'bg-blue-100 text-blue-800'
-                : 'bg-red-100 text-red-800'
-            }`}
-          >
-            {remnant.status}
-          </span>
+          <Badge variant={(STATUS_BADGE[remnant.status] ?? { variant: 'info' as const }).variant} className="px-3 py-1 text-sm">
+            {STATUS_BADGE[remnant.status]?.label ?? remnant.status}
+          </Badge>
           {remnant.status === 'disponible' && (
             <MarkAsScrapButton remnantId={remnant.id} />
           )}
@@ -76,71 +75,71 @@ export default async function RemnantDetallePage({
 
       {/* Información General */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="text-sm font-medium text-slate-600 mb-1">
+        <Card className="p-6">
+          <div className="text-sm font-medium text-muted-foreground mb-1">
             Cantidad
           </div>
-          <div className="text-2xl font-bold text-slate-900">
+          <div className="text-2xl font-bold font-mono tabular-nums text-foreground">
             {remnant.quantity} m
           </div>
-        </div>
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="text-sm font-medium text-slate-600 mb-1">
+        </Card>
+        <Card className="p-6">
+          <div className="text-sm font-medium text-muted-foreground mb-1">
             Fecha de Creación
           </div>
-          <div className="text-2xl font-bold text-slate-900">
+          <div className="text-2xl font-bold text-foreground">
             {formatDate(remnant.created_at)}
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Información del Producto */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold text-slate-900 mb-4">
+      <Card className="p-6">
+        <h3 className="text-lg font-semibold text-foreground mb-4">
           Información del Producto
         </h3>
         <dl className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <dt className="text-sm font-medium text-slate-600">Código</dt>
-            <dd className="mt-1 text-sm text-slate-900">
+            <dt className="text-sm font-medium text-muted-foreground">Código</dt>
+            <dd className="mt-1 text-sm text-foreground">
               {remnant.product?.code}
             </dd>
           </div>
           <div>
-            <dt className="text-sm font-medium text-slate-600">Nombre</dt>
-            <dd className="mt-1 text-sm text-slate-900">
+            <dt className="text-sm font-medium text-muted-foreground">Nombre</dt>
+            <dd className="mt-1 text-sm text-foreground">
               {remnant.product?.name}
             </dd>
           </div>
           <div>
-            <dt className="text-sm font-medium text-slate-600">Categoría</dt>
-            <dd className="mt-1 text-sm text-slate-900">
+            <dt className="text-sm font-medium text-muted-foreground">Categoría</dt>
+            <dd className="mt-1 text-sm text-foreground">
               {remnant.product?.category}
             </dd>
           </div>
           {remnant.product?.thickness_mm && (
             <div>
-              <dt className="text-sm font-medium text-slate-600">Espesor</dt>
-              <dd className="mt-1 text-sm text-slate-900">
+              <dt className="text-sm font-medium text-muted-foreground">Espesor</dt>
+              <dd className="mt-1 text-sm text-foreground">
                 {remnant.product.thickness_mm} mm
               </dd>
             </div>
           )}
         </dl>
-      </div>
+      </Card>
 
       {/* Información del Origen */}
       {remnant.cut_order && (
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-slate-900 mb-4">
+        <Card className="p-6">
+          <h3 className="text-lg font-semibold text-foreground mb-4">
             Orden de Corte de Origen
           </h3>
           <dl className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <dt className="text-sm font-medium text-slate-600">
+              <dt className="text-sm font-medium text-muted-foreground">
                 Número de Orden
               </dt>
-              <dd className="mt-1 text-sm text-slate-900">
+              <dd className="mt-1 text-sm text-foreground">
                 <Link
                   href={`/planta/ordenes/${remnant.cut_order.id}`}
                   className="text-blue-600 hover:text-blue-900"
@@ -150,8 +149,8 @@ export default async function RemnantDetallePage({
               </dd>
             </div>
             <div>
-              <dt className="text-sm font-medium text-slate-600">Pedido</dt>
-              <dd className="mt-1 text-sm text-slate-900">
+              <dt className="text-sm font-medium text-muted-foreground">Pedido</dt>
+              <dd className="mt-1 text-sm text-foreground">
                 {remnant.cut_order.order ? (
                   <Link
                     href={`/admin/pedidos/${remnant.cut_order.order.id}`}
@@ -165,47 +164,44 @@ export default async function RemnantDetallePage({
               </dd>
             </div>
             <div>
-              <dt className="text-sm font-medium text-slate-600">Cliente</dt>
-              <dd className="mt-1 text-sm text-slate-900">
+              <dt className="text-sm font-medium text-muted-foreground">Cliente</dt>
+              <dd className="mt-1 text-sm text-foreground">
                 {remnant.cut_order.order?.client?.business_name || 'N/A'}
               </dd>
             </div>
             <div>
-              <dt className="text-sm font-medium text-slate-600">
+              <dt className="text-sm font-medium text-muted-foreground">
                 Producto Cortado
               </dt>
-              <dd className="mt-1 text-sm text-slate-900">
+              <dd className="mt-1 text-sm text-foreground">
                 {remnant.cut_order.product?.name || 'N/A'}
               </dd>
             </div>
           </dl>
-        </div>
+        </Card>
       )}
 
       {/* Notas */}
       {remnant.notes && (
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-slate-900 mb-4">Notas</h3>
-          <p className="text-sm text-slate-700">{remnant.notes}</p>
-        </div>
+        <Card className="p-6">
+          <h3 className="text-lg font-semibold text-foreground mb-4">Notas</h3>
+          <p className="text-sm text-foreground">{remnant.notes}</p>
+        </Card>
       )}
 
-      {/* Sugerencias de Uso (futuro) */}
+      {/* Sugerencias de Uso */}
       {remnant.status === 'disponible' && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-blue-900 mb-2">
-            💡 Sugerencias de Uso
+        <Card className="p-6 border-info/30 bg-info/5">
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-info mb-2">
+            <Lightbulb size={16} />
+            Sugerencia de uso
           </h3>
-          <p className="text-sm text-blue-700">
+          <p className="text-sm text-info/90">
             Este recorte puede ser utilizado para pedidos que requieran{' '}
             {remnant.product?.name} en cantidades menores a {remnant.quantity}{' '}
             m.
           </p>
-          <p className="text-sm text-blue-600 mt-2">
-            <strong>Próximamente:</strong> Matching automático con pedidos
-            pendientes usando IA.
-          </p>
-        </div>
+        </Card>
       )}
     </div>
   )

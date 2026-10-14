@@ -66,18 +66,18 @@ export default function ConfirmModal({
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200">
+      <div className="bg-card rounded-2xl shadow-2xl border border-border max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200">
         {/* Header con icono */}
-        <div className="px-6 py-5 border-b border-slate-100">
+        <div className="px-6 py-5 border-b border-border">
           <div className="flex items-start gap-3.5">
             <div className={`shrink-0 w-11 h-11 rounded-full ${style.iconBg} flex items-center justify-center`}>
               <Icon size={20} strokeWidth={1.75} className={style.iconText} />
             </div>
             <div className="flex-1 min-w-0">
-              <h3 className="text-base font-semibold text-slate-900">
+              <h3 className="text-base font-semibold text-foreground">
                 {title}
               </h3>
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="mt-1 text-sm text-muted-foreground">
                 {message}
               </p>
             </div>
@@ -91,7 +91,7 @@ export default function ConfirmModal({
               setShow(false)
               setTimeout(onCancel, 200)
             }}
-            className="px-4 py-2 border border-slate-200 text-slate-600 text-sm rounded-lg font-medium hover:bg-slate-50 transition-colors"
+            className="px-4 py-2 border border-border text-muted-foreground text-sm rounded-lg font-medium hover:bg-muted transition-colors"
           >
             {cancelText}
           </button>

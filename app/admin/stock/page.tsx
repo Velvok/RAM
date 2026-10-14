@@ -1,5 +1,8 @@
 import { getInventory } from '@/app/actions/inventory'
 import { StockTableClient } from '@/components/stock/stock-table-client'
+import { PageHeader } from '@/components/page-header'
+import { MetricCard } from '@/components/metric-card'
+import { Package, AlertTriangle, PackageX } from 'lucide-react'
 
 // Deshabilitar caché COMPLETAMENTE
 export const dynamic = 'force-dynamic'
@@ -22,28 +25,22 @@ export default async function StockPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-900">Inventario</h2>
-        <p className="text-slate-600">Gestión de stock y disponibilidad</p>
-      </div>
+      <PageHeader title="Inventario" subtitle="Gestión de stock y disponibilidad" />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="text-sm font-medium text-slate-600">Total Productos</div>
-          <div className="text-3xl font-bold text-slate-900 mt-2">{inventory?.length || 0}</div>
-        </div>
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="text-sm font-medium text-slate-600">Stock Bajo</div>
-          <div className="text-3xl font-bold text-yellow-600 mt-2">
-            {inventory?.filter((i: any) => i.stock_disponible < 100).length || 0}
-          </div>
-        </div>
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="text-sm font-medium text-slate-600">Sin Stock</div>
-          <div className="text-3xl font-bold text-red-600 mt-2">
-            {inventory?.filter((i: any) => i.stock_disponible <= 0).length || 0}
-          </div>
-        </div>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <MetricCard title="Total Productos" value={inventory?.length || 0} icon={Package} />
+        <MetricCard
+          title="Stock Bajo"
+          value={inventory?.filter((i: any) => i.stock_disponible < 100).length || 0}
+          icon={AlertTriangle}
+          variant="warning"
+        />
+        <MetricCard
+          title="Sin Stock"
+          value={inventory?.filter((i: any) => i.stock_disponible <= 0).length || 0}
+          icon={PackageX}
+          variant="danger"
+        />
       </div>
 
       <StockTableClient inventory={inventory || []} />

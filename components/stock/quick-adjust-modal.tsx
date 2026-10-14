@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -42,7 +43,7 @@ export function QuickAdjustModal({ inventoryItem }: QuickAdjustModalProps) {
       router.refresh()
     } catch (error) {
       console.error('Error al ajustar stock:', error)
-      alert('Error al ajustar stock')
+      toast.error('Error al ajustar stock')
     } finally {
       setLoading(false)
     }
@@ -62,19 +63,19 @@ export function QuickAdjustModal({ inventoryItem }: QuickAdjustModalProps) {
 
       {isOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 max-w-md w-full animate-in zoom-in-95 duration-200">
+          <div className="bg-card rounded-2xl shadow-2xl border border-border p-6 max-w-md w-full animate-in zoom-in-95 duration-200">
             <div className="flex justify-between items-start mb-4">
               <div>
-                <h3 className="text-base font-semibold text-slate-900">
+                <h3 className="text-base font-semibold text-foreground">
                   Ajustar Stock
                 </h3>
-                <p className="text-sm text-slate-500 mt-1">
+                <p className="text-sm text-muted-foreground mt-1">
                   {inventoryItem.product.code} - {inventoryItem.product.name}
                 </p>
               </div>
               <button
                 onClick={() => setIsOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                className="p-1 text-muted-foreground hover:text-muted-foreground hover:bg-muted rounded-lg transition-colors"
               >
                 <X size={18} strokeWidth={1.75} />
               </button>
@@ -88,7 +89,7 @@ export function QuickAdjustModal({ inventoryItem }: QuickAdjustModalProps) {
                   type="text"
                   value={`${inventoryItem.stock_total} unidades`}
                   disabled
-                  className="bg-slate-50"
+                  className="bg-muted"
                 />
               </div>
 
@@ -103,7 +104,7 @@ export function QuickAdjustModal({ inventoryItem }: QuickAdjustModalProps) {
                   placeholder="Ej: 50"
                   autoFocus
                 />
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Diferencia: {(parseFloat(newTotal) - inventoryItem.stock_total).toFixed(0)} unidades
                 </p>
               </div>

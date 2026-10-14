@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import "./fetch-config";
-import { Toaster } from "@/components/ui/toaster";
 
 const inter = Inter({ subsets: ["latin"] });
 const jetbrainsMono = JetBrains_Mono({
@@ -45,7 +44,6 @@ export default function RootLayout({
     <html lang="es">
       <body className={`${inter.className} ${jetbrainsMono.variable}`} suppressHydrationWarning={true}>
         {children}
-        <Toaster />
       </body>
     </html>
   );

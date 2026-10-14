@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { toast } from 'sonner'
 import { getOrderById } from '@/app/actions/orders'
 import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -110,22 +111,21 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
     try {
       const { reassignStock } = await import('@/app/actions/stock-management')
       const result = await reassignStock(fromCutOrderId, selectedCutOrder.id, quantity)
-      
-      // Usar alert nativo del navegador
-      alert(`✅ Producto reasignado correctamente\n\nDesde: ${result.fromOrder}\nA: ${result.toOrder}\nProducto: ${result.productCode}\nCantidad: ${quantity} unidad${quantity !== 1 ? 'es' : ''}`)
-      
+
+      showSuccess(`Desde: ${result.fromOrder} · A: ${result.toOrder} · Producto: ${result.productCode} · Cantidad: ${quantity} unidad${quantity !== 1 ? 'es' : ''}`, 'Producto reasignado correctamente')
+
       setReassignModalOpen(false)
-      
+
       // Recargar pedido y log
       await reloadOrder()
-      
+
       // Forzar recarga del log después de un delay
       setTimeout(async () => {
         await loadActivityLog()
       }, 500)
     } catch (error: any) {
       console.error('Error reassigning:', error)
-      alert(`❌ Error al reasignar\n\n${error.message || 'Error desconocido al reasignar stock'}`)
+      showError(error.message || 'Error desconocido al reasignar stock', 'Error al reasignar')
       throw error
     }
   }
@@ -141,13 +141,13 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
             </Button>
           </Link>
           <div className="flex items-center gap-3">
-            <h2 className="text-2xl font-bold text-slate-900">
+            <h2 className="text-2xl font-bold text-foreground">
               {order.order_number}
             </h2>
             <span
               className={`px-3 py-1 rounded-full text-sm font-semibold ${
                 order.status === 'nuevo'
-                  ? 'bg-slate-100 text-slate-800'
+                  ? 'bg-muted text-foreground'
                   : order.status === 'aprobado'
                   ? 'bg-yellow-100 text-yellow-800'
                   : order.status === 'en_corte'
@@ -184,37 +184,37 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
       {/* Grid: Info Cliente (50%) + Monto y Fecha (50%, 2 filas) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Información del Cliente - 50% */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-slate-900 mb-4">
+        <div className="bg-card rounded-lg shadow p-6">
+          <h3 className="text-lg font-semibold text-foreground mb-4">
             Información del Cliente
           </h3>
           <dl className="grid grid-cols-2 gap-4">
             <div>
-              <dt className="text-sm font-medium text-slate-600">
+              <dt className="text-sm font-medium text-muted-foreground">
                 Razón Social
               </dt>
-              <dd className="mt-1 text-sm text-slate-900">
+              <dd className="mt-1 text-sm text-foreground">
                 {order.client?.business_name}
               </dd>
             </div>
             <div>
-              <dt className="text-sm font-medium text-slate-600">CUIT</dt>
-              <dd className="mt-1 text-sm text-slate-900">
+              <dt className="text-sm font-medium text-muted-foreground">CUIT</dt>
+              <dd className="mt-1 text-sm text-foreground">
                 {order.client?.tax_id}
               </dd>
             </div>
             {order.client?.contact_name && (
               <div>
-                <dt className="text-sm font-medium text-slate-600">Contacto</dt>
-                <dd className="mt-1 text-sm text-slate-900">
+                <dt className="text-sm font-medium text-muted-foreground">Contacto</dt>
+                <dd className="mt-1 text-sm text-foreground">
                   {order.client.contact_name}
                 </dd>
               </div>
             )}
             {order.client?.contact_phone && (
               <div>
-                <dt className="text-sm font-medium text-slate-600">Teléfono</dt>
-                <dd className="mt-1 text-sm text-slate-900">
+                <dt className="text-sm font-medium text-muted-foreground">Teléfono</dt>
+                <dd className="mt-1 text-sm text-foreground">
                   {order.client.contact_phone}
                 </dd>
               </div>
@@ -224,19 +224,19 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
 
         {/* Monto y Fecha - 50%, 2 filas */}
         <div className="flex flex-col gap-6">
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="text-sm font-medium text-slate-600 mb-1">
+          <div className="bg-card rounded-lg shadow p-6">
+            <div className="text-sm font-medium text-muted-foreground mb-1">
               Monto Total
             </div>
-            <div className="text-2xl font-bold text-slate-900">
+            <div className="text-2xl font-bold text-foreground">
               {formatCurrency(order.total_amount)}
             </div>
           </div>
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="text-sm font-medium text-slate-600 mb-1">
+          <div className="bg-card rounded-lg shadow p-6">
+            <div className="text-sm font-medium text-muted-foreground mb-1">
               Fecha de Creación
             </div>
-            <div className="text-2xl font-bold text-slate-900">
+            <div className="text-2xl font-bold text-foreground">
               {formatDate(order.created_at)}
             </div>
           </div>
@@ -249,45 +249,45 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
       </div>
 
       {/* Pedido (Líneas del Pedido) */}
-      <div className="bg-white rounded-lg shadow">
-        <div className="px-6 py-4 border-b border-slate-200">
-          <h3 className="text-lg font-semibold text-slate-900">
+      <div className="bg-card rounded-lg shadow">
+        <div className="px-6 py-4 border-b border-border">
+          <h3 className="text-lg font-semibold text-foreground">
             Pedido
           </h3>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-200">
-            <thead className="bg-slate-50">
+            <thead className="bg-muted">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                   Producto
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                   Cantidad
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                   Precio Unit.
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                   Subtotal
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-slate-200">
+            <tbody className="bg-card divide-y divide-slate-200">
               {order.lines?.map((line: any) => (
                 <tr key={line.id}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">
                     {line.product?.name}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                     <span className="font-semibold">
                       {line.units || Math.ceil(line.quantity) || 1} unidades
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                     {formatCurrency(line.unit_price)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">
                     {formatCurrency(line.subtotal)}
                   </td>
                 </tr>
@@ -299,49 +299,49 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
 
       {/* Órdenes de Corte */}
       {order.cut_orders && order.cut_orders.length > 0 && (
-        <div className="bg-white rounded-lg shadow">
-          <div className="px-6 py-4 border-b border-slate-200">
+        <div className="bg-card rounded-lg shadow">
+          <div className="px-6 py-4 border-b border-border">
             <div className="flex items-center gap-2">
-              <h3 className="text-lg font-semibold text-slate-900">
+              <h3 className="text-lg font-semibold text-foreground">
                 Órdenes de Corte
               </h3>
               <div className="relative">
                 <button
                   onMouseEnter={() => setShowCutOrdersInfo(true)}
                   onMouseLeave={() => setShowCutOrdersInfo(false)}
-                  className="text-slate-400 hover:text-slate-600 transition-colors"
+                  className="text-muted-foreground hover:text-muted-foreground transition-colors"
                 >
                   <Info className="w-4 h-4" />
                 </button>
                 
                 {/* Tooltip */}
                 {showCutOrdersInfo && (
-                  <div className="absolute left-0 top-full mt-2 w-80 bg-white rounded-lg shadow-xl border border-slate-200 p-4 z-50">
+                  <div className="absolute left-0 top-full mt-2 w-80 bg-card rounded-lg shadow-xl border border-border p-4 z-50">
                     <div className="space-y-3 text-sm">
                       <div>
-                        <p className="font-semibold text-slate-900 mb-1">Acciones disponibles:</p>
+                        <p className="font-semibold text-foreground mb-1">Acciones disponibles:</p>
                       </div>
                       
                       <div className="space-y-2">
                         <div className="flex gap-2">
                           <span className="text-blue-600 font-medium min-w-[70px]">Cambiar:</span>
-                          <span className="text-slate-600">Permite cambiar la chapa asignada por otra de tamaño suficiente disponible en stock.</span>
+                          <span className="text-muted-foreground">Permite cambiar la chapa asignada por otra de tamaño suficiente disponible en stock.</span>
                         </div>
                         
                         <div className="flex gap-2">
                           <span className="text-yellow-600 font-medium min-w-[70px]">Estado:</span>
-                          <span className="text-slate-600">Indica si la orden está pendiente, en proceso o completada por el operario.</span>
+                          <span className="text-muted-foreground">Indica si la orden está pendiente, en proceso o completada por el operario.</span>
                         </div>
                         
                         <div className="flex gap-2">
                           <span className="text-blue-600 font-medium min-w-[70px]">Reasignar:</span>
-                          <span className="text-slate-600">Transfiere chapas ya cortadas de otros pedidos a esta orden cuando no hay stock disponible o cuando quieres armar un pedido para que salga lo antes posible.</span>
+                          <span className="text-muted-foreground">Transfiere chapas ya cortadas de otros pedidos a esta orden cuando no hay stock disponible o cuando quieres armar un pedido para que salga lo antes posible.</span>
                         </div>
                       </div>
                     </div>
                     
                     {/* Flecha del tooltip */}
-                    <div className="absolute -top-2 left-4 w-4 h-4 bg-white border-l border-t border-slate-200 transform rotate-45"></div>
+                    <div className="absolute -top-2 left-4 w-4 h-4 bg-card border-l border-t border-border transform rotate-45"></div>
                   </div>
                 )}
               </div>
@@ -349,46 +349,46 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-200">
-              <thead className="bg-slate-50">
+              <thead className="bg-muted">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                     Número
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                     Código Producto
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                     Producto
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                     Cantidad
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                     Stock Asignado
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                     Estado
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                     Acciones
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-slate-200">
+              <tbody className="bg-card divide-y divide-slate-200">
                 {order.cut_orders.map((cutOrder: any) => (
                   <tr key={cutOrder.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">
                       {cutOrder.cut_number}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 font-mono">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground font-mono">
                       {cutOrder.product?.code}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                       {cutOrder.product?.name}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex flex-col gap-1">
-                        <span className={(cutOrder.quantity_cut - (cutOrder.quantity_delivered || 0)) >= (cutOrder.quantity_requested - (cutOrder.quantity_delivered || 0)) ? 'text-green-600' : 'text-slate-900'}>
+                        <span className={(cutOrder.quantity_cut - (cutOrder.quantity_delivered || 0)) >= (cutOrder.quantity_requested - (cutOrder.quantity_delivered || 0)) ? 'text-green-600' : 'text-foreground'}>
                           Cortadas: {(cutOrder.quantity_cut || 0) - (cutOrder.quantity_delivered || 0)}/{cutOrder.quantity_requested - (cutOrder.quantity_delivered || 0)}
                         </span>
                         {(cutOrder.quantity_delivered || 0) > 0 && (
@@ -398,7 +398,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                       <div className="flex items-center gap-2">
                         {cutOrder.material_base_id ? (
                           <>
@@ -470,7 +470,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                         </button>
                       )}
                       {(cutOrder.status === 'completada' || cutOrder.status === 'entregado') && (
-                        <span className="text-xs text-slate-400">{cutOrder.status === 'entregado' ? 'Entregado' : 'Completado'}</span>
+                        <span className="text-xs text-muted-foreground">{cutOrder.status === 'entregado' ? 'Entregado' : 'Completado'}</span>
                       )}
                     </td>
                   </tr>
@@ -483,45 +483,45 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
 
       {/* Artículos a Preparar */}
       {order.preparation_items && order.preparation_items.length > 0 && (
-        <div className="bg-white rounded-lg shadow">
-          <div className="px-6 py-4 border-b border-slate-200">
-            <h3 className="text-lg font-semibold text-slate-900">
+        <div className="bg-card rounded-lg shadow">
+          <div className="px-6 py-4 border-b border-border">
+            <h3 className="text-lg font-semibold text-foreground">
               Artículos a Preparar
             </h3>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-200">
-              <thead className="bg-slate-50">
+              <thead className="bg-muted">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                     Código Producto
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                     Producto
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                     Cantidad
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                     Stock Asignado
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                     Estado
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-slate-200">
+              <tbody className="bg-card divide-y divide-slate-200">
                 {order.preparation_items.map((item: any) => (
                   <tr key={item.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 font-mono">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground font-mono">
                       {item.product?.code}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                       {item.product?.name}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex flex-col gap-1">
-                        <span className={(item.quantity_prepared - (item.quantity_delivered || 0)) >= (item.quantity_requested - (item.quantity_delivered || 0)) ? 'text-green-600' : 'text-slate-900'}>
+                        <span className={(item.quantity_prepared - (item.quantity_delivered || 0)) >= (item.quantity_requested - (item.quantity_delivered || 0)) ? 'text-green-600' : 'text-foreground'}>
                           Preparadas: {(item.quantity_prepared || 0) - (item.quantity_delivered || 0)}/{item.quantity_requested - (item.quantity_delivered || 0)}
                         </span>
                         {(item.quantity_delivered || 0) > 0 && (
@@ -531,7 +531,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                       <div className="flex items-center gap-2">
                         {item.assigned_inventory ? (
                           <span className="text-green-600 font-medium">
@@ -577,27 +577,27 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
       )}
 
       {/* Log de Actividades */}
-      <div className="bg-white rounded-lg shadow">
-        <div className="px-6 py-4 border-b border-slate-200">
-          <h3 className="text-lg font-semibold text-slate-900">
+      <div className="bg-card rounded-lg shadow">
+        <div className="px-6 py-4 border-b border-border">
+          <h3 className="text-lg font-semibold text-foreground">
             Historial de Actividades
           </h3>
         </div>
         <div className="p-6">
           {loadingLog ? (
-            <div className="text-center py-8 text-slate-400">
+            <div className="text-center py-8 text-muted-foreground">
               Cargando historial...
             </div>
           ) : activityLog.length === 0 ? (
-            <div className="text-center py-8 text-slate-400">
+            <div className="text-center py-8 text-muted-foreground">
               No hay actividades registradas
             </div>
           ) : (
             <div className="space-y-3">
               {activityLog.map((activity) => {
                 // Determinar colores según el tipo de actividad
-                let bgColor = 'bg-slate-50'
-                let borderColor = 'border-slate-200'
+                let bgColor = 'bg-muted'
+                let borderColor = 'border-border'
                 let iconBgColor = 'bg-blue-100'
                 let iconColor = 'text-blue-600'
                 let icon = <Clock className="w-5 h-5" />
@@ -643,11 +643,11 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                       {icon}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-900">
+                      <p className="text-sm font-medium text-foreground">
                         {activity.description}
                       </p>
                       {activity.metadata && (
-                        <div className="mt-2 text-xs text-slate-600 bg-white/50 rounded p-2 border border-slate-200">
+                        <div className="mt-2 text-xs text-muted-foreground bg-card/50 rounded p-2 border border-border">
                           <p><strong>Acción:</strong> {activity.metadata.action}</p>
                           {activity.metadata.product_code && (
                             <p><strong>Chapa:</strong> {activity.metadata.product_code}</p>
@@ -660,7 +660,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                           )}
                         </div>
                       )}
-                      <p className="text-xs text-slate-500 mt-1">
+                      <p className="text-xs text-muted-foreground mt-1">
                         {new Date(activity.created_at).toLocaleString('es-ES', {
                           day: '2-digit',
                           month: '2-digit',
@@ -792,13 +792,13 @@ function ChangeStockModal({ cutOrder, preparationItem, onClose, onSuccess }: any
 
     // Validar cantidad
     if (!quantityForNewMaterial || quantityForNewMaterial < 1) {
-      alert('Por favor ingresa una cantidad válida de unidades')
+      toast.error('Por favor ingresa una cantidad válida de unidades')
       return
     }
 
     const quantityRequested = isCutOrder ? cutOrder.quantity_requested : preparationItem.quantity_requested
     if (quantityForNewMaterial > quantityRequested) {
-      alert(`La cantidad no puede exceder lo solicitado (${quantityRequested})`)
+      toast.error(`La cantidad no puede exceder lo solicitado (${quantityRequested})`)
       return
     }
 
@@ -806,7 +806,7 @@ function ChangeStockModal({ cutOrder, preparationItem, onClose, onSuccess }: any
       setLoading(true)
       const product = Array.isArray(selectedStock.product) ? selectedStock.product[0] : selectedStock.product
       if (!product) {
-        alert('Error: producto no encontrado')
+        toast.error('Error: producto no encontrado')
         return
       }
 
@@ -823,10 +823,10 @@ function ChangeStockModal({ cutOrder, preparationItem, onClose, onSuccess }: any
         )
 
         if (result.success) {
-          alert(result.message)
+          toast.success(result.message)
           onSuccess()
         } else {
-          alert('Error reasignando stock')
+          toast.error('Error reasignando stock')
         }
       } else {
         // Asignar stock a preparation_item
@@ -838,12 +838,12 @@ function ChangeStockModal({ cutOrder, preparationItem, onClose, onSuccess }: any
           quantityForNewMaterial
         )
 
-        alert('Stock asignado correctamente')
+        toast.success('Stock asignado correctamente')
         onSuccess()
       }
     } catch (error: any) {
       console.error('Error asignando stock:', error)
-      alert(`Error asignando stock: ${error.message}`)
+      toast.error(`Error asignando stock: ${error.message}`)
     } finally {
       setLoading(false)
     }
@@ -851,18 +851,18 @@ function ChangeStockModal({ cutOrder, preparationItem, onClose, onSuccess }: any
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+      <div className="bg-card rounded-2xl shadow-2xl border border-border max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
         {/* Header */}
-        <div className="p-6 border-b border-slate-200">
-          <h3 className="text-base font-semibold text-slate-900 mb-2">Seleccionar Stock</h3>
-          <p className="text-sm text-slate-600">
+        <div className="p-6 border-b border-border">
+          <h3 className="text-base font-semibold text-foreground mb-2">Seleccionar Stock</h3>
+          <p className="text-sm text-muted-foreground">
             {isCutOrder ? (
               <>Orden: <strong>{cutOrder.cut_number}</strong> - {cutOrder.product?.name}</>
             ) : (
               <>Artículo: <strong>{preparationItem.product?.name}</strong></>
             )}
           </p>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-xs text-muted-foreground mt-1">
             Mostrando stock disponible de {item.product?.code}
           </p>
         </div>
@@ -871,15 +871,15 @@ function ChangeStockModal({ cutOrder, preparationItem, onClose, onSuccess }: any
         <div className="flex-1 overflow-y-auto p-6">
           {loading ? (
             <div className="text-center py-12">
-              <p className="text-slate-500">Cargando stock disponible...</p>
+              <p className="text-muted-foreground">Cargando stock disponible...</p>
             </div>
           ) : availableStock.length === 0 ? (
             <div className="text-center py-12">
               <div className="mb-4">
                 <CheckCircle2 className="w-16 h-16 text-green-500 mx-auto mb-3" />
               </div>
-              <p className="text-slate-700 font-medium mb-2">Chapa actual es la única opción disponible</p>
-              <p className="text-sm text-slate-500">
+              <p className="text-foreground font-medium mb-2">Chapa actual es la única opción disponible</p>
+              <p className="text-sm text-muted-foreground">
                 No hay otras chapas de tamaño suficiente en stock para cambiar
               </p>
             </div>
@@ -900,13 +900,13 @@ function ChangeStockModal({ cutOrder, preparationItem, onClose, onSuccess }: any
                         ? 'border-blue-500 bg-blue-50'
                         : isCurrentlyAssigned
                         ? 'border-green-500 bg-green-50'
-                        : 'border-slate-200 hover:border-blue-300 hover:bg-slate-50'
+                        : 'border-border hover:border-blue-300 hover:bg-muted'
                     }`}
                   >
                     <div className="flex items-start justify-between mb-2">
                       <div>
-                        <h4 className="font-bold text-slate-900">{product?.name}</h4>
-                        <p className="text-sm text-slate-600">{product?.code}</p>
+                        <h4 className="font-bold text-foreground">{product?.name}</h4>
+                        <p className="text-sm text-muted-foreground">{product?.code}</p>
                       </div>
                       {(() => {
                         const size = extractSizeFromCode(product?.code || '')
@@ -920,16 +920,16 @@ function ChangeStockModal({ cutOrder, preparationItem, onClose, onSuccess }: any
                     
                     <div className="grid grid-cols-3 gap-2 mt-3 text-xs">
                       <div>
-                        <p className="text-slate-500">Disponible</p>
+                        <p className="text-muted-foreground">Disponible</p>
                         <p className="font-bold text-green-600">{item.stock_disponible}</p>
                       </div>
                       <div>
-                        <p className="text-slate-500">Reservado</p>
+                        <p className="text-muted-foreground">Reservado</p>
                         <p className="font-bold text-yellow-600">{item.stock_reservado}</p>
                       </div>
                       <div>
-                        <p className="text-slate-500">Total</p>
-                        <p className="font-bold text-slate-700">{item.stock_total}</p>
+                        <p className="text-muted-foreground">Total</p>
+                        <p className="font-bold text-foreground">{item.stock_total}</p>
                       </div>
                     </div>
                     
@@ -952,11 +952,11 @@ function ChangeStockModal({ cutOrder, preparationItem, onClose, onSuccess }: any
         </div>
 
         {/* Footer */}
-        <div className="p-6 border-t bg-slate-50">
+        <div className="p-6 border-t bg-muted">
           {/* Input de cantidad de unidades */}
           {selectedStock && (
-            <div className="mb-4 p-4 bg-white border border-slate-200 rounded-lg">
-              <label className="block text-sm font-medium text-slate-700 mb-2">
+            <div className="mb-4 p-4 bg-card border border-border rounded-lg">
+              <label className="block text-sm font-medium text-foreground mb-2">
                 {isCutOrder ? '¿Cuántas unidades vas a cortar con este material?' : '¿Cuántas unidades asignar?'}
               </label>
               <input
@@ -968,7 +968,7 @@ function ChangeStockModal({ cutOrder, preparationItem, onClose, onSuccess }: any
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 placeholder="1"
               />
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 {isCutOrder 
                   ? 'Se creará una nueva orden de corte con esta cantidad. La orden original se reducirá.'
                   : `Máximo: ${item.quantity_requested} unidades solicitadas`
@@ -980,7 +980,7 @@ function ChangeStockModal({ cutOrder, preparationItem, onClose, onSuccess }: any
           <div className="flex gap-3">
             <button
               onClick={onClose}
-              className="flex-1 px-4 py-2 border border-slate-300 rounded-lg hover:bg-white transition-colors"
+              className="flex-1 px-4 py-2 border border-slate-300 rounded-lg hover:bg-card transition-colors"
             >
               Cancelar
             </button>

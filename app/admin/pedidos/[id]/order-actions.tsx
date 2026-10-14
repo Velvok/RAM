@@ -201,8 +201,8 @@ export default function OrderActions({
       <ConfirmDialog />
       <ErrorDialog />
       <SuccessDialog />
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold text-slate-900 mb-4">
+      <div className="bg-card rounded-lg shadow p-6">
+        <h3 className="text-lg font-semibold text-foreground mb-4">
           Acciones
         </h3>
       
@@ -261,20 +261,20 @@ export default function OrderActions({
         </div>
 
         {/* Información de Estado */}
-        <div className="mt-6 pt-6 border-t border-slate-200">
-          <h4 className="text-sm font-semibold text-slate-700 mb-2">
+        <div className="mt-6 pt-6 border-t border-border">
+          <h4 className="text-sm font-semibold text-foreground mb-2">
             Estado del Pedido
           </h4>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-slate-600">Órdenes de Corte:</span>
-              <span className="text-slate-900 font-semibold">
+              <span className="text-muted-foreground">Órdenes de Corte:</span>
+              <span className="text-foreground font-semibold">
                 {order.cut_orders?.length || 0}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-600">Estado:</span>
-              <span className="text-slate-900 font-semibold capitalize">
+              <span className="text-muted-foreground">Estado:</span>
+              <span className="text-foreground font-semibold capitalize">
                 {order.status}
               </span>
             </div>

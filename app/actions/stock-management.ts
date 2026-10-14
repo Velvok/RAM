@@ -998,7 +998,7 @@ export async function getCompletedOrdersForReassignment(productSize: number) {
     .from('cut_orders')
     .select(`
       *,
-      order:orders(id, order_number, customer_name),
+      order:orders!cut_orders_order_id_fkey(id, order_number, customer_name),
       product:products!cut_orders_product_id_fkey(id, code, name),
       assigned_inventory:inventory!cut_orders_material_base_id_fkey(
         id,

@@ -2,25 +2,28 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { createAdminClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import bcrypt from 'bcryptjs'
 
 export async function loginWithEmail(formData: FormData) {
-  const supabase = createAdminClient()
+  // El login debe pasar por el cliente SSR (sincroniza cookies de sesión);
+  // el cliente de service role no persiste sesión en el navegador.
+  const supabase = await createClient()
 
   const data = {
     email: formData.get('email') as string,
     password: formData.get('password') as string,
   }
 
-  const { data: authData, error } = await supabase.auth.signInWithPassword(data)
+  const { error } = await supabase.auth.signInWithPassword(data)
 
   if (error) {
     return { error: error.message }
   }
 
-  // Verificar si es primer login
-  const { data: user } = await supabase
+  // Verificar si es primer login (bypass de RLS con service role)
+  const adminClient = createAdminClient()
+  const { data: user } = await adminClient
     .from('users')
     .select('first_login')
     .eq('email', data.email)
@@ -81,7 +84,7 @@ export async function loginWithPin(pin: string) {
 }
 
 export async function logout() {
-  const supabase = createAdminClient()
+  const supabase = await createClient()
   await supabase.auth.signOut()
   redirect('/')
 }
@@ -129,7 +132,9 @@ export async function createOperatorWithPin(fullName: string, pin: string) {
 }
 
 export async function changePassword(email: string, newPassword: string) {
-  const supabase = createAdminClient()
+  // updateUser() opera sobre la sesión activa: necesita el cliente SSR,
+  // no el de service role (que no tiene ninguna sesión asociada).
+  const supabase = await createClient()
 
   const { error } = await supabase.auth.updateUser({
     password: newPassword
@@ -139,8 +144,9 @@ export async function changePassword(email: string, newPassword: string) {
     return { error: error.message }
   }
 
-  // Marcar first_login como false
-  await supabase
+  // Marcar first_login como false (bypass de RLS con service role)
+  const adminClient = createAdminClient()
+  await adminClient
     .from('users')
     .update({ first_login: false })
     .eq('email', email)

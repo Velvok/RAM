@@ -21,7 +21,7 @@ export async function reassignCutOrder(
   // 1. Obtener información del corte origen (debe estar completado)
   const { data: fromCutOrder, error: fromError } = await supabase
     .from('cut_orders')
-    .select('*, order:orders(*), product:products(*)')
+    .select('*, order:orders!cut_orders_order_id_fkey(*), product:products!cut_orders_product_id_fkey(*)')
     .eq('id', fromCutOrderId)
     .single()
 
@@ -33,7 +33,7 @@ export async function reassignCutOrder(
   // 2. Obtener información del corte destino (debe estar pendiente)
   const { data: toCutOrder, error: toError } = await supabase
     .from('cut_orders')
-    .select('*, order:orders(*), product:products(*)')
+    .select('*, order:orders!cut_orders_order_id_fkey(*), product:products!cut_orders_product_id_fkey(*)')
     .eq('id', toCutOrderId)
     .single()
 

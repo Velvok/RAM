@@ -13,7 +13,7 @@ export async function getRemnants(status?: string) {
       product:products(*),
       cut_order:cut_orders(
         *,
-        order:orders(*, client:clients(*))
+        order:orders!cut_orders_order_id_fkey(*, client:clients(*))
       )
     `)
     .order('created_at', { ascending: false })
@@ -42,7 +42,7 @@ export async function getRemnantById(id: string) {
       product:products(*),
       cut_order:cut_orders(
         *,
-        order:orders(*, client:clients(*)),
+        order:orders!cut_orders_order_id_fkey(*, client:clients(*)),
         product:products!cut_orders_product_id_fkey(*)
       )
     `)

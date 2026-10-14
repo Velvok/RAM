@@ -1,6 +1,7 @@
 import { getOrders } from '@/app/actions/orders'
 import OrdersGridWithFilters from '@/components/orders-grid-with-filters'
 import GenerateTestOrderButton from './generate-test-order-button'
+import { PageHeader } from '@/components/page-header'
 
 // Deshabilitar caché COMPLETAMENTE
 export const dynamic = 'force-dynamic'
@@ -29,13 +30,11 @@ export default async function PedidosPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">Pedidos</h2>
-          <p className="text-slate-600">Gestión de pedidos ordenados por fecha de entrada</p>
-        </div>
-        <GenerateTestOrderButton />
-      </div>
+      <PageHeader
+        title="Pedidos"
+        subtitle="Gestión de pedidos ordenados por fecha de entrada"
+        actions={<GenerateTestOrderButton />}
+      />
 
       <OrdersGridWithFilters orders={orders} />
     </div>

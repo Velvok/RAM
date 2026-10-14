@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { MessageSquare, Send, CheckCheck, Clock, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { createOrderNote, getOrderNotes, deleteOrderNote, OrderNote } from '@/app/actions/order-notes'
+import { useConfirm } from '@/components/confirm-modal'
 
 interface OrderNotesAdminProps {
   orderId: string
@@ -29,6 +30,7 @@ export default function OrderNotesAdmin({ orderId }: OrderNotesAdminProps) {
   const [sending, setSending] = useState(false)
   const [loading, setLoading] = useState(true)
   const [collapsed, setCollapsed] = useState(false)
+  const { confirm, ConfirmDialog } = useConfirm()
 
   async function loadNotes() {
     try {
@@ -72,7 +74,8 @@ export default function OrderNotesAdmin({ orderId }: OrderNotesAdminProps) {
   }
 
   async function handleDelete(noteId: string) {
-    if (!confirm('¿Eliminar esta nota?')) return
+    const confirmed = await confirm('Eliminar nota', '¿Eliminar esta nota? Esta acción no se puede deshacer.', { variant: 'danger', confirmText: 'Eliminar' })
+    if (!confirmed) return
     try {
       await deleteOrderNote(noteId, orderId)
       setNotes(prev => prev.filter(n => n.id !== noteId))
@@ -84,16 +87,16 @@ export default function OrderNotesAdmin({ orderId }: OrderNotesAdminProps) {
   const unreadCount = notes.filter(n => !n.read_at).length
 
   return (
-    <div className="bg-white rounded-lg shadow p-6">
+    <div className="bg-card rounded-lg shadow p-6">
       <div className="flex items-center gap-2 mb-4 cursor-pointer" onClick={() => setCollapsed(v => !v)}>
-        <MessageSquare className="w-5 h-5 text-slate-600" />
-        <h3 className="text-lg font-semibold text-slate-900">Notas para Operario</h3>
+        <MessageSquare className="w-5 h-5 text-muted-foreground" />
+        <h3 className="text-lg font-semibold text-foreground">Notas para Operario</h3>
         {unreadCount > 0 && (
           <span className="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-0.5 rounded-full">
             {unreadCount} sin leer
           </span>
         )}
-        <span className="ml-auto text-slate-400">
+        <span className="ml-auto text-muted-foreground">
           {collapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
         </span>
       </div>
@@ -111,7 +114,7 @@ export default function OrderNotesAdmin({ orderId }: OrderNotesAdminProps) {
           }}
           placeholder="Escribe una nota para el operario..."
           rows={2}
-          className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+          className="flex-1 text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
         />
         <button
           onClick={handleSend}
@@ -125,9 +128,9 @@ export default function OrderNotesAdmin({ orderId }: OrderNotesAdminProps) {
       {/* Lista de notas - colapsable */}
       {!collapsed && (
         loading ? (
-          <p className="text-sm text-slate-400 text-center py-4">Cargando...</p>
+          <p className="text-sm text-muted-foreground text-center py-4">Cargando...</p>
         ) : notes.length === 0 ? (
-          <p className="text-sm text-slate-400 text-center py-4">No hay notas para este pedido</p>
+          <p className="text-sm text-muted-foreground text-center py-4">No hay notas para este pedido</p>
         ) : (
           <div className="space-y-3 max-h-64 overflow-y-auto">
             {notes.map(note => (
@@ -135,21 +138,21 @@ export default function OrderNotesAdmin({ orderId }: OrderNotesAdminProps) {
                 key={note.id}
                 className={`rounded-lg p-3 border ${
                   note.read_at
-                    ? 'bg-slate-50 border-slate-200'
+                    ? 'bg-muted border-border'
                     : 'bg-blue-50 border-blue-200'
                 }`}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm text-slate-800 flex-1">{note.content}</p>
+                  <p className="text-sm text-foreground flex-1">{note.content}</p>
                   <button
                     onClick={() => handleDelete(note.id)}
-                    className="text-slate-400 hover:text-red-500 transition-colors flex-shrink-0"
+                    className="text-muted-foreground hover:text-red-500 transition-colors flex-shrink-0"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
                 <div className="flex items-center justify-between mt-2">
-                  <span className="text-xs text-slate-400">
+                  <span className="text-xs text-muted-foreground">
                     {note.created_by_name} · {formatTimeAgo(note.created_at)}
                   </span>
                   {note.read_at ? (
@@ -169,6 +172,7 @@ export default function OrderNotesAdmin({ orderId }: OrderNotesAdminProps) {
           </div>
         )
       )}
+      <ConfirmDialog />
     </div>
   )
 }

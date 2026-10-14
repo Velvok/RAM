@@ -4,7 +4,13 @@ import { useState, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { StockFilters } from './stock-filters'
 import { QuickAdjustModal } from './quick-adjust-modal'
-import { ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Package } from 'lucide-react'
+import { Card } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { EmptyState } from '@/components/ui/empty-state'
+import { getOrderStatusConfig } from '@/lib/order-status'
+import { cn } from '@/lib/utils'
 
 interface StockTableClientProps {
   inventory: any[]
@@ -76,12 +82,6 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
 
   // Filtrar inventario basado en los filtros activos
   const filteredInventory = useMemo(() => {
-    // Debug: verificar estructura de datos
-    if (filters.search && inventory.length > 0) {
-      console.log('🔍 Búsqueda activa:', filters.search)
-      console.log('📦 Ejemplo de item con related_orders:', inventory.find(i => i.related_orders?.length > 0))
-    }
-    
     return inventory.filter(item => {
       // Filtro por búsqueda (código, nombre o cliente)
       const searchLower = filters.search.toLowerCase()
@@ -90,18 +90,10 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
         item.product?.name?.toLowerCase().includes(searchLower) ||
         // Buscar en clientes de pedidos relacionados
         item.related_orders?.some((orderLine: any) => {
-          const matchesClient = 
+          return (
             orderLine.order?.client?.name?.toLowerCase().includes(searchLower) ||
             orderLine.order?.client?.business_name?.toLowerCase().includes(searchLower)
-          
-          if (matchesClient) {
-            console.log('✅ Match encontrado:', {
-              producto: item.product?.name,
-              cliente: orderLine.order?.client?.business_name || orderLine.order?.client?.name
-            })
-          }
-          
-          return matchesClient
+          )
         })
 
       // Filtro por categorías (múltiple selección)
@@ -175,12 +167,12 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
         initialFilters={filters}
       />
 
-      <div className="bg-white rounded-lg shadow overflow-x-auto">
-        <table className="w-full divide-y divide-slate-200">
-          <thead className="bg-slate-50">
-            <tr>
-              <th 
-                className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors"
+      <Card className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead
+                className="cursor-pointer hover:bg-accent transition-colors"
                 onClick={() => handleSort('code')}
               >
                 <div className="flex items-center gap-2">
@@ -191,9 +183,9 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
                     <ArrowUpDown className="w-4 h-4 opacity-30" />
                   )}
                 </div>
-              </th>
-              <th 
-                className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors"
+              </TableHead>
+              <TableHead
+                className="cursor-pointer hover:bg-accent transition-colors"
                 onClick={() => handleSort('name')}
               >
                 <div className="flex items-center gap-2">
@@ -204,9 +196,9 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
                     <ArrowUpDown className="w-4 h-4 opacity-30" />
                   )}
                 </div>
-              </th>
-              <th 
-                className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors"
+              </TableHead>
+              <TableHead
+                className="cursor-pointer hover:bg-accent transition-colors"
                 onClick={() => handleSort('stock_total')}
               >
                 <div className="flex items-center gap-2">
@@ -217,9 +209,9 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
                     <ArrowUpDown className="w-4 h-4 opacity-30" />
                   )}
                 </div>
-              </th>
-              <th 
-                className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors"
+              </TableHead>
+              <TableHead
+                className="cursor-pointer hover:bg-accent transition-colors"
                 onClick={() => handleSort('stock_reservado')}
               >
                 <div className="flex items-center gap-2">
@@ -230,9 +222,9 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
                     <ArrowUpDown className="w-4 h-4 opacity-30" />
                   )}
                 </div>
-              </th>
-              <th 
-                className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors"
+              </TableHead>
+              <TableHead
+                className="cursor-pointer hover:bg-accent transition-colors"
                 onClick={() => handleSort('stock_generado')}
               >
                 <div className="flex items-center gap-2">
@@ -243,9 +235,9 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
                     <ArrowUpDown className="w-4 h-4 opacity-30" />
                   )}
                 </div>
-              </th>
-              <th 
-                className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors"
+              </TableHead>
+              <TableHead
+                className="cursor-pointer hover:bg-accent transition-colors"
                 onClick={() => handleSort('stock_disponible')}
               >
                 <div className="flex items-center gap-2">
@@ -256,129 +248,114 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
                     <ArrowUpDown className="w-4 h-4 opacity-30" />
                   )}
                 </div>
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                Estado
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-32">
-                Acciones
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-slate-200">
+              </TableHead>
+              <TableHead>Estado</TableHead>
+              <TableHead className="w-32">Acciones</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {paginatedInventory.length === 0 ? (
-              <tr>
-                <td colSpan={8} className="px-6 py-8 text-center text-sm text-slate-500">
-                  No se encontraron productos que coincidan con los filtros
-                </td>
-              </tr>
+              <TableRow>
+                <TableCell colSpan={8}>
+                  <EmptyState icon={Package} title="No se encontraron productos" description="Prueba a cambiar los filtros." />
+                </TableCell>
+              </TableRow>
             ) : (
               paginatedInventory.map((item: any) => {
                 const hasRelatedOrders = item.related_orders && item.related_orders.length > 0
                 return (
-                  <tr 
-                    key={item.id} 
-                    className={`hover:bg-slate-50 relative ${hasRelatedOrders ? 'cursor-help' : ''}`}
+                  <TableRow
+                    key={item.id}
+                    className={cn('relative', hasRelatedOrders && 'cursor-help')}
                     onMouseEnter={() => hasRelatedOrders && setHoveredRow(item.id)}
                     onMouseLeave={() => setHoveredRow(null)}
                   >
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">
+                    <TableCell className="font-medium text-foreground">
                       {item.product?.code}
                       {hasRelatedOrders && (
-                        <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          {item.related_orders.length}
-                        </span>
+                        <Badge variant="info" className="ml-2">{item.related_orders.length}</Badge>
                       )}
-                    </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                    {item.product?.name}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-mono tabular-nums text-slate-900">
-                    {item.stock_total?.toFixed(0)} unidades
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-mono tabular-nums text-yellow-600">
-                    {item.stock_reservado?.toFixed(0)} unidades
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-mono tabular-nums text-blue-600">
-                    {item.stock_generado?.toFixed(0) || 0} unidades
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-mono tabular-nums font-semibold text-slate-900">
-                    {item.stock_disponible?.toFixed(0)} unidades
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {item.stock_disponible <= 0 ? (
-                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
-                        Sin stock
-                      </span>
-                    ) : item.stock_disponible < 100 ? (
-                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                        Stock bajo
-                      </span>
-                    ) : (
-                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                        Disponible
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 w-32">
-                    {item.product && item.stock_total !== null && item.stock_total !== undefined ? (
-                      <QuickAdjustModal inventoryItem={item} />
-                    ) : (
-                      <span className="text-slate-400">—</span>
-                    )}
-                  </td>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {item.product?.name}
+                    </TableCell>
+                    <TableCell className="font-mono tabular-nums text-foreground">
+                      {item.stock_total?.toFixed(0)} unidades
+                    </TableCell>
+                    <TableCell className="font-mono tabular-nums text-warning">
+                      {item.stock_reservado?.toFixed(0)} unidades
+                    </TableCell>
+                    <TableCell className="font-mono tabular-nums text-info">
+                      {item.stock_generado?.toFixed(0) || 0} unidades
+                    </TableCell>
+                    <TableCell className="font-mono tabular-nums font-semibold text-foreground">
+                      {item.stock_disponible?.toFixed(0)} unidades
+                    </TableCell>
+                    <TableCell>
+                      {item.stock_disponible <= 0 ? (
+                        <Badge variant="destructive">Sin stock</Badge>
+                      ) : item.stock_disponible < 100 ? (
+                        <Badge variant="warning">Stock bajo</Badge>
+                      ) : (
+                        <Badge variant="success">Disponible</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="w-32 text-muted-foreground">
+                      {item.product && item.stock_total !== null && item.stock_total !== undefined ? (
+                        <QuickAdjustModal inventoryItem={item} />
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
 
-                  {/* Tooltip con información de pedidos */}
-                  {hoveredRow === item.id && hasRelatedOrders && (
-                    <td className="absolute left-0 top-full mt-1 z-50 w-full pointer-events-none">
-                      <div className="bg-white border border-slate-200 rounded-lg shadow-lg p-4 ml-6 mr-6">
-                        <p className="text-sm font-semibold text-slate-900 mb-2">
-                          Mercadería comprometida en {item.related_orders.length} pedido{item.related_orders.length > 1 ? 's' : ''}:
-                        </p>
-                        <div className="space-y-2 max-h-48 overflow-y-auto">
-                          {item.related_orders.map((orderLine: any, idx: number) => (
-                            <div key={idx} className="text-xs border-l-2 border-blue-400 pl-3 py-1">
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="font-medium text-slate-900">
-                                  Pedido #{orderLine.order?.order_number}
-                                </span>
-                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                                  orderLine.order?.status === 'aprobado' ? 'bg-green-100 text-green-800' :
-                                  orderLine.order?.status === 'en_corte' ? 'bg-blue-100 text-blue-800' :
-                                  'bg-yellow-100 text-yellow-800'
-                                }`}>
-                                  {orderLine.order?.status?.replace('_', ' ')}
-                                </span>
-                              </div>
-                              <div className="text-slate-600">
-                                <p>Cliente: <span className="font-medium">{orderLine.order?.client?.business_name || orderLine.order?.client?.name}</span></p>
-                                <p>Cantidad: <span className="font-medium">{orderLine.quantity} unidades</span></p>
-                                <p>Fecha: <span className="font-medium">{new Date(orderLine.order?.created_at).toLocaleDateString('es-AR')}</span></p>
-                              </div>
-                            </div>
-                          ))}
+                    {/* Tooltip con información de pedidos */}
+                    {hoveredRow === item.id && hasRelatedOrders && (
+                      <TableCell className="absolute left-0 top-full z-50 w-full pointer-events-none">
+                        <div className="bg-popover border border-border rounded-lg shadow-lg p-4 ml-6 mr-6">
+                          <p className="text-sm font-semibold text-foreground mb-2">
+                            Mercadería comprometida en {item.related_orders.length} pedido{item.related_orders.length > 1 ? 's' : ''}:
+                          </p>
+                          <div className="space-y-2 max-h-48 overflow-y-auto">
+                            {item.related_orders.map((orderLine: any, idx: number) => {
+                              const statusConfig = getOrderStatusConfig(orderLine.order?.status)
+                              return (
+                                <div key={idx} className="text-xs border-l-2 border-info pl-3 py-1">
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className="font-medium text-foreground">
+                                      Pedido #{orderLine.order?.order_number}
+                                    </span>
+                                    <Badge variant={statusConfig.badgeVariant}>{statusConfig.label}</Badge>
+                                  </div>
+                                  <div className="text-muted-foreground">
+                                    <p>Cliente: <span className="font-medium">{orderLine.order?.client?.business_name || orderLine.order?.client?.name}</span></p>
+                                    <p>Cantidad: <span className="font-medium">{orderLine.quantity} unidades</span></p>
+                                    <p>Fecha: <span className="font-medium">{new Date(orderLine.order?.created_at).toLocaleDateString('es-AR')}</span></p>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                  )}
-                </tr>
-              )
-            })
+                      </TableCell>
+                    )}
+                  </TableRow>
+                )
+              })
             )}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </Card>
 
       {/* Controles de paginación */}
       <div className="mt-4 flex items-center justify-between">
         <div className="flex items-center gap-4">
           {/* Selector de filas por página */}
           <div className="flex items-center gap-2">
-            <span className="text-sm text-slate-600">Mostrar:</span>
+            <span className="text-sm text-muted-foreground">Mostrar:</span>
             <select
               value={rowsPerPage}
               onChange={(e) => handleRowsPerPageChange(Number(e.target.value))}
-              className="border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="border border-border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value={25}>25</option>
               <option value={50}>50</option>
@@ -387,11 +364,11 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
               <option value={500}>500</option>
               <option value={sortedInventory.length}>Todos ({sortedInventory.length})</option>
             </select>
-            <span className="text-sm text-slate-600">filas</span>
+            <span className="text-sm text-muted-foreground">filas</span>
           </div>
 
           {/* Contador de resultados */}
-          <div className="text-sm text-slate-600">
+          <div className="text-sm text-muted-foreground">
             Mostrando {currentPage * rowsPerPage + 1} - {Math.min((currentPage + 1) * rowsPerPage, sortedInventory.length)} de {sortedInventory.length} productos
           </div>
         </div>
@@ -402,9 +379,9 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
             <button
               onClick={() => setCurrentPage(Math.max(0, currentPage - 1))}
               disabled={currentPage === 0}
-              className="p-2 rounded hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="p-2 rounded hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <ChevronLeft className="w-5 h-5 text-slate-600" />
+              <ChevronLeft className="w-5 h-5 text-muted-foreground" />
             </button>
             
             <div className="flex items-center gap-1">
@@ -419,17 +396,18 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
                     <button
                       key={page}
                       onClick={() => setCurrentPage(page)}
-                      className={`px-3 py-1 rounded text-sm ${
+                      className={cn(
+                        'px-3 py-1 rounded text-sm',
                         page === currentPage
-                          ? 'bg-blue-600 text-white'
-                          : 'hover:bg-slate-100 text-slate-600'
-                      }`}
+                          ? 'bg-primary text-primary-foreground'
+                          : 'hover:bg-muted text-muted-foreground'
+                      )}
                     >
                       {page + 1}
                     </button>
                   )
                 } else if (page === currentPage - 2 || page === currentPage + 2) {
-                  return <span key={page} className="text-slate-400">...</span>
+                  return <span key={page} className="text-muted-foreground">...</span>
                 }
                 return null
               })}
@@ -438,9 +416,9 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
             <button
               onClick={() => setCurrentPage(Math.min(totalPages - 1, currentPage + 1))}
               disabled={currentPage === totalPages - 1}
-              className="p-2 rounded hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="p-2 rounded hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <ChevronRight className="w-5 h-5 text-slate-600" />
+              <ChevronRight className="w-5 h-5 text-muted-foreground" />
             </button>
           </div>
         )}

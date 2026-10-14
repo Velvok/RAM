@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { X, Package, CheckCircle2 } from 'lucide-react'
@@ -98,7 +99,7 @@ export default function PartialDeliveryModal({
     }
 
     if (itemsToDeliver.length === 0) {
-      alert('Debes seleccionar al menos un item para retirar')
+      toast.error('Debes seleccionar al menos un item para retirar')
       return
     }
 
@@ -126,16 +127,16 @@ export default function PartialDeliveryModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-4xl w-full max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200">
+      <div className="bg-card rounded-2xl shadow-2xl border border-border max-w-4xl w-full max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200">
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold flex items-center gap-2 text-slate-900">
+        <div className="sticky top-0 bg-card border-b border-border px-6 py-4 flex items-center justify-between">
+          <h2 className="text-base font-semibold flex items-center gap-2 text-foreground">
             <Package size={18} strokeWidth={1.75} />
             Retirada Parcial de Pedido
           </h2>
           <button
             onClick={onClose}
-            className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+            className="p-1 text-muted-foreground hover:text-muted-foreground hover:bg-muted rounded-lg transition-colors"
           >
             <X size={18} strokeWidth={1.75} />
           </button>
@@ -144,7 +145,7 @@ export default function PartialDeliveryModal({
         <div className="p-6">
 
         {!hasAvailableItems ? (
-          <div className="py-8 text-center text-slate-500">
+          <div className="py-8 text-center text-muted-foreground">
             <p>No hay items disponibles para retirar</p>
             <p className="text-sm mt-2">Todos los items ya han sido completamente retirados</p>
           </div>
@@ -162,11 +163,11 @@ export default function PartialDeliveryModal({
                     const available = quantityCut - delivered
                     
                     return (
-                      <div key={cutOrder.id} className="border rounded-lg p-4 bg-slate-50">
+                      <div key={cutOrder.id} className="border rounded-lg p-4 bg-muted">
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex-1">
                             <div className="font-medium">{product?.name || product?.code}</div>
-                            <div className="text-sm text-slate-600 mt-1">
+                            <div className="text-sm text-muted-foreground mt-1">
                               Completadas: {quantityCut} | Ya retiradas: {delivered} | Disponibles: {available}
                             </div>
                           </div>
@@ -181,7 +182,7 @@ export default function PartialDeliveryModal({
                               onChange={(e) => updateQuantity(cutOrder.id, parseInt(e.target.value) || 0, available)}
                               className="w-24"
                             />
-                            <span className="text-sm text-slate-500">/ {available}</span>
+                            <span className="text-sm text-muted-foreground">/ {available}</span>
                           </div>
                         </div>
                       </div>
@@ -203,11 +204,11 @@ export default function PartialDeliveryModal({
                     const available = quantityPrepared - delivered
                     
                     return (
-                      <div key={prepItem.id} className="border rounded-lg p-4 bg-slate-50">
+                      <div key={prepItem.id} className="border rounded-lg p-4 bg-muted">
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex-1">
                             <div className="font-medium">{product?.name || product?.code}</div>
-                            <div className="text-sm text-slate-600 mt-1">
+                            <div className="text-sm text-muted-foreground mt-1">
                               Preparadas: {quantityPrepared} | Ya retiradas: {delivered} | Disponibles: {available}
                             </div>
                           </div>
@@ -222,7 +223,7 @@ export default function PartialDeliveryModal({
                               onChange={(e) => updateQuantity(prepItem.id, parseInt(e.target.value) || 0, available)}
                               className="w-24"
                             />
-                            <span className="text-sm text-slate-500">/ {available}</span>
+                            <span className="text-sm text-muted-foreground">/ {available}</span>
                           </div>
                         </div>
                       </div>

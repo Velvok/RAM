@@ -14,7 +14,7 @@ export default function ErrorAlertModal({ isOpen, onClose, title = 'Error', mess
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200">
+      <div className="bg-card rounded-2xl shadow-2xl border border-border max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-red-100 bg-red-50">
           <div className="flex items-center gap-3">
@@ -33,11 +33,11 @@ export default function ErrorAlertModal({ isOpen, onClose, title = 'Error', mess
 
         {/* Content */}
         <div className="px-6 py-5">
-          <p className="text-sm text-slate-600 whitespace-pre-line">{message}</p>
+          <p className="text-sm text-muted-foreground whitespace-pre-line">{message}</p>
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-slate-100">
+        <div className="px-6 py-4 border-t border-border">
           <button
             onClick={onClose}
             className="w-full px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white text-sm rounded-lg font-medium transition-colors"

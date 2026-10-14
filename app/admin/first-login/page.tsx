@@ -46,14 +46,14 @@ export default function FirstLoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-100">
-      <div className="bg-white rounded-lg shadow-lg p-8 w-full max-w-md">
-        <h1 className="text-2xl font-bold text-slate-900 mb-2">Primer Login</h1>
-        <p className="text-slate-600 mb-6">Por favor, cambia tu contraseña inicial para continuar.</p>
+    <div className="min-h-screen flex items-center justify-center bg-muted">
+      <div className="bg-card rounded-lg shadow-lg p-8 w-full max-w-md">
+        <h1 className="text-2xl font-bold text-foreground mb-2">Primer Login</h1>
+        <p className="text-muted-foreground mb-6">Por favor, cambia tu contraseña inicial para continuar.</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
+            <label className="block text-sm font-medium text-foreground mb-1">
               Nueva Contraseña
             </label>
             <input
@@ -68,7 +68,7 @@ export default function FirstLoginPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
+            <label className="block text-sm font-medium text-foreground mb-1">
               Confirmar Contraseña
             </label>
             <input

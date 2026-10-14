@@ -1,5 +1,6 @@
 import { getIntegrationLogs, getLogsStats, getEventTypes, markEventsAsViewed } from '@/app/actions/integration-logs'
 import { LogsClient } from '@/components/logs/logs-client'
+import { PageHeader } from '@/components/page-header'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -17,10 +18,7 @@ export default async function LogsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-900">Logs de Integración</h2>
-        <p className="text-slate-600">Registro de eventos entre Velvok y RAM</p>
-      </div>
+      <PageHeader title="Logs de Integración" subtitle="Registro de eventos entre Velvok y RAM" />
 
       <LogsClient
         initialLogs={logsResult.logs}

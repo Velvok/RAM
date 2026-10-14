@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { markAsScrap } from '@/app/actions/remnants'
-import { toast } from '@/components/ui/use-toast'
+import { toast } from 'sonner'
 import { Trash2 } from 'lucide-react'
 
 export function MarkAsScrapButton({ remnantId }: { remnantId: string }) {
@@ -18,18 +18,11 @@ export function MarkAsScrapButton({ remnantId }: { remnantId: string }) {
     try {
       await markAsScrap(remnantId, 'Marcado como scrap desde detalle')
 
-      toast({
-        title: 'Recorte marcado como scrap',
-        description: 'El recorte ha sido marcado como desperdicio',
-      })
+      toast.success('El recorte ha sido marcado como desperdicio', { description: 'Recorte marcado como scrap' })
 
       router.refresh()
     } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'No se pudo marcar el recorte como scrap',
-        variant: 'destructive',
-      })
+      toast.error('No se pudo marcar el recorte como scrap')
     } finally {
       setLoading(false)
       setShowConfirm(false)
@@ -39,7 +32,7 @@ export function MarkAsScrapButton({ remnantId }: { remnantId: string }) {
   if (showConfirm) {
     return (
       <div className="flex items-center space-x-2">
-        <span className="text-sm text-slate-600">¿Estás seguro?</span>
+        <span className="text-sm text-muted-foreground">¿Estás seguro?</span>
         <Button
           size="sm"
           variant="destructive"

@@ -147,7 +147,7 @@ export function LogsClient({ initialLogs, totalLogs, eventTypes, initialStats }:
       processing: <RefreshCw className="w-3 h-3 animate-spin" />,
     }
     return (
-      <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${styles[status] || 'bg-slate-100 text-slate-800'}`}>
+      <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${styles[status] || 'bg-muted text-foreground'}`}>
         {icons[status]}
         {status}
       </span>
@@ -158,38 +158,38 @@ export function LogsClient({ initialLogs, totalLogs, eventTypes, initialStats }:
     <>
       {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="text-sm font-medium text-slate-600">Entrada 24h</div>
+        <div className="bg-card rounded-lg shadow p-4">
+          <div className="text-sm font-medium text-muted-foreground">Entrada 24h</div>
           <div className="text-2xl font-bold text-blue-600 mt-1">{stats.inbound_24h}</div>
-          <div className="text-xs text-slate-500 mt-1">RAM → Velvok</div>
+          <div className="text-xs text-muted-foreground mt-1">RAM → Velvok</div>
         </div>
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="text-sm font-medium text-slate-600">Salida 24h</div>
+        <div className="bg-card rounded-lg shadow p-4">
+          <div className="text-sm font-medium text-muted-foreground">Salida 24h</div>
           <div className="text-2xl font-bold text-purple-600 mt-1">{stats.outbound_24h}</div>
-          <div className="text-xs text-slate-500 mt-1">Velvok → RAM</div>
+          <div className="text-xs text-muted-foreground mt-1">Velvok → RAM</div>
         </div>
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="text-sm font-medium text-slate-600">Exitosos 24h</div>
+        <div className="bg-card rounded-lg shadow p-4">
+          <div className="text-sm font-medium text-muted-foreground">Exitosos 24h</div>
           <div className="text-2xl font-bold text-green-600 mt-1">{stats.success_24h}</div>
         </div>
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="text-sm font-medium text-slate-600">Errores 24h</div>
+        <div className="bg-card rounded-lg shadow p-4">
+          <div className="text-sm font-medium text-muted-foreground">Errores 24h</div>
           <div className="text-2xl font-bold text-red-600 mt-1">{stats.failed_24h}</div>
         </div>
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="text-sm font-medium text-slate-600">Pendientes</div>
+        <div className="bg-card rounded-lg shadow p-4">
+          <div className="text-sm font-medium text-muted-foreground">Pendientes</div>
           <div className="text-2xl font-bold text-yellow-600 mt-1">{stats.pending}</div>
-          <div className="text-xs text-slate-500 mt-1">Por reintentar</div>
+          <div className="text-xs text-muted-foreground mt-1">Por reintentar</div>
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow">
+      <div className="bg-card rounded-lg shadow">
         {/* Filtros */}
-        <div className="p-4 border-b border-slate-200">
+        <div className="p-4 border-b border-border">
         <div className="flex flex-wrap items-center gap-3">
           {/* Búsqueda */}
           <div className="flex-1 min-w-[250px] relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"
               placeholder="Buscar por tipo, error o payload..."
@@ -264,29 +264,29 @@ export function LogsClient({ initialLogs, totalLogs, eventTypes, initialStats }:
       {/* Tabla */}
       <div className="overflow-x-auto">
         <table className="w-full">
-          <thead className="bg-slate-50 border-b border-slate-200">
+          <thead className="bg-muted border-b border-border">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase w-12"></th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Dirección</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Tipo de Evento</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Estado</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">HTTP</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Fecha</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Error</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">Acciones</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase w-12"></th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Dirección</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Tipo de Evento</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Estado</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">HTTP</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Fecha</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Error</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {filteredLogs.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-slate-500 text-sm">
+                <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground text-sm">
                   No hay logs de integración para mostrar
                 </td>
               </tr>
             ) : (
               filteredLogs.map((log) => (
                 <FragmentRow key={log.id}>
-                  <tr className="hover:bg-slate-50 transition-colors">
+                  <tr className="hover:bg-muted transition-colors">
                     <td className="px-4 py-3">
                       <button
                         onClick={() => setExpandedRow(expandedRow === log.id ? null : log.id)}
@@ -308,18 +308,18 @@ export function LogsClient({ initialLogs, totalLogs, eventTypes, initialStats }:
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-sm font-mono text-slate-900">{log.event_type}</td>
+                    <td className="px-4 py-3 text-sm font-mono text-foreground">{log.event_type}</td>
                     <td className="px-4 py-3">{getStatusBadge(log.status)}</td>
-                    <td className="px-4 py-3 text-sm text-slate-600">
+                    <td className="px-4 py-3 text-sm text-muted-foreground">
                       {log.http_status ? (
                         <span className={`font-mono ${log.http_status >= 200 && log.http_status < 300 ? 'text-green-600' : 'text-red-600'}`}>
                           {log.http_status}
                         </span>
                       ) : (
-                        <span className="text-slate-400">-</span>
+                        <span className="text-muted-foreground">-</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
+                    <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">
                       {(() => {
                         const date = new Date(log.created_at)
                         const day = String(date.getDate()).padStart(2, '0')
@@ -348,18 +348,18 @@ export function LogsClient({ initialLogs, totalLogs, eventTypes, initialStats }:
                     </td>
                   </tr>
                   {expandedRow === log.id && (
-                    <tr key={`${log.id}-detail`} className="bg-slate-50">
+                    <tr key={`${log.id}-detail`} className="bg-muted">
                       <td colSpan={8} className="px-8 py-4">
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                           <div>
-                            <h4 className="text-xs font-bold uppercase text-slate-600 mb-2">Payload</h4>
+                            <h4 className="text-xs font-bold uppercase text-muted-foreground mb-2">Payload</h4>
                             <pre className="bg-slate-900 text-green-400 p-3 rounded text-xs overflow-x-auto max-h-64">
                               {JSON.stringify(log.payload, null, 2)}
                             </pre>
                           </div>
                           {(log.response_body || log.error_message) && (
                             <div>
-                              <h4 className="text-xs font-bold uppercase text-slate-600 mb-2">
+                              <h4 className="text-xs font-bold uppercase text-muted-foreground mb-2">
                                 {log.status === 'success' ? 'Respuesta' : 'Error'}
                               </h4>
                               <pre className={`p-3 rounded text-xs overflow-x-auto max-h-64 ${
@@ -373,20 +373,20 @@ export function LogsClient({ initialLogs, totalLogs, eventTypes, initialStats }:
                           )}
                           <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
                             <div>
-                              <span className="text-slate-500">ID:</span>
-                              <p className="font-mono text-slate-900">{log.id}</p>
+                              <span className="text-muted-foreground">ID:</span>
+                              <p className="font-mono text-foreground">{log.id}</p>
                             </div>
                             <div>
-                              <span className="text-slate-500">Origen:</span>
-                              <p className="font-mono text-slate-900">{log.source}</p>
+                              <span className="text-muted-foreground">Origen:</span>
+                              <p className="font-mono text-foreground">{log.source}</p>
                             </div>
                             <div>
-                              <span className="text-slate-500">Intentos:</span>
-                              <p className="font-mono text-slate-900">{log.attempts}</p>
+                              <span className="text-muted-foreground">Intentos:</span>
+                              <p className="font-mono text-foreground">{log.attempts}</p>
                             </div>
                             <div>
-                              <span className="text-slate-500">Entidad relacionada:</span>
-                              <p className="font-mono text-slate-900">
+                              <span className="text-muted-foreground">Entidad relacionada:</span>
+                              <p className="font-mono text-foreground">
                                 {log.related_entity_type ? `${log.related_entity_type}` : '-'}
                               </p>
                             </div>
@@ -403,7 +403,7 @@ export function LogsClient({ initialLogs, totalLogs, eventTypes, initialStats }:
       </div>
 
       {/* Paginación */}
-      <div className="p-4 border-t border-slate-200 flex items-center justify-between text-sm text-slate-600">
+      <div className="p-4 border-t border-border flex items-center justify-between text-sm text-muted-foreground">
         <div>
           Mostrando {(filters.offset || 0) + 1} - {Math.min((filters.offset || 0) + filteredLogs.length, total)} de {total} logs
         </div>
@@ -411,14 +411,14 @@ export function LogsClient({ initialLogs, totalLogs, eventTypes, initialStats }:
           <button
             onClick={() => setFilters(prev => ({ ...prev, offset: Math.max(0, (prev.offset || 0) - (prev.limit || 100)) }))}
             disabled={(filters.offset || 0) === 0}
-            className="px-3 py-1 border border-slate-300 rounded hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 py-1 border border-slate-300 rounded hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Anterior
           </button>
           <button
             onClick={() => setFilters(prev => ({ ...prev, offset: (prev.offset || 0) + (prev.limit || 100) }))}
             disabled={(filters.offset || 0) + (filters.limit || 100) >= total}
-            className="px-3 py-1 border border-slate-300 rounded hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 py-1 border border-slate-300 rounded hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Siguiente
           </button>

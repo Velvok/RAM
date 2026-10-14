@@ -22,16 +22,16 @@ export function AnnualChart({
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       return (
-        <div className="bg-white p-3 border border-slate-200 rounded-lg shadow-lg">
-          <p className="font-semibold text-slate-900 mb-2">{label}</p>
+        <div className="bg-card p-3 border border-border rounded-lg shadow-lg">
+          <p className="font-semibold text-foreground mb-2">{label}</p>
           {payload.map((entry: any, index: number) => (
             <div key={index} className="flex items-center gap-2 text-sm">
               <div 
                 className="w-3 h-3 rounded-sm" 
                 style={{ backgroundColor: entry.color }}
               />
-              <span className="text-slate-600">{entry.name}:</span>
-              <span className="font-semibold text-slate-900">
+              <span className="text-muted-foreground">{entry.name}:</span>
+              <span className="font-semibold text-foreground">
                 {entry.value.toFixed(2)} ton
               </span>
             </div>
@@ -43,10 +43,10 @@ export function AnnualChart({
   }
 
   return (
-    <div className="bg-white rounded-lg border border-slate-200 p-6">
+    <div className="bg-card rounded-lg border border-border p-6">
       <div className="mb-4">
-        <h3 className="text-lg font-semibold text-slate-900">{productName}</h3>
-        <p className="text-sm text-slate-500">{productCode}</p>
+        <h3 className="text-lg font-semibold text-foreground">{productName}</h3>
+        <p className="text-sm text-muted-foreground">{productCode}</p>
       </div>
 
       <ResponsiveContainer width="100%" height={350}>
@@ -71,7 +71,7 @@ export function AnnualChart({
           <Legend 
             wrapperStyle={{ paddingTop: '20px' }}
             iconType="rect"
-            formatter={(value) => <span className="text-sm text-slate-700">{value}</span>}
+            formatter={(value) => <span className="text-sm text-foreground">{value}</span>}
           />
           {showPurchases && (
             <Bar 

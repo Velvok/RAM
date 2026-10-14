@@ -36,7 +36,7 @@ export function PreparationItemCard({ item, operatorId, onUpdate }: PreparationI
   }
 
   return (
-    <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
+    <div className="bg-card rounded-lg border border-border p-4 shadow-sm">
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
           <div className={`p-2 rounded-lg ${
@@ -49,15 +49,15 @@ export function PreparationItemCard({ item, operatorId, onUpdate }: PreparationI
             )}
           </div>
           <div>
-            <h4 className="font-semibold text-slate-900">{item.product?.name}</h4>
-            <p className="text-sm text-slate-500 font-mono">{item.product?.code}</p>
+            <h4 className="font-semibold text-foreground">{item.product?.name}</h4>
+            <p className="text-sm text-muted-foreground font-mono">{item.product?.code}</p>
           </div>
         </div>
         <div className="text-right">
-          <div className="text-sm font-medium text-slate-900">
+          <div className="text-sm font-medium text-foreground">
             {item.quantity_prepared}/{item.quantity_requested}
           </div>
-          <div className="text-xs text-slate-500">
+          <div className="text-xs text-muted-foreground">
             {remaining > 0 ? `${remaining} pendientes` : 'Completado'}
           </div>
         </div>
@@ -65,7 +65,7 @@ export function PreparationItemCard({ item, operatorId, onUpdate }: PreparationI
 
       {/* Progress Bar */}
       <div className="mb-4">
-        <div className="flex justify-between text-xs text-slate-600 mb-1">
+        <div className="flex justify-between text-xs text-muted-foreground mb-1">
           <span>Progreso</span>
           <span>{Math.round(progress)}%</span>
         </div>
@@ -80,8 +80,8 @@ export function PreparationItemCard({ item, operatorId, onUpdate }: PreparationI
       </div>
 
       {/* Stock Info */}
-      <div className="mb-4 p-3 bg-slate-50 rounded-lg">
-        <div className="text-sm text-slate-600">
+      <div className="mb-4 p-3 bg-muted rounded-lg">
+        <div className="text-sm text-muted-foreground">
           <div className="flex justify-between">
             <span>Stock asignado:</span>
             <span className="text-green-600">

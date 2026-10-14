@@ -44,19 +44,19 @@ export default function AssignOperatorModal({
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200">
+      <div className="bg-card rounded-2xl shadow-2xl border border-border max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200">
         {/* Header */}
-        <div className="px-6 py-5 border-b border-slate-100">
+        <div className="px-6 py-5 border-b border-border">
           <div className="flex items-start gap-3.5">
             <div className="shrink-0 w-11 h-11 rounded-full bg-blue-100 flex items-center justify-center">
               <UserCog size={20} strokeWidth={1.75} className="text-blue-600" />
             </div>
             <div className="flex-1 min-w-0">
-              <h3 className="text-base font-semibold text-slate-900">
+              <h3 className="text-base font-semibold text-foreground">
                 Asignar Operario
               </h3>
-              <p className="mt-1 text-sm text-slate-500">
-                Se generarán <span className="font-medium text-slate-700">{numOrders} orden(es) de corte</span>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Se generarán <span className="font-medium text-foreground">{numOrders} orden(es) de corte</span>
               </p>
             </div>
           </div>
@@ -64,16 +64,16 @@ export default function AssignOperatorModal({
 
         {/* Body */}
         <div className="px-6 py-5">
-          <label className="block text-sm font-medium text-slate-700 mb-2">
+          <label className="block text-sm font-medium text-foreground mb-2">
             Seleccionar operario (opcional):
           </label>
           
           {loading ? (
-            <div className="text-center py-4 text-slate-500">
+            <div className="text-center py-4 text-muted-foreground">
               Cargando operarios...
             </div>
           ) : operators.length === 0 ? (
-            <div className="text-center py-4 text-slate-500">
+            <div className="text-center py-4 text-muted-foreground">
               No hay operarios disponibles
             </div>
           ) : (
@@ -91,7 +91,7 @@ export default function AssignOperatorModal({
             </select>
           )}
 
-          <p className="mt-3 text-xs text-slate-500">
+          <p className="mt-3 text-xs text-muted-foreground">
             {selectedOperator 
               ? `Todas las órdenes se asignarán a este operario. Puedes reasignarlas después en la sección de Cortes.`
               : `Las órdenes quedarán sin asignar. Deberás asignarlas manualmente desde la sección de Cortes.`
@@ -103,7 +103,7 @@ export default function AssignOperatorModal({
         <div className="px-6 py-4 flex items-center justify-end gap-2">
           <button
             onClick={onCancel}
-            className="px-4 py-2 border border-slate-200 text-slate-600 text-sm rounded-lg font-medium hover:bg-slate-50 transition-colors"
+            className="px-4 py-2 border border-border text-muted-foreground text-sm rounded-lg font-medium hover:bg-muted transition-colors"
           >
             Cancelar
           </button>
