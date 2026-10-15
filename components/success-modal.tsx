@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { CheckCircle2 } from 'lucide-react'
 
 interface SuccessModalProps {
@@ -85,22 +85,25 @@ export function useSuccess() {
     })
   }
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     setConfig({
       isOpen: false,
       title: undefined,
       message: ''
     })
-  }
+  }, [])
 
-  const SuccessDialog = () => (
+  // Memoizado: si se redefine en cada render, React lo trata como un componente
+  // distinto y remonta el modal (reinicia su animación de entrada = parpadeo)
+  // cada vez que el componente que llama a useSuccess() se vuelve a renderizar.
+  const SuccessDialog = useCallback(() => (
     <SuccessModal
       isOpen={config.isOpen}
       title={config.title}
       message={config.message}
       onClose={handleClose}
     />
-  )
+  ), [config, handleClose])
 
   return { showSuccess, SuccessDialog }
 }

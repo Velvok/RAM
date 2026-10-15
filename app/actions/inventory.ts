@@ -220,16 +220,3 @@ export async function adjustStock(productId: string, newQuantity: number, notes:
   revalidateInventory()
   return data
 }
-
-export async function getRemnants() {
-  const supabase = createAdminClient()
-
-  const { data, error } = await supabase
-    .from('remnants')
-    .select('*, product:products(*), cut_order:cut_orders(*)')
-    .eq('status', 'disponible')
-    .order('reuse_score', { ascending: false })
-
-  if (error) throw error
-  return data
-}

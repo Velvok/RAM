@@ -157,6 +157,7 @@ async function processPedidoEntregado(payload: PedidoEntregadoPayload, id_evento
         status,
         client_id,
         ref_evo,
+        evo_data,
         order_lines(
           id,
           quantity,
@@ -193,10 +194,14 @@ async function processPedidoEntregado(payload: PedidoEntregadoPayload, id_evento
 
     console.log('✅ Order found:', order.id, 'status:', order.status)
 
-    // Validar que el pedido esté en estado "en_corte" o "finalizado"
-    if (order.status !== 'en_corte' && order.status !== 'finalizado') {
-      console.log('❌ Order status is not en_corte or finalizado:', order.status)
-      errors.push(`Order must be in "en_corte" or "finalizado" status to be delivered, current status: ${order.status}`)
+    // Validar que el pedido esté en un estado desde el que tenga sentido entregar.
+    // Incluye 'parcialmente_entregado' para permitir que una entrega posterior
+    // complete lo que falta (si no, un pedido con una primera entrega parcial
+    // nunca podría recibir el resto).
+    const deliverableStatuses = ['en_corte', 'finalizado', 'parcialmente_entregado']
+    if (!deliverableStatuses.includes(order.status)) {
+      console.log('❌ Order status is not deliverable:', order.status)
+      errors.push(`Order must be in one of [${deliverableStatuses.join(', ')}] status to be delivered, current status: ${order.status}`)
       await updateEventStatus(supabase, id_evento, false, errors)
       return
     }
@@ -273,15 +278,19 @@ async function processPedidoEntregado(payload: PedidoEntregadoPayload, id_evento
     console.log('🔄 Processing complete delivery...')
 
     // Actualizar estado del pedido a "entregado"
+    // Fusionar evo_data en vez de sobrescribirlo: conserva el payload original
+    // de pedido_creado (items, cliente, fecha) en vez de perderlo.
     console.log('🔄 Updating order status to entregado...')
+    const deliveredAtIso = new Date().toISOString()
     const { error: updateError } = await supabase
       .from('orders')
       .update({
         status: 'entregado',
-        delivered_at: new Date().toISOString(),
+        delivered_at: deliveredAtIso,
         evo_data: {
+          ...(order.evo_data || {}),
           delivery: {
-            delivered_at: new Date().toISOString(),
+            delivered_at: deliveredAtIso,
             articulos: payload.articulos || null,
             ref_evo: payload.ref_evo
           }
@@ -297,6 +306,22 @@ async function processPedidoEntregado(payload: PedidoEntregadoPayload, id_evento
     }
 
     console.log('✅ Order status updated successfully')
+
+    // Registrar en delivery_history (antes solo lo hacía el flujo manual
+    // markOrderAsDelivered; el webhook real de EVO no dejaba rastro de auditoría)
+    const { error: historyInsertError } = await supabase
+      .from('delivery_history')
+      .insert({
+        order_id: order.id,
+        previous_status: order.status,
+        delivered_at: deliveredAtIso,
+        is_active: true,
+        stock_consumed: payload.articulos || [],
+      })
+
+    if (historyInsertError) {
+      console.error('⚠️ Error registrando delivery_history (no bloqueante):', historyInsertError)
+    }
 
     // Liberar stock reservado (stock_total lo actualiza EVO vía stock_actualizado)
     // IMPORTANTE: NO modificamos stock_total aquí - EVO es la fuente de verdad
@@ -560,8 +585,21 @@ async function processPartialDelivery(
   const totalDelivered = payload.articulos.reduce((sum: number, art: any) => sum + art.cantidad, 0)
   await logPartialDeliveryActivity(supabase, order.id, payload.articulos, totalDelivered)
 
-  // Actualizar estado del pedido si es necesario (no cambiar a 'entregado' en parcial)
-  // Mantener 'finalizado' o cambiar a 'parcialmente_entregado' si tiene sentido
+  // Marcar el pedido como parcialmente entregado (no 'entregado', que es solo
+  // para la entrega completa) para que quede reflejado en la lista/detalle
+  // en vez de quedarse "atascado" visualmente en en_corte/finalizado.
+  if (order.status !== 'parcialmente_entregado') {
+    const { error: statusUpdateError } = await supabase
+      .from('orders')
+      .update({ status: 'parcialmente_entregado' })
+      .eq('id', order.id)
+
+    if (statusUpdateError) {
+      console.error('❌ Error updating order status to parcialmente_entregado:', statusUpdateError)
+      errors.push(`Error updating order status: ${statusUpdateError.message}`)
+    }
+  }
+
   console.log(`✅ Partial delivery processed with ${errors.length} errors`)
 }
 

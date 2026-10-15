@@ -73,10 +73,14 @@ export async function confirmReassignmentPickup(cutOrderId: string) {
     console.log(`📤 Enviando eventos PREP a EVO (chapa del mismo tamaño)`)
     
     const orderData = Array.isArray(cutOrder.order) ? cutOrder.order[0] : cutOrder.order
-    
-    // Obtener nro_item desde ref_evo del pedido destino
+
+    // El nro_item debe ser el de la línea original del pedido (cut_order.evo_item_number),
+    // NUNCA el ref_evo del pedido (que es a nivel de cabecera y no tiene nro_item). Usar
+    // ese fallback aquí hacía que toda reasignación se reportara siempre como ítem 1.
     const refEvo = orderData.ref_evo || {}
-    const nroItem = refEvo.nro_item || refEvo.item_number || 1
+    const nroItem = cutOrder.evo_item_number
+      ? parseInt(cutOrder.evo_item_number, 10)
+      : refEvo.nro_item || refEvo.item_number || 1
     
     // Evento 1: Pedido destino - PREP positivo (material que entra)
     const movimientosDestino = [{
@@ -115,7 +119,9 @@ export async function confirmReassignmentPickup(cutOrderId: string) {
       if (fromCutOrder) {
         const fromOrderData = Array.isArray(fromCutOrder.order) ? fromCutOrder.order[0] : fromCutOrder.order
         const fromRefEvo = fromOrderData.ref_evo || {}
-        const fromNroItem = fromRefEvo.nro_item || fromRefEvo.item_number || 1
+        const fromNroItem = fromCutOrder.evo_item_number
+          ? parseInt(fromCutOrder.evo_item_number, 10)
+          : fromRefEvo.nro_item || fromRefEvo.item_number || 1
 
         const movimientosOrigen = [{
           tipo: 'PREP' as const,

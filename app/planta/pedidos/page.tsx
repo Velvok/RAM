@@ -3,7 +3,22 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Package, LogOut, Search, X, Clock, MessageSquare } from 'lucide-react'
+import { Package, LogOut, Search, X, Clock, MessageSquare, ChevronRight, Scissors, Calendar } from 'lucide-react'
+import { Card } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { EmptyState } from '@/components/ui/empty-state'
+import { PageLoader } from '@/components/ui/spinner'
+import { getOrderStatusConfig } from '@/lib/order-status'
+import { cn } from '@/lib/utils'
+
+const STATUS_FILTERS = [
+  { id: 'todos', label: 'Todos' },
+  { id: 'aprobado', label: 'Aprobado' },
+  { id: 'aprobado_en_pausa', label: 'En Pausa' },
+  { id: 'en_corte', label: 'En Corte' },
+  { id: 'finalizado', label: 'Finalizado' },
+]
 
 export default function PlantaPedidosPage() {
   const router = useRouter()
@@ -39,10 +54,10 @@ export default function PlantaPedidosPage() {
       })
       setCurrentTime(argentinaTime)
     }
-    
-    updateTime() // Actualizar inmediatamente
-    const interval = setInterval(updateTime, 1000) // Actualizar cada segundo
-    
+
+    updateTime()
+    const interval = setInterval(updateTime, 1000)
+
     return () => clearInterval(interval)
   }, [])
 
@@ -57,7 +72,7 @@ export default function PlantaPedidosPage() {
         setUnreadNotes(counts)
       }
     } catch (error) {
-      console.error('❌ Error loading pedidos:', error)
+      console.error('Error loading pedidos:', error)
     } finally {
       setLoading(false)
     }
@@ -95,29 +110,27 @@ export default function PlantaPedidosPage() {
   // Filtrar pedidos por búsqueda y estado
   const filteredPedidos = useMemo(() => {
     let filtered = pedidos
-    
-    // Filtro por estado
+
     if (statusFilter !== 'todos') {
       filtered = filtered.filter(p => p.status === statusFilter)
     }
-    
-    // Filtro por búsqueda de texto (número de pedido o nombre de cliente)
+
     if (searchQuery) {
       const searchLower = searchQuery.toLowerCase()
-      filtered = filtered.filter(p => 
+      filtered = filtered.filter(p =>
         p.order_number?.toLowerCase().includes(searchLower) ||
         p.client?.business_name?.toLowerCase().includes(searchLower) ||
         p.client?.name?.toLowerCase().includes(searchLower)
       )
     }
-    
+
     return filtered
   }, [pedidos, statusFilter, searchQuery])
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-white text-xl">Cargando...</div>
+        <PageLoader label="Cargando pedidos..." />
       </div>
     )
   }
@@ -127,29 +140,29 @@ export default function PlantaPedidosPage() {
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold text-white">Pedidos</h1>
-            <p className="text-slate-300 mt-1">
+            <h1 className="text-3xl font-bold text-foreground">Pedidos</h1>
+            <p className="text-foreground/90 mt-1">
               Operario: {operator?.full_name}
             </p>
           </div>
           <div className="flex items-center gap-3">
             {/* Reloj */}
-            <div className="flex items-center gap-2 px-4 py-2 bg-slate-800/50 rounded-lg border border-slate-700">
-              <Clock className="w-5 h-5 text-slate-400" />
-              <span className="text-lg font-mono font-semibold text-white">
+            <div className="flex items-center gap-2 px-4 py-2 bg-card/50 rounded-lg border border-border">
+              <Clock className="w-5 h-5 text-muted-foreground" />
+              <span className="text-lg font-mono font-semibold text-foreground">
                 {currentTime}
               </span>
             </div>
             <button
               onClick={() => setShowSearchModal(true)}
-              className="p-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
+              className="p-3 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-foreground rounded-lg transition-colors"
               title="Buscar Pedido"
             >
               <Search className="w-6 h-6" />
             </button>
             <button
               onClick={handleLogout}
-              className="p-3 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors"
+              className="p-3 bg-destructive hover:bg-destructive/90 active:bg-destructive/80 text-destructive-foreground rounded-lg transition-colors"
               title="Cerrar Sesión"
             >
               <LogOut className="w-6 h-6" />
@@ -159,99 +172,60 @@ export default function PlantaPedidosPage() {
 
         {/* Sección de Búsqueda Desplegable */}
         {showSearchModal && (
-          <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700 p-6 space-y-4 animate-in slide-in-from-top duration-300">
+          <Card className="p-6 space-y-4 animate-in slide-in-from-top duration-300">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-bold text-white">Buscar Pedido</h3>
+              <h3 className="text-lg font-bold text-foreground">Buscar Pedido</h3>
               <button
                 onClick={() => {
                   setShowSearchModal(false)
                   setSearchQuery('')
                   setStatusFilter('todos')
                 }}
-                className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
+                className="p-2 hover:bg-muted rounded-lg transition-colors"
               >
-                <X className="w-5 h-5 text-slate-400" />
+                <X className="w-5 h-5 text-muted-foreground" />
               </button>
             </div>
 
             <div className="space-y-4">
-              {/* Buscador por texto - Fila 1 */}
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
+                <label className="block text-sm font-medium text-foreground/90 mb-2">
                   Buscar por Cliente o Número de Pedido
                 </label>
-                <input
+                <Input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Ej: ACME Corp, PED-TEST-1234..."
-                  className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="h-12 text-base"
                 />
               </div>
 
-              {/* Filtros por estado - Fila 2 */}
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
+                <label className="block text-sm font-medium text-foreground/90 mb-2">
                   Estado del Pedido
                 </label>
-                <div className="grid grid-cols-4 gap-2">
-                  <button
-                    onClick={() => setStatusFilter('todos')}
-                    className={`px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${
-                      statusFilter === 'todos'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                    }`}
-                  >
-                    Todos
-                  </button>
-                  <button
-                    onClick={() => setStatusFilter('aprobado')}
-                    className={`px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${
-                      statusFilter === 'aprobado'
-                        ? 'bg-yellow-600 text-white'
-                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                    }`}
-                  >
-                    Aprobado
-                  </button>
-                  <button
-                    onClick={() => setStatusFilter('aprobado_en_pausa')}
-                    className={`px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${
-                      statusFilter === 'aprobado_en_pausa'
-                        ? 'bg-orange-600 text-white'
-                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                    }`}
-                  >
-                    En Pausa
-                  </button>
-                  <button
-                    onClick={() => setStatusFilter('en_corte')}
-                    className={`px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${
-                      statusFilter === 'en_corte'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                    }`}
-                  >
-                    En Corte
-                  </button>
-                  <button
-                    onClick={() => setStatusFilter('finalizado')}
-                    className={`px-4 py-3 rounded-lg font-semibold text-sm transition-colors ${
-                      statusFilter === 'finalizado'
-                        ? 'bg-green-600 text-white'
-                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                    }`}
-                  >
-                    Finalizado
-                  </button>
+                <div className="grid grid-cols-5 gap-2">
+                  {STATUS_FILTERS.map((filter) => (
+                    <button
+                      key={filter.id}
+                      onClick={() => setStatusFilter(filter.id)}
+                      className={cn(
+                        'px-4 py-3 rounded-lg font-semibold text-sm transition-colors',
+                        statusFilter === filter.id
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-muted text-foreground/90 hover:bg-secondary active:bg-secondary/80'
+                      )}
+                    >
+                      {filter.label}
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>
 
-            {/* Contador y limpiar */}
-            <div className="flex items-center justify-between pt-2 border-t border-slate-700">
-              <p className="text-sm text-slate-400">
+            <div className="flex items-center justify-between pt-2 border-t border-border">
+              <p className="text-sm text-muted-foreground">
                 {filteredPedidos.length} pedido{filteredPedidos.length !== 1 ? 's' : ''} encontrado{filteredPedidos.length !== 1 ? 's' : ''}
               </p>
               {(searchQuery || statusFilter !== 'todos') && (
@@ -266,102 +240,64 @@ export default function PlantaPedidosPage() {
                 </button>
               )}
             </div>
-          </div>
+          </Card>
         )}
 
-        {pedidos.length === 0 ? (
-          <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg p-12 border border-slate-700 text-center">
-            <Package className="mx-auto h-16 w-16 text-slate-500 mb-4" />
-            <h3 className="text-xl font-semibold text-white mb-2">
-              No hay pedidos disponibles
-            </h3>
-            <p className="text-slate-400">
-              No hay pedidos aprobados en este momento
-            </p>
-          </div>
+        {filteredPedidos.length === 0 ? (
+          <Card className="p-12">
+            <EmptyState
+              icon={Package}
+              title="No hay pedidos disponibles"
+              description={pedidos.length === 0 ? 'No hay pedidos aprobados en este momento' : 'Prueba a cambiar los filtros de búsqueda'}
+            />
+          </Card>
         ) : (
-          <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700 overflow-hidden">
-            <table className="min-w-full divide-y divide-slate-700">
-              <thead className="bg-slate-900/50">
-                <tr>
-                  <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
-                    Pedido
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
-                    Cliente
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
-                    Fecha
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
-                    Órdenes de Corte
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
-                    Estado
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
-                    Notas
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-700">
-                {filteredPedidos.map((pedido) => {
-                  const cutOrdersCount = pedido.cut_orders?.length || 0
-                  
-                  return (
-                    <tr
-                      key={pedido.id}
-                      onClick={() => router.push(`/planta/pedidos/${pedido.id}`)}
-                      className="hover:bg-slate-700/30 cursor-pointer transition-colors"
-                    >
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-bold text-white">{pedido.order_number}</div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm text-slate-300 font-medium">
-                          {pedido.client?.business_name || pedido.client?.name || 'Sin cliente'}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-slate-300">
-                          {new Date(pedido.created_at).toLocaleDateString('es-ES', {
-                            day: '2-digit',
-                            month: 'short',
-                            year: 'numeric'
-                          })}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-bold text-white">{cutOrdersCount}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          pedido.status === 'aprobado' 
-                            ? 'bg-yellow-900/50 text-yellow-300' 
-                            : pedido.status === 'aprobado_en_pausa'
-                            ? 'bg-orange-900/50 text-orange-300'
-                            : pedido.status === 'en_corte'
-                            ? 'bg-blue-900/50 text-blue-300'
-                            : 'bg-green-900/50 text-green-300'
-                        }`}>
-                          {pedido.status === 'aprobado' ? 'Aprobado' : pedido.status === 'aprobado_en_pausa' ? 'En Pausa' : pedido.status === 'en_corte' ? 'En Corte' : 'Finalizado'}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {filteredPedidos.map((pedido) => {
+              const cutOrdersCount = pedido.cut_orders?.length || 0
+              const statusConfig = getOrderStatusConfig(pedido.status)
+              const notesCount = unreadNotes[pedido.id] || 0
+
+              return (
+                <Card
+                  key={pedido.id}
+                  onClick={() => router.push(`/planta/pedidos/${pedido.id}`)}
+                  className="p-5 cursor-pointer transition-colors hover:border-primary/40 active:bg-muted/50"
+                >
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div>
+                      <div className="text-xl font-bold text-foreground">{pedido.order_number}</div>
+                      <div className="text-base text-foreground/90 font-medium mt-0.5">
+                        {pedido.client?.business_name || pedido.client?.name || 'Sin cliente'}
+                      </div>
+                    </div>
+                    <Badge variant={statusConfig.badgeVariant} className="text-sm px-3 py-1 flex-shrink-0">
+                      {statusConfig.label}
+                    </Badge>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-3 border-t border-border">
+                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                      <span className="flex items-center gap-1.5">
+                        <Calendar className="w-4 h-4" />
+                        {new Date(pedido.created_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <Scissors className="w-4 h-4" />
+                        {cutOrdersCount} {cutOrdersCount === 1 ? 'orden' : 'órdenes'}
+                      </span>
+                      {notesCount > 0 && (
+                        <span className="flex items-center gap-1.5 px-2 py-0.5 bg-amber-500/20 border border-amber-500/50 rounded-full">
+                          <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
+                          <span className="font-bold text-amber-300">{notesCount}</span>
                         </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        {unreadNotes[pedido.id] > 0 ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/20 border border-amber-500/50 rounded-full">
-                            <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
-                            <span className="text-xs font-bold text-amber-300">{unreadNotes[pedido.id]}</span>
-                          </span>
-                        ) : (
-                          <span className="text-slate-600 text-xs">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+                      )}
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                  </div>
+                </Card>
+              )
+            })}
           </div>
         )}
       </div>

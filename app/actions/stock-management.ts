@@ -680,13 +680,12 @@ export async function generateRemnantStock(
 
     console.log(`✅ Stock generado: ${product.code} +1 unidad`)
     console.log(`   📊 Nuevo estado: total=${data.stock_total}, generado=${data.stock_generado}, disponible=${data.stock_disponible}`)
-    
+
     // Revalidar todas las rutas relevantes
     revalidatePath('/admin', 'page')
     revalidatePath('/admin/stock', 'page')
     revalidatePath('/admin/stock', 'layout')
     revalidatePath('/admin/pedidos', 'page')
-    revalidatePath('/admin/recortes', 'page')
     return data
   } else {
     // Crear nuevo registro de inventory
@@ -716,13 +715,12 @@ export async function generateRemnantStock(
     })
 
     console.log(`✅ Inventory creado: ${product.code} con 1 unidad generada`)
-    
+
     // Revalidar todas las rutas relevantes
     revalidatePath('/admin', 'page')
     revalidatePath('/admin/stock', 'page')
     revalidatePath('/admin/stock', 'layout')
     revalidatePath('/admin/pedidos', 'page')
-    revalidatePath('/admin/recortes', 'page')
     return data
   }
 }

@@ -509,10 +509,17 @@ export async function processPendingQueue(maxEvents = 20): Promise<{
   let succeeded = 0
   let failed = 0
 
-  for (const event of events) {
-    const result = await processOutboundEvent(event.id)
+  for (let i = 0; i < events.length; i++) {
+    const result = await processOutboundEvent(events[i].id)
     if (result.success) succeeded++
     else failed++
+
+    // Esperar 5s entre envíos para no mandar movimientos relacionados a EVO
+    // casi al mismo tiempo (a diferencia de processOnePendingPrep, este bucle
+    // no tiene lock ni espera de confirmación entre eventos)
+    if (i < events.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 5000))
+    }
   }
 
   return { processed: events.length, succeeded, failed }

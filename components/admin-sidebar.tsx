@@ -6,7 +6,7 @@ import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import {
   LayoutDashboard, ShoppingCart, Package, History, FileText,
-  Settings, ArrowLeft, ChevronLeft, ChevronRight, Scissors, LogOut,
+  Settings, ArrowLeft, ChevronLeft, ChevronRight, LogOut,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { logout } from '@/app/actions/auth'
@@ -21,23 +21,21 @@ export function AdminSidebar({ displayEmail, isCollapsed, setIsCollapsed }: Admi
   const pathname = usePathname()
   const [pendingCount, setPendingCount] = useState(0)
 
-  // Contador de eventos pendientes (entrada sin procesar + salida fallida)
+  // Contador de eventos realmente pendientes de procesar (en curso o en cola hacia EVO).
+  // No cuenta evo_events: esos son eventos de entrada ya resueltos (success=false es un
+  // resultado final, no "pendiente") y no tienen mecanismo de "visto", así que quedarían
+  // sumando para siempre.
   useEffect(() => {
     const supabase = createClient()
 
     const fetchPending = async () => {
-      const { count: failedOutbound } = await supabase
+      const { count } = await supabase
         .from('outbound_events')
         .select('*', { count: 'exact', head: true })
-        .in('status', ['pending', 'failed'])
+        .in('status', ['pending', 'processing', 'failed'])
         .is('viewed_at', null) // Solo contar no vistos
 
-      const { count: failedInbound } = await supabase
-        .from('evo_events')
-        .select('*', { count: 'exact', head: true })
-        .eq('success', false)
-
-      setPendingCount((failedOutbound || 0) + (failedInbound || 0))
+      setPendingCount(count || 0)
     }
 
     fetchPending()
@@ -45,9 +43,6 @@ export function AdminSidebar({ displayEmail, isCollapsed, setIsCollapsed }: Admi
     // Suscripción a cambios para actualizar el contador en vivo
     const channel = supabase
       .channel('sidebar-pending-count')
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'evo_events' },
-        () => fetchPending())
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'outbound_events' },
         () => fetchPending())
@@ -72,7 +67,6 @@ export function AdminSidebar({ displayEmail, isCollapsed, setIsCollapsed }: Admi
   const navItems = [
     { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/admin/pedidos', label: 'Pedidos', icon: ShoppingCart },
-    { href: '/admin/recortes', label: 'Recortes', icon: Scissors },
     { href: '/admin/stock', label: 'Stock', icon: Package },
     { href: '/admin/historial', label: 'Historial Anual', icon: History },
     { href: '/admin/logs', label: 'Logs RAM', icon: FileText, badge: pendingCount },

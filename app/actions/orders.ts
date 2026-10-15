@@ -60,6 +60,21 @@ export async function getOrderById(id: string) {
 export async function cancelOrder(orderId: string) {
   const supabase = createAdminClient()
 
+  // Guard: no se puede cancelar un pedido ya entregado o ya cancelado
+  const { data: existing, error: fetchExistingError } = await supabase
+    .from('orders')
+    .select('status')
+    .eq('id', orderId)
+    .single()
+
+  if (fetchExistingError) throw fetchExistingError
+  if (existing.status === 'entregado') {
+    throw new Error('No se puede cancelar un pedido ya entregado')
+  }
+  if (existing.status === 'cancelado') {
+    throw new Error('Este pedido ya está cancelado')
+  }
+
   const { data, error } = await supabase
     .from('orders')
     .update({ status: 'cancelado' })
@@ -251,7 +266,9 @@ export async function approveOrder(orderId: string) {
 
   // PRIMERO: Verificar stock disponible para todos los productos antes de crear items
   for (const line of order.order_lines || []) {
-    const units = Number(line.quantity) || 0
+    // line.quantity es el total en metros para chapas (units * length_meters), no la
+    // cantidad de piezas: hay que usar line.units igual que al crear la orden de corte.
+    const units = line.units || Math.ceil(Number(line.quantity)) || 0
     const isChapa = isChapaProduct(
       line.product?.code || '',
       line.product?.category,
@@ -631,6 +648,13 @@ export async function markOrderAsDelivered(orderId: string) {
 
   if (orderError) throw orderError
 
+  // Guard: solo se puede entregar un pedido en_corte o finalizado
+  if (orderData.status !== 'en_corte' && orderData.status !== 'finalizado') {
+    throw new Error(
+      `No se puede marcar como entregado: el pedido debe estar en "en_corte" o "finalizado" (actual: "${orderData.status}")`
+    )
+  }
+
   // Preparar información del stock para historial (sin consumir localmente)
   const stockConsumed = []
   const previousStatus = orderData.status
@@ -833,6 +857,15 @@ export async function undoOrderDelivery(orderId: string) {
       throw new Error('No se encontró historial de entrega para este pedido')
     }
     throw historyError
+  }
+
+  // Guard: solo se puede deshacer una entrega dentro de las 24h siguientes
+  const deliveredAt = new Date(deliveryHistory.delivered_at).getTime()
+  const hoursSinceDelivery = (Date.now() - deliveredAt) / (1000 * 60 * 60)
+  if (hoursSinceDelivery > 24) {
+    throw new Error(
+      `No se puede deshacer: han pasado más de 24 horas desde la entrega (${Math.floor(hoursSinceDelivery)}h)`
+    )
   }
 
   console.log(`🔄 Deshaciendo entrega del pedido ${orderId}`)

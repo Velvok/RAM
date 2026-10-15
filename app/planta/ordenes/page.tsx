@@ -13,7 +13,7 @@ export default function OrdenesPlantaPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center">
-      <div className="text-white text-xl">Redirigiendo...</div>
+      <div className="text-foreground text-xl">Redirigiendo...</div>
     </div>
   )
 }

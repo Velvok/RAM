@@ -1,9 +1,8 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/server'
-import { generateRemnantStock, reserveStock } from './stock-management'
+import { reserveStock } from './stock-management'
 import { extractSizeFromCode, extractFamilyCode } from '@/lib/product-utils'
-import { finishCutOrder } from './cut-orders'
 import { updateOrderStatus } from './orders'
 import { notifyCorteRealizado, notifyChapaPreparada, type CorteMovimiento } from '@/lib/ram-outbound'
 import { revalidatePath } from 'next/cache'
@@ -48,7 +47,25 @@ export async function processCutOrder(params: {
     product_id: cutOrder.product_id,
     quantity_requested: cutOrder.quantity_requested
   })
-  
+
+  // Guard: no permitir cortar una orden ya completada
+  if (cutOrder.status === 'completada') {
+    throw new Error(
+      `Esta orden de corte ya está completada (${cutOrder.quantity_cut}/${cutOrder.quantity_requested} unidades). No se puede registrar más corte.`
+    )
+  }
+
+  // Guard: no permitir cortar más de lo que falta para completar la orden
+  if (quantityToCut <= 0) {
+    throw new Error('La cantidad a cortar debe ser mayor que 0')
+  }
+  const remainingToCut = cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)
+  if (quantityToCut > remainingToCut) {
+    throw new Error(
+      `La cantidad a cortar (${quantityToCut}) supera lo que falta por cortar (${remainingToCut} de ${cutOrder.quantity_requested} unidades).`
+    )
+  }
+
   const productSize = cutOrder.product?.length_meters ||
                      extractSizeFromCode(cutOrder.product?.code || '') ||
                      cutOrder.quantity_requested

@@ -158,9 +158,13 @@ export async function POST(request: NextRequest) {
       // No fallar el flujo principal si falla el log
     }
 
+    // Esperar 5s tras la confirmación antes de disparar el siguiente evento,
+    // para no encadenar movimientos relacionados demasiado pegados en el tiempo
+    await new Promise(resolve => setTimeout(resolve, 5000))
+
     // Disparar el siguiente evento pending tras confirmación
     // Esto asegura que solo se envíe un PREP a la vez y en requests diferentes
-    console.log('🔄 Disparando siguiente evento pending tras confirmación...')
+    console.log('🔄 Disparando siguiente evento pending tras confirmación (tras espera de 5s)...')
     const { processOnePendingPrep } = await import('@/lib/ram-outbound')
     const nextEventResult = await processOnePendingPrep()
     console.log('📊 Resultado:', nextEventResult)

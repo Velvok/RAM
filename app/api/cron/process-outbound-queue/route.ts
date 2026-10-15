@@ -25,7 +25,9 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const result = await processPendingQueue(20)
+    // Con el delay de 5s entre eventos (processPendingQueue) y maxDuration=60s,
+    // un lote de más de ~8 eventos arriesga que Vercel corte la función a mitad.
+    const result = await processPendingQueue(8)
     return NextResponse.json({
       success: true,
       ...result,

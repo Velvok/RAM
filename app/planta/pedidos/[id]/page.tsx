@@ -1,11 +1,15 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { toast } from 'sonner'
 import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { CheckCircle2, ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, Package, Clock, Truck, MessageSquare } from 'lucide-react'
+import { CheckCircle2, ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, Package, Clock, Truck, MessageSquare, RefreshCw } from 'lucide-react'
 import { extractSizeFromName, extractSizeFromCode } from '@/lib/product-utils'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
+import { QuantityStepper } from '@/components/planta/quantity-stepper'
+import { Badge } from '@/components/ui/badge'
+import { getCutOrderStatusConfig } from '@/lib/cut-order-status'
 
 // Tipo para sugerencias (mock)
 interface MaterialSuggestion {
@@ -81,13 +85,6 @@ export default function PlantaPedidoDetallePage() {
     try {
       const { getOrderById } = await import('@/app/actions/client-queries')
       const data = await getOrderById(params.id as string)
-      
-      console.log('📋 Datos del pedido cargados:', data)
-      console.log('👤 Cliente del pedido:', data.client)
-      console.log('📦 Preparation items:', {
-        count: data.preparation_items?.length || 0,
-        items: data.preparation_items
-      })
       setPedido(data)
     } catch (error) {
       console.error('Error loading pedido:', error)
@@ -177,7 +174,7 @@ export default function PlantaPedidoDetallePage() {
       setQuantityToChange(prev => ({ ...prev, [cutOrderId]: cutOrder.quantity_requested }))
     } catch (error) {
       console.error('Error loading stock:', error)
-      alert('Error al cargar stock disponible')
+      toast.error('Error al cargar stock disponible')
     } finally {
       setLoadingStock(prev => ({ ...prev, [cutOrderId]: false }))
     }
@@ -188,12 +185,12 @@ export default function PlantaPedidoDetallePage() {
     const quantity = quantityToChange[cutOrderId] || cutOrder.quantity_requested
 
     if (!stock) {
-      alert('Por favor selecciona un material')
+      toast.error('Por favor selecciona un material')
       return
     }
 
     if (quantity < 1 || quantity > cutOrder.quantity_requested) {
-      alert(`La cantidad debe estar entre 1 y ${cutOrder.quantity_requested}`)
+      toast.error(`La cantidad debe estar entre 1 y ${cutOrder.quantity_requested}`)
       return
     }
 
@@ -212,7 +209,7 @@ export default function PlantaPedidoDetallePage() {
       )
 
       if (result.success) {
-        alert(result.message)
+        toast.success(result.message)
         setShowChangeStockModal(prev => ({ ...prev, [cutOrderId]: false }))
 
         // Si es reasignación parcial (crea nueva orden), recargar toda la página
@@ -244,15 +241,15 @@ export default function PlantaPedidoDetallePage() {
             await fetch(`/api/revalidate?path=/planta/pedidos/${pedidoId}`, { method: 'POST' })
             await fetch(`/api/revalidate?path=/admin/pedidos/${pedido.id}`, { method: 'POST' })
           } catch (e) {
-            console.log('Revalidación fallida')
+            console.error('Revalidación fallida')
           }
         }
       } else {
-        alert('Error al cambiar stock')
+        toast.error('Error al cambiar stock')
       }
     } catch (error: any) {
       console.error('Error changing stock:', error)
-      alert('Error: ' + (error?.message || 'Error al cambiar stock'))
+      toast.error(error?.message || 'Error al cambiar stock')
     } finally {
       setProcessing(prev => ({ ...prev, [cutOrderId]: false }))
     }
@@ -275,7 +272,6 @@ export default function PlantaPedidoDetallePage() {
 
     // Cargar sugerencias reales de stock
     if (!suggestions[cutOrderId]) {
-      console.log('🚀 Cargando sugerencias para cutOrderId:', cutOrderId)
       setLoadingSuggestions(prev => ({ ...prev, [cutOrderId]: true }))
       try {
         const { getCutOrderWithAssignment } = await import('@/app/actions/get-cut-order-with-assignment')
@@ -284,19 +280,13 @@ export default function PlantaPedidoDetallePage() {
         // Obtener la orden de corte con el stock asignado
         const cutOrder = await getCutOrderWithAssignment(cutOrderId)
 
-        console.log('📋 CutOrder:', cutOrder)
-
         let bestSuggestion: MaterialSuggestion | null = null
         let alternatives: MaterialSuggestion[] = []
 
         // Si hay stock asignado, usarlo como sugerencia principal
         if (cutOrder?.material_base_id && cutOrder?.material_base_quantity && cutOrder?.assigned_inventory) {
-          console.log('🔍 Usando inventory item asignado:', cutOrder.assigned_inventory)
-          console.log('📏 Cálculo de desperdicio: material_base_quantity=', cutOrder.material_base_quantity, 'lengthNeeded=', lengthNeeded)
-
           const assignedInventory = cutOrder.assigned_inventory
           const waste = Math.max(0, cutOrder.material_base_quantity - lengthNeeded)
-          console.log('✅ Desperdicio calculado:', waste)
 
           bestSuggestion = {
             type: 'virgin' as const,
@@ -304,11 +294,9 @@ export default function PlantaPedidoDetallePage() {
             name: `${cutOrder.assigned_product?.code || assignedInventory.product?.code} (${cutOrder.material_base_quantity}m)`,
             length: cutOrder.material_base_quantity,
             waste: waste,
-            location: '✓ Asignado automáticamente',
+            location: 'Asignado automáticamente',
             priority: 1,
           }
-        } else if (cutOrder?.material_base_id) {
-          console.warn('⚠️ Tiene material_base_id pero no assigned_inventory o material_base_quantity')
         }
 
         // Buscar alternativas disponibles del mismo tipo de producto (código base)
@@ -385,7 +373,7 @@ export default function PlantaPedidoDetallePage() {
     const selectedMaterial = selectedMaterials[cutId]
 
     if (!selectedMaterial) {
-      alert('Por favor selecciona un material')
+      toast.error('Por favor selecciona un material')
       return
     }
 
@@ -398,8 +386,9 @@ export default function PlantaPedidoDetallePage() {
       .maybeSingle()
 
     if (stockCheck && stockCheck.stock_disponible < 0) {
-      alert(
-        `⚠️ Stock no disponible\n\nNo hay stock físico disponible para esta chapa.\n\nStock disponible: ${stockCheck.stock_disponible} unidades\n\nContacta con el administrador para resolver el problema de stock.`
+      toast.error(
+        `No hay stock físico disponible para esta chapa (disponible: ${stockCheck.stock_disponible} unidades). Contacta con el administrador.`,
+        { description: 'Stock no disponible' }
       )
       return
     }
@@ -417,41 +406,37 @@ export default function PlantaPedidoDetallePage() {
     const sheetsUsed = quantityToCut // 1 chapa por pieza
     
     if (!quantityToCut || quantityToCut <= 0) {
-      alert('Por favor ingresa una cantidad válida')
+      toast.error('Por favor ingresa una cantidad válida')
       return
     }
 
     if (!operator) {
-      alert('No se ha identificado el operario')
+      toast.error('No se ha identificado el operario')
       return
     }
 
     setProcessing(prev => ({ ...prev, [cutId]: true }))
     
     try {
-      // ✅ Llamar a la Server Action - todos los logs saldrán en el terminal del servidor
       const { processCutOrder } = await import('@/app/actions/cut-operations')
-      
-      const result = await processCutOrder({
+
+      await processCutOrder({
         cutOrderId: cutId,
         selectedMaterialId: selectedMaterial.id,
         materialLength: selectedMaterial.length,
         quantityToCut,
         operatorId: operator.id
       })
-      
-      // Recargar pedido
+
       await loadPedido()
-      
-      // Revalidar
+
       try {
         await fetch(`/api/revalidate?path=/planta/pedidos/${pedidoId}`, { method: 'POST' })
         await fetch(`/api/revalidate?path=/admin/pedidos/${pedido.id}`, { method: 'POST' })
       } catch (e) {
-        console.log('Revalidación manual fallida')
+        console.error('Revalidación manual fallida')
       }
-      
-      // Limpiar inputs
+
       setExpandedCutId(null)
       setQuantityInputs(prev => ({ ...prev, [cutId]: '' }))
       setSelectedMaterials(prev => {
@@ -460,279 +445,11 @@ export default function PlantaPedidoDetallePage() {
         return newState
       })
 
-      // Mostrar confirmación
-      alert(`✅ Corte completado: ${quantityToCut} unidades de ${selectedMaterial.name}`)
+      toast.success(`Corte completado: ${quantityToCut} unidades de ${selectedMaterial.name}`)
 
     } catch (error: any) {
       console.error('Error finishing cut:', error)
-      alert('Error: ' + (error.message || 'Error desconocido al finalizar corte'))
-    } finally {
-      setProcessing(prev => ({ ...prev, [cutId]: false }))
-    }
-    return // ⚠️ SALIR AQUÍ - El código viejo de abajo ya no se ejecuta
-    
-    try {
-      const supabase = createClient()
-      
-      // ========== CÓDIGO VIEJO - YA NO SE EJECUTA ==========
-      const { finishCutOrder } = await import('@/app/actions/cut-orders')
-      
-      // Obtener el product_id del inventory seleccionado
-      const { data: inventoryItem } = await supabase
-        .from('inventory')
-        .select('product_id')
-        .eq('id', selectedMaterial.id)
-        .maybeSingle()
-
-      if (!inventoryItem) {
-        throw new Error('No se encontró el producto en el inventario')
-      }
-      
-      // Verificar si el material seleccionado es diferente al asignado originalmente
-      const originalAssignedId = cutOrder.material_base_id
-      const selectedProductId = inventoryItem?.product_id
-      
-      // 1a. Si se seleccionó un material diferente, liberar la reserva original
-      if (originalAssignedId && selectedProductId && originalAssignedId !== selectedProductId) {
-        console.log(`⚠️ Material cambiado: ${originalAssignedId} → ${selectedProductId}`)
-        
-        // Liberar reserva del material asignado originalmente
-        const { data: originalInventory } = await supabase
-          .from('inventory')
-          .select('id')
-          .eq('product_id', originalAssignedId)
-          .gt('stock_reservado', 0)
-          .maybeSingle()
-        
-        if (originalInventory) {
-          const { unreserveStock } = await import('@/app/actions/stock-management')
-          await unreserveStock(originalInventory!.id, 1)
-          console.log(`✅ Reserva liberada del material original`)
-        }
-        
-        // Reservar el nuevo material seleccionado
-        const { reserveStock } = await import('@/app/actions/stock-management')
-        await reserveStock(selectedMaterial.id)
-        console.log(`✅ Nuevo material reservado`)
-      }
-      
-      // 1b. Si se cambió el material, actualizar la asignación en cut_orders
-      if (originalAssignedId && selectedProductId && originalAssignedId !== selectedProductId) {
-        const { assignStockToCutOrder } = await import('@/app/actions/stock-management')
-        await assignStockToCutOrder(
-          cutId,
-          selectedMaterial.id,
-          selectedProductId,
-          selectedMaterial.length
-        )
-        console.log(`✅ Stock asignado actualizado en la orden de corte`)
-      }
-      
-      // NOTA: El stock permanece RESERVADO hasta que se entregue el pedido
-      // NO se mueve a "en_proceso" ni se consume al cortar
-      
-      // 2. Obtener cantidad a cortar (puede ser parcial)
-      const quantityToCut = parseInt(quantityInputs[cutId] || '0')
-      const newQuantityCut = (cutOrder.quantity_cut || 0) + quantityToCut
-      const isFullyCompleted = newQuantityCut >= cutOrder.quantity_requested
-      
-      // Actualizar quantity_cut en la orden
-      await supabase
-        .from('cut_orders')
-        .update({
-          quantity_cut: newQuantityCut,
-          status: isFullyCompleted ? 'completada' : 'pendiente',
-          finished_at: isFullyCompleted ? new Date().toISOString() : null
-        })
-        .eq('id', cutId)
-      
-      console.log(`✅ Cortadas ${quantityToCut} unidades (${newQuantityCut}/${cutOrder.quantity_requested})`)
-      
-      // 2b. Actualizar estado del pedido (puede pasar a 'en_corte' si hay cortes parciales)
-      const { updateOrderStatus } = await import('@/app/actions/orders')
-      await updateOrderStatus(cutOrder.order_id)
-      
-      // 3. PROCESO DE STOCK: Diferenciar entre match exacto y corte real
-      const { generateRemnantStock, reserveStock } = await import('@/app/actions/stock-management')
-      
-      if (isExactMatch) {
-        // ========== MATCH EXACTO: Solo consumir stock reservado ==========
-        console.log(`🎯 Procesando match exacto: ${sheetsUsed} unidades de ${materialLength}m`)
-        
-        for (let i = 0; i < sheetsUsed; i++) {
-          console.log(`\n📦 Consumiendo unidad ${i + 1}/${sheetsUsed}:`)
-          
-          // Usar la función SQL consume_reserved_stock que baja total Y reservado
-          const { error: consumeError } = await supabase.rpc('consume_reserved_stock', {
-            p_inventory_id: selectedMaterial.id
-          })
-          
-          if (consumeError) {
-            console.error('Error al consumir stock reservado:', consumeError)
-            throw consumeError
-          }
-          
-          console.log(`   ✅ Consumida: -1 unidad de ${materialLength}m (total y reservado)`)
-        }
-        
-        console.log(`\n✅ Proceso completado: ${sheetsUsed} unidades consumidas`)
-        console.log(`   📉 Stock: -${sheetsUsed} × ${materialLength}m`)
-        
-      } else {
-        // ========== CORTE REAL: Consumir, generar pieza cortada y remanente ==========
-        // Obtener códigos de productos
-        const { data: usedProduct } = await supabase
-          .from('products')
-          .select('code')
-          .eq('id', inventoryItem?.product_id)
-          .maybeSingle()
-
-        if (!usedProduct?.code) {
-          throw new Error('No se encontró el producto usado')
-        }
-        
-        console.log(`✂️ Procesando corte real de ${sheetsUsed} chapas...`)
-        console.log(`   Chapa original: ${usedProduct!.code} (${materialLength}m)`)
-        console.log(`   Pieza a obtener: ${productSize}m`)
-        console.log(`   Remanente: ${remnantPerSheet}m`)
-        
-        // Por cada chapa usada:
-        for (let i = 0; i < sheetsUsed; i++) {
-          console.log(`\n📦 Procesando chapa ${i + 1}/${sheetsUsed}:`)
-          
-          // 3.1. Consumir chapa original (baja total y reservado)
-          const { error: consumeError } = await supabase.rpc('consume_reserved_stock', {
-            p_inventory_id: selectedMaterial.id
-          })
-          
-          if (consumeError) {
-            console.error('Error al consumir stock reservado:', consumeError)
-            throw consumeError
-          }
-          
-          console.log(`   ✅ Consumida: -1 chapa de ${materialLength}m (total y reservado)`)
-          
-          // 3.2. Generar pieza cortada (sube total y generado)
-          await generateRemnantStock(usedProduct!.code, productSize)
-          console.log(`   ✅ Generada: +1 pieza de ${productSize}m`)
-          
-          // 3.3. Reservar la pieza cortada (sube reservado)
-          const { data: cutPieceInventory } = await supabase
-            .from('inventory')
-            .select('id')
-            .eq('product_id', cutOrder.product_id)
-            .maybeSingle()
-
-          if (cutPieceInventory?.id) {
-            await reserveStock(cutPieceInventory!.id)
-            console.log(`   ✅ Reservada: +1 pieza de ${productSize}m`)
-          }
-          
-          // 3.4. Generar remanente (si existe) y dejarlo disponible
-          if (remnantPerSheet > 0) {
-            await generateRemnantStock(usedProduct!.code, remnantPerSheet)
-            console.log(`   ✅ Remanente: +1 pieza de ${remnantPerSheet}m (disponible)`)
-          }
-        }
-        
-        console.log(`\n✅ Proceso completado: ${sheetsUsed} chapas cortadas`)
-        console.log(`   📉 Chapas originales: -${sheetsUsed} × ${materialLength}m`)
-        console.log(`   📈 Piezas cortadas: +${sheetsUsed} × ${productSize}m (generadas y reservadas)`)
-        if (remnantPerSheet > 0) {
-          console.log(`   📈 Remanentes: +${sheetsUsed} × ${remnantPerSheet}m (disponibles)`)
-        }
-      }
-      
-      // 5. Registrar actividad en el historial del pedido
-      await supabase.from('order_activity_log').insert({
-        order_id: cutOrder.order_id,
-        cut_order_id: cutId,
-        activity_type: 'cut_completed',
-        description: `${operator?.name || 'Operario'} cortó ${quantityToCut} unidad${quantityToCut !== 1 ? 'es' : ''} de ${cutOrder.product?.name || 'producto'} (${newQuantityCut}/${cutOrder.quantity_requested})`,
-        metadata: {
-          action: `Corte ${isFullyCompleted ? 'completado' : 'parcial'}`,
-          operator_name: operator?.name,
-          quantity_cut: quantityToCut,
-          total_cut: newQuantityCut,
-          total_requested: cutOrder.quantity_requested,
-          material_used: selectedMaterial.name,
-          remnant_per_sheet: remnantPerSheet,
-          sheets_used: sheetsUsed,
-          total_remnants: sheetsUsed,
-          is_completed: isFullyCompleted
-        }
-      })
-      console.log(`📝 Actividad registrada en el historial`)
-      
-      // Mostrar confirmación con modal personalizado
-      const successLines = [
-        `✂️ Cortadas: ${quantityToCut} unidades`,
-        `📊 Progreso: ${newQuantityCut}/${cutOrder.quantity_requested}`,
-        ``,
-        `📦 Material: ${selectedMaterial.name}`,
-        ``,
-      ]
-      
-      if (remnantPerSheet > 0) {
-        successLines.push(`📏 Recortes generados:`)
-        successLines.push(`   ${sheetsUsed} × ${remnantPerSheet.toFixed(1)}m = ${(sheetsUsed * remnantPerSheet).toFixed(1)}m total`)
-        successLines.push(``)
-        successLines.push(`✅ Stock de recortes actualizado`)
-      }
-      
-      if (!isFullyCompleted) {
-        successLines.push(``)
-        successLines.push(`⚠️ Pendientes: ${cutOrder.quantity_requested - newQuantityCut} unidades`)
-      }
-      
-      // Recargar el pedido completo desde la BD para actualizar el estado
-      await loadPedido()
-      
-      // Forzar revalidación del lado del servidor
-      try {
-        await fetch(`/api/revalidate?path=/planta/pedidos/${pedidoId}`, { method: 'POST' })
-        await fetch(`/api/revalidate?path=/admin/pedidos/${pedido.id}`, { method: 'POST' })
-      } catch (e) {
-        console.log('Revalidación manual fallida, pero el pedido se recargó')
-      }
-      
-      // Limpiar inputs
-      setExpandedCutId(null)
-      setQuantityInputs(prev => ({ ...prev, [cutId]: '' }))
-      setSelectedMaterials(prev => {
-        const newState = { ...prev }
-        delete newState[cutId]
-        return newState
-      })
-
-      // Mostrar confirmación
-      alert(`✅ Corte completado: ${quantityToCut} unidades de ${selectedMaterial.name}`)
-
-    } catch (error: any) {
-      console.error('Error finishing cut:', error)
-      
-      // Extraer mensaje de error más amigable
-      let errorMessage = 'Error desconocido'
-      let errorTitle = 'Error al finalizar corte'
-      
-      if (error.message) {
-        errorMessage = error.message
-        
-        // Detectar tipo de error para personalizar título
-        if (error.message.includes('No existe el producto')) {
-          errorTitle = 'Producto de recorte no encontrado'
-        } else if (error.message.includes('foreign key')) {
-          errorTitle = 'Error de base de datos'
-        }
-      } else if (typeof error === 'string') {
-        errorMessage = error
-      } else if (error.code) {
-        errorMessage = `Error de base de datos: ${error.code}`
-        errorTitle = 'Error de base de datos'
-      }
-      
-      // Mostrar alert de error
-      alert(errorTitle + ': ' + errorMessage)
+      toast.error(error.message || 'Error desconocido al finalizar corte')
     } finally {
       setProcessing(prev => ({ ...prev, [cutId]: false }))
     }
@@ -740,20 +457,20 @@ export default function PlantaPedidoDetallePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-900">
-        <div className="text-white text-xl">Cargando...</div>
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-foreground text-xl">Cargando...</div>
       </div>
     )
   }
 
   if (!pedido) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-900">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
-          <h2 className="text-2xl font-bold text-white mb-4">Pedido no encontrado</h2>
+          <h2 className="text-2xl font-bold text-foreground mb-4">Pedido no encontrado</h2>
           <button
             onClick={() => router.push('/planta/pedidos')}
-            className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold"
+            className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-foreground rounded-lg font-semibold"
           >
             Volver a pedidos
           </button>
@@ -763,13 +480,13 @@ export default function PlantaPedidoDetallePage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-900">
+    <div className="min-h-screen bg-background">
       {/* Header Sticky */}
-      <div className="sticky top-0 z-10 bg-slate-800 border-b border-slate-700 shadow-lg">
+      <div className="sticky top-0 z-10 bg-card border-b border-border shadow-lg">
         <div className="max-w-4xl mx-auto px-4 py-4">
           <button
             onClick={() => router.push('/planta/pedidos')}
-            className="flex items-center gap-2 text-slate-300 hover:text-white mb-3 transition-colors"
+            className="flex items-center gap-2 text-foreground/90 hover:text-foreground mb-3 transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
             <span className="font-semibold">Volver</span>
@@ -777,14 +494,14 @@ export default function PlantaPedidoDetallePage() {
           
           <div className="flex items-center justify-between mb-1">
             <div>
-              <h1 className="text-2xl font-bold text-white">{pedido.order_number}</h1>
+              <h1 className="text-2xl font-bold text-foreground">{pedido.order_number}</h1>
               {pedido.client ? (
-                <p className="text-slate-400 text-sm mt-1">
-                  Cliente: <span className="text-white font-semibold">{pedido.client.business_name || 'Sin nombre'}</span>
+                <p className="text-muted-foreground text-sm mt-1">
+                  Cliente: <span className="text-foreground font-semibold">{pedido.client.business_name || 'Sin nombre'}</span>
                 </p>
               ) : (
-                <p className="text-slate-400 text-sm mt-1">
-                  Cliente: <span className="text-white font-semibold">No disponible</span>
+                <p className="text-muted-foreground text-sm mt-1">
+                  Cliente: <span className="text-foreground font-semibold">No disponible</span>
                 </p>
               )}
             </div>
@@ -798,16 +515,16 @@ export default function PlantaPedidoDetallePage() {
                 >
                   <MessageSquare className="w-4 h-4 text-amber-400" />
                   {notes.filter(n => !n.read_at).length > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-xs font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                    <span className="absolute -top-1.5 -right-1.5 bg-amber-500 text-foreground text-xs font-bold w-4 h-4 rounded-full flex items-center justify-center">
                       {notes.filter(n => !n.read_at).length}
                     </span>
                   )}
                 </button>
               )}
               {/* Reloj */}
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900/50 rounded-lg border border-slate-700">
-                <Clock className="w-4 h-4 text-slate-400" />
-                <span className="text-base font-mono font-semibold text-white">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-background/50 rounded-lg border border-border">
+                <Clock className="w-4 h-4 text-muted-foreground" />
+                <span className="text-base font-mono font-semibold text-foreground">
                   {currentTime}
                 </span>
               </div>
@@ -815,7 +532,7 @@ export default function PlantaPedidoDetallePage() {
           </div>
           
           {operator && (
-            <p className="text-slate-400">Operario: <span className="text-white font-semibold">{operator.full_name}</span></p>
+            <p className="text-muted-foreground">Operario: <span className="text-foreground font-semibold">{operator.full_name}</span></p>
           )}
 
           {/* Panel de notas expandible */}
@@ -825,25 +542,25 @@ export default function PlantaPedidoDetallePage() {
                 <div
                   key={note.id}
                   className={`rounded-lg p-3 flex items-start gap-3 ${
-                    note.read_at ? 'bg-slate-700/50 border border-slate-600' : 'bg-amber-500/10 border border-amber-500/40'
+                    note.read_at ? 'bg-muted/50 border border-border' : 'bg-amber-500/10 border border-amber-500/40'
                   }`}
                 >
-                  <MessageSquare className={`w-4 h-4 mt-0.5 flex-shrink-0 ${note.read_at ? 'text-slate-400' : 'text-amber-400'}`} />
+                  <MessageSquare className={`w-4 h-4 mt-0.5 flex-shrink-0 ${note.read_at ? 'text-muted-foreground' : 'text-amber-400'}`} />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-white">{note.content}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">{note.created_by_name}</p>
+                    <p className="text-sm text-foreground">{note.content}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{note.created_by_name}</p>
                   </div>
                   {!note.read_at && (
                     <button
                       onClick={() => handleMarkNoteRead(note.id)}
                       disabled={markingRead[note.id]}
-                      className="flex-shrink-0 text-xs bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white px-2 py-1 rounded font-medium transition-colors"
+                      className="flex-shrink-0 text-sm bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-foreground px-3 py-2 rounded-lg font-medium transition-colors"
                     >
                       {markingRead[note.id] ? '...' : 'Leída'}
                     </button>
                   )}
                   {note.read_at && (
-                    <span className="flex-shrink-0 text-xs text-green-400 font-medium">✓</span>
+                    <CheckCircle2 className="flex-shrink-0 w-4 h-4 text-green-400" />
                   )}
                 </div>
               ))}
@@ -883,12 +600,12 @@ export default function PlantaPedidoDetallePage() {
                 key={cutOrder.id}
                 className={`rounded-lg border-2 transition-all ${
                   isCompleted
-                    ? 'bg-slate-800/50 border-green-500'
+                    ? 'bg-card/50 border-green-500'
                     : isPendingConfirmation
                     ? 'bg-orange-900/30 border-orange-500'
                     : isExpanded
-                    ? 'bg-slate-800 border-blue-500 shadow-lg shadow-blue-500/20'
-                    : 'bg-slate-800/70 border-slate-600'
+                    ? 'bg-card border-blue-500 shadow-lg shadow-blue-500/20'
+                    : 'bg-card/70 border-border'
                 }`}
               >
                 {/* Header de la tarjeta */}
@@ -896,75 +613,64 @@ export default function PlantaPedidoDetallePage() {
                   onClick={() => isPending && toggleCutOrder(cutOrder.id, cutOrder.product_id, extractSizeFromName(cutOrder.product?.name || '') || extractSizeFromCode(cutOrder.product?.code || '') || 0)}
                   disabled={isCompleted}
                   className={`w-full p-6 ${
-                    isPending ? 'cursor-pointer hover:bg-slate-700/50' : 'cursor-default'
+                    isPending ? 'cursor-pointer hover:bg-muted/50' : 'cursor-default'
                   } transition-colors`}
                 >
                   <div className="space-y-4">
                     {/* Fila 1: Título y Estado */}
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex items-center gap-3 flex-1">
-                        <h3 className="text-3xl font-bold text-white leading-tight">
+                        <h3 className="text-3xl font-bold text-foreground leading-tight">
                           {cutOrder.product?.name || 'Producto'}
                         </h3>
                         {isPending && (
-                          isExpanded ? <ChevronUp className="w-6 h-6 text-blue-400 flex-shrink-0" /> : <ChevronDown className="w-6 h-6 text-slate-400 flex-shrink-0" />
+                          isExpanded ? <ChevronUp className="w-6 h-6 text-blue-400 flex-shrink-0" /> : <ChevronDown className="w-6 h-6 text-muted-foreground flex-shrink-0" />
                         )}
                       </div>
                       
                       {/* Badge de Estado */}
-                      <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-base font-bold flex-shrink-0 ${
-                        isCompleted
-                          ? 'bg-green-500/20 text-green-400'
-                          : isPendingConfirmation
-                          ? 'bg-orange-500/20 text-orange-400'
-                          : 'bg-yellow-500/20 text-yellow-400'
-                      }`}>
-                        {isCompleted ? (
-                          <>
-                            <CheckCircle2 className="w-5 h-5" />
-                            Completada
-                          </>
-                        ) : isPendingConfirmation ? (
-                          <>
-                            <AlertTriangle className="w-5 h-5" />
-                            Confirmar Recogida
-                          </>
-                        ) : (
-                          '🟡 Pendiente'
-                        )}
-                      </span>
+                      {(() => {
+                        const statusConfig = getCutOrderStatusConfig(cutOrder.status)
+                        const StatusIcon = statusConfig.icon
+                        return (
+                          <Badge variant={statusConfig.badgeVariant} className="flex-shrink-0 rounded-full px-4 py-2 text-base">
+                            <StatusIcon className="w-5 h-5" />
+                            {statusConfig.label}
+                          </Badge>
+                        )
+                      })()}
                     </div>
-                    
+
                     {/* Fila 2: Código de corte */}
-                    <p className="text-base text-slate-400 font-medium text-left">{cutOrder.cut_number}</p>
-                    
+                    <p className="text-base text-muted-foreground font-medium text-left">{cutOrder.cut_number}</p>
+
                     {/* Material asignado (visible siempre) */}
                     {cutOrder.material_product && (
                       <div className="flex items-center gap-2 text-sm">
-                        <span className="text-lg">📦</span>
-                        <span className="text-slate-400">Material:</span>
-                        <span className="text-white font-bold">{cutOrder.material_product.name}</span>
+                        <Package className="w-4 h-4 text-muted-foreground" />
+                        <span className="text-muted-foreground">Material:</span>
+                        <span className="text-foreground font-bold">{cutOrder.material_product.name}</span>
                       </div>
                     )}
                     
                     {/* Fila 3: Barra de Progreso */}
                     <div className="space-y-2">
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-slate-400 font-medium">Progreso</span>
-                        <span className="text-white font-bold text-lg">
+                        <span className="text-muted-foreground font-medium">Progreso</span>
+                        <span className="text-foreground font-bold text-lg">
                           {(cutOrder.quantity_cut || 0) - (cutOrder.quantity_delivered || 0)}/{cutOrder.quantity_requested - (cutOrder.quantity_delivered || 0)}
                         </span>
                       </div>
 
                       {/* Barra de progreso visual */}
-                      <div className="w-full bg-slate-700 rounded-full h-3 overflow-hidden">
+                      <div className="w-full bg-muted rounded-full h-3 overflow-hidden">
                         <div
                           className={`h-full rounded-full transition-all duration-500 ${
                             (cutOrder.quantity_cut || 0) - (cutOrder.quantity_delivered || 0) >= cutOrder.quantity_requested - (cutOrder.quantity_delivered || 0)
                               ? 'bg-green-500'
                               : (cutOrder.quantity_cut || 0) - (cutOrder.quantity_delivered || 0) > 0
                               ? 'bg-yellow-500'
-                              : 'bg-slate-600'
+                              : 'bg-secondary'
                           }`}
                           style={{
                             width: `${Math.min((((cutOrder.quantity_cut || 0) - (cutOrder.quantity_delivered || 0)) / (cutOrder.quantity_requested - (cutOrder.quantity_delivered || 0))) * 100, 100)}%`
@@ -977,13 +683,13 @@ export default function PlantaPedidoDetallePage() {
 
                 {/* Contenido expandido */}
                 {isExpanded && isPending && (
-                  <div className="px-6 pb-6 space-y-6 border-t border-slate-700 pt-6">
+                  <div className="px-6 pb-6 space-y-6 border-t border-border pt-6">
                     {/* Estado de carga de sugerencias */}
                     {loadingSuggestions[cutOrder.id] ? (
-                      <div className="bg-slate-800/50 border-2 border-slate-600 rounded-2xl p-6">
+                      <div className="bg-card/50 border-2 border-border rounded-2xl p-6">
                         <div className="flex items-center justify-center gap-3">
                           <div className="w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
-                          <p className="text-white text-lg">Cargando stock disponible...</p>
+                          <p className="text-foreground text-lg">Cargando stock disponible...</p>
                         </div>
                       </div>
                     ) : (
@@ -995,7 +701,7 @@ export default function PlantaPedidoDetallePage() {
                               <AlertTriangle className="w-6 h-6 text-red-400" />
                               <h4 className="text-lg font-bold text-red-400 uppercase">Sin Stock Disponible</h4>
                             </div>
-                            <p className="text-white">
+                            <p className="text-foreground">
                               No hay stock asignado ni disponible para este producto. Por favor, contacta con el administrador.
                             </p>
                           </div>
@@ -1008,24 +714,24 @@ export default function PlantaPedidoDetallePage() {
                       <div className={`rounded-2xl p-6 shadow-lg transition-all ${
                         selectedMaterial?.id === cutSuggestions.best.id
                           ? 'bg-green-600/20 border-2 border-green-500 shadow-green-500/30'
-                          : 'bg-slate-800/50 border-2 border-blue-500 shadow-blue-500/20'
+                          : 'bg-card/50 border-2 border-blue-500 shadow-blue-500/20'
                       }`}>
                         <div className="flex items-center justify-center gap-3 mb-4">
-                          <h4 className="text-xl font-bold text-white uppercase">Stock Asignado</h4>
+                          <h4 className="text-xl font-bold text-foreground uppercase">Stock Asignado</h4>
                         </div>
                         
-                        <div className="bg-slate-900/70 rounded-xl p-5 space-y-3 mb-6">
+                        <div className="bg-background/70 rounded-xl p-5 space-y-3 mb-6">
                           <div className="flex items-center gap-3">
-                            <span className="text-2xl font-bold text-white">{cutSuggestions.best.name}</span>
+                            <span className="text-2xl font-bold text-foreground">{cutSuggestions.best.name}</span>
                           </div>
                           
                           <div className="grid grid-cols-2 gap-4 text-base">
                             <div>
-                              <span className="text-slate-400">Longitud:</span>
-                              <span className="font-bold ml-2 text-white text-xl">{cutSuggestions.best.length}m</span>
+                              <span className="text-muted-foreground">Longitud:</span>
+                              <span className="font-bold ml-2 text-foreground text-xl">{cutSuggestions.best.length}m</span>
                             </div>
                             <div>
-                              <span className="text-slate-400">Chapa Restante:</span>
+                              <span className="text-muted-foreground">Chapa Restante:</span>
                               <span className={`font-bold ml-2 text-xl ${
                                 cutSuggestions.best.waste > 0 ? 'text-orange-400' : 'text-green-400'
                               }`}>
@@ -1046,16 +752,16 @@ export default function PlantaPedidoDetallePage() {
                           await loadAvailableStockForCutOrder(cutOrder.id, cutOrder)
                           setShowChangeStockModal(prev => ({ ...prev, [cutOrder.id]: true }))
                         }}
-                        className="w-full h-14 bg-slate-800/50 hover:bg-slate-800/70 border-2 border-slate-600 rounded-2xl text-lg font-bold text-white transition-all flex items-center justify-center gap-3"
+                        className="w-full h-14 bg-card/50 hover:bg-card/70 border-2 border-border rounded-2xl text-lg font-bold text-foreground transition-all flex items-center justify-center gap-3"
                       >
-                        <h5 className="text-xl font-bold text-white uppercase">Asignar otro tamaño de corte</h5>
-                        <span className="text-xl text-white">🔄</span>
+                        <h5 className="text-xl font-bold text-foreground uppercase">Asignar otro tamaño de corte</h5>
+                        <RefreshCw className="w-5 h-5 text-foreground" />
                       </button>
                     )}
 
                     {/* BLOQUE C: Cantidad a Cortar (Stepper Industrial) */}
                     <div>
-                      <label className="block text-lg font-bold text-white mb-3 uppercase">
+                      <label className="block text-lg font-bold text-foreground mb-3 uppercase">
                         {(() => {
                           const materialSize = selectedMaterial?.length || 0
                           const productSize = cutOrder.product?.length_meters || 
@@ -1065,48 +771,17 @@ export default function PlantaPedidoDetallePage() {
                           return isCut ? 'Cantidad a Cortar:' : 'Cantidad a Recoger:'
                         })()}
                       </label>
-                      <div className="mb-4 text-base text-slate-300 bg-slate-800/50 p-3 rounded-lg">
-                        Pendientes: <span className="font-bold text-white text-xl">{cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)}</span> unidades
+                      <div className="mb-4 text-base text-foreground/90 bg-card/50 p-3 rounded-lg">
+                        Pendientes: <span className="font-bold text-foreground text-xl">{cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)}</span> unidades
                       </div>
                       
-                      {/* Stepper Industrial */}
-                      <div className="flex items-center">
-                        {/* Botón Menos */}
-                        <button
-                          onClick={() => {
-                            const current = parseInt(quantityInputs[cutOrder.id] || '0')
-                            if (current > 1) {
-                              setQuantityInputs(prev => ({ ...prev, [cutOrder.id]: (current - 1).toString() }))
-                            }
-                          }}
-                          className="h-16 w-20 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-white text-4xl font-bold rounded-l-xl border-2 border-slate-700 transition-all transform active:scale-95"
-                        >
-                          −
-                        </button>
-                        
-                        {/* Display Central */}
-                        <div className="flex-1 h-16 bg-slate-900 border-y-2 border-slate-700 flex items-center justify-center">
-                          <span className="text-5xl font-bold text-white">
-                            {quantityInputs[cutOrder.id] || 0}
-                          </span>
-                        </div>
-                        
-                        {/* Botón Más */}
-                        <button
-                          onClick={() => {
-                            const current = parseInt(quantityInputs[cutOrder.id] || '0')
-                            const max = cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)
-                            if (current < max) {
-                              setQuantityInputs(prev => ({ ...prev, [cutOrder.id]: (current + 1).toString() }))
-                            }
-                          }}
-                          className="h-16 w-20 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-4xl font-bold rounded-r-xl border-2 border-blue-500 transition-all transform active:scale-95 shadow-lg shadow-blue-500/30"
-                        >
-                          +
-                        </button>
-                      </div>
+                      <QuantityStepper
+                        value={parseInt(quantityInputs[cutOrder.id] || '0')}
+                        onChange={(v) => setQuantityInputs(prev => ({ ...prev, [cutOrder.id]: v.toString() }))}
+                        max={cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)}
+                      />
                       
-                      <p className="text-sm text-slate-400 mt-3 text-center">
+                      <p className="text-sm text-muted-foreground mt-3 text-center">
                         Usa los botones + y − para ajustar la cantidad
                       </p>
                     </div>
@@ -1116,7 +791,7 @@ export default function PlantaPedidoDetallePage() {
                     <button
                       onClick={() => handleConfirmCut(cutOrder)}
                       disabled={!selectedMaterial || isProcessing || !quantityInputs[cutOrder.id] || parseInt(quantityInputs[cutOrder.id]) <= 0}
-                      className="w-full h-20 bg-green-600 hover:bg-green-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded-2xl font-bold text-2xl uppercase transition-all transform active:scale-95 shadow-lg shadow-green-500/30 disabled:shadow-none"
+                      className="w-full h-20 bg-green-600 hover:bg-green-500 disabled:bg-secondary disabled:cursor-not-allowed text-foreground rounded-2xl font-bold text-2xl uppercase transition-all transform active:scale-95 shadow-lg shadow-green-500/30 disabled:shadow-none"
                     >
                       {isProcessing ? 'Procesando...' : (() => {
                         const materialSize = selectedMaterial?.length || 0
@@ -1137,22 +812,22 @@ export default function PlantaPedidoDetallePage() {
                     <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg p-4">
                       <div className="flex items-center gap-2 mb-3">
                         <Package className="w-6 h-6 text-orange-400" />
-                        <h4 className="font-bold text-white">RECOGER PIEZA REASIGNADA</h4>
+                        <h4 className="font-bold text-foreground">RECOGER PIEZA REASIGNADA</h4>
                       </div>
                       
-                      <div className="bg-slate-900/50 rounded-lg p-4 space-y-3 mb-4">
-                        <p className="text-white">
+                      <div className="bg-background/50 rounded-lg p-4 space-y-3 mb-4">
+                        <p className="text-foreground">
                           Esta pieza ha sido reasignada desde otro pedido. Debes recogerla de:
                         </p>
                         <div className="bg-orange-900/30 border border-orange-500/50 rounded-lg p-3">
-                          <p className="text-sm text-slate-400">Pedido Origen:</p>
+                          <p className="text-sm text-muted-foreground">Pedido Origen:</p>
                           <p className="text-lg font-bold text-orange-400">
                             {cutOrder.reassigned_from_order?.order_number || 'Cargando...'}
                           </p>
                         </div>
-                        <div className="text-sm text-slate-300">
-                          <p>📦 Material: <strong>{cutOrder.product?.code}</strong></p>
-                          <p>📏 Cantidad: <strong>{cutOrder.quantity_requested}m</strong></p>
+                        <div className="text-sm text-foreground/90">
+                          <p>Material: <strong>{cutOrder.product?.code}</strong></p>
+                          <p>Cantidad: <strong>{cutOrder.quantity_requested}m</strong></p>
                         </div>
                       </div>
 
@@ -1161,17 +836,15 @@ export default function PlantaPedidoDetallePage() {
                           try {
                             const { confirmReassignmentPickup } = await import('@/app/actions/confirm-reassignment')
                             await confirmReassignmentPickup(cutOrder.id)
-                            // Para confirmación de reasignación, mostramos un mensaje simple
-                            alert('✅ Recogida confirmada correctamente')
-                            // Recargar pedido completo
+                            toast.success('Recogida confirmada correctamente')
                             await loadPedido()
                           } catch (error: any) {
-                            alert(error.message || 'Error al confirmar recogida')
+                            toast.error(error.message || 'Error al confirmar recogida')
                           }
                         }}
-                        className="w-full px-6 py-4 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-bold text-lg transition-colors"
+                        className="w-full px-6 py-4 bg-orange-600 hover:bg-orange-500 text-foreground rounded-lg font-bold text-lg transition-colors"
                       >
-                        ✓ Confirmar que Recogí la Pieza
+                        Confirmar que Recogí la Pieza
                       </button>
                     </div>
                   </div>
@@ -1179,9 +852,9 @@ export default function PlantaPedidoDetallePage() {
 
                 {/* Subórdenes (si existen) - Mostradas al final del contenido expandido */}
                 {cutOrder.sub_orders && cutOrder.sub_orders.length > 0 && (
-                  <div className="border-t-4 border-slate-600 bg-slate-900/50 mt-4">
-                    <div className="px-6 py-3 bg-slate-800/50">
-                      <h4 className="text-sm font-bold text-slate-400 uppercase">↳ Subórdenes de corte ({cutOrder.sub_orders.length})</h4>
+                  <div className="border-t-4 border-border bg-background/50 mt-4">
+                    <div className="px-6 py-3 bg-card/50">
+                      <h4 className="text-sm font-bold text-muted-foreground uppercase">↳ Subórdenes de corte ({cutOrder.sub_orders.length})</h4>
                     </div>
                     <div className="p-4 space-y-3">
                       {cutOrder.sub_orders.map((subOrder: any) => {
@@ -1203,10 +876,10 @@ export default function PlantaPedidoDetallePage() {
                             key={subOrder.id}
                             className={`rounded-lg border-2 transition-all ${
                               isSubCompleted
-                                ? 'bg-slate-800/30 border-green-500/50'
+                                ? 'bg-card/30 border-green-500/50'
                                 : isSubExpanded
-                                ? 'bg-slate-800 border-blue-500 shadow-lg shadow-blue-500/20'
-                                : 'bg-slate-800/50 border-slate-600'
+                                ? 'bg-card border-blue-500 shadow-lg shadow-blue-500/20'
+                                : 'bg-card/50 border-border'
                             }`}
                           >
                             {/* Header de la suborden */}
@@ -1214,35 +887,34 @@ export default function PlantaPedidoDetallePage() {
                               onClick={() => isSubPending && toggleCutOrder(subOrder.id, subOrder.product_id, extractSizeFromName(subOrder.product?.name || '') || extractSizeFromCode(subOrder.product?.code || '') || 0)}
                               disabled={isSubCompleted}
                               className={`w-full p-4 ${
-                                isSubPending ? 'cursor-pointer hover:bg-slate-700/50' : 'cursor-default'
+                                isSubPending ? 'cursor-pointer hover:bg-muted/50' : 'cursor-default'
                               } transition-colors`}
                             >
                               <div className="space-y-3">
                                 <div className="flex items-start justify-between gap-4">
                                   <div className="flex items-center gap-2 flex-1">
-                                    <span className="text-xs text-slate-500">{subOrder.cut_number}</span>
+                                    <span className="text-xs text-muted-foreground">{subOrder.cut_number}</span>
                                     {isSubPending && (
-                                      isSubExpanded ? <ChevronUp className="w-5 h-5 text-blue-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />
+                                      isSubExpanded ? <ChevronUp className="w-5 h-5 text-blue-400" /> : <ChevronDown className="w-5 h-5 text-muted-foreground" />
                                     )}
                                   </div>
-                                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                                    isSubCompleted ? 'bg-green-600/20 text-green-400' : 'bg-yellow-600/20 text-yellow-400'
-                                  }`}>
-                                    {isSubCompleted ? '✅ Completada' : '🟡 Pendiente'}
-                                  </span>
+                                  <Badge variant={isSubCompleted ? 'success' : 'warning'} className="rounded-full px-3 py-1">
+                                    {isSubCompleted ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
+                                    {isSubCompleted ? 'Completada' : 'Pendiente'}
+                                  </Badge>
                                 </div>
 
                                 {subOrder.material_product && (
                                   <div className="flex items-center justify-between gap-2">
                                     <div className="flex items-center gap-2">
-                                      <span className="text-xs text-slate-500">📦 Material:</span>
+                                      <span className="text-xs text-muted-foreground">Material:</span>
                                       <span className="text-sm text-blue-400 font-semibold">
                                         {subOrder.material_product.name}
                                       </span>
                                     </div>
                                     {subRemnant && parseFloat(subRemnant) > 0 && (
                                       <span className="text-xs text-orange-400 font-semibold">
-                                        📏 Remanente: {subRemnant}m
+                                        Remanente: {subRemnant}m
                                       </span>
                                     )}
                                   </div>
@@ -1250,19 +922,19 @@ export default function PlantaPedidoDetallePage() {
 
                                 <div className="space-y-1">
                                   <div className="flex items-center justify-between text-xs">
-                                    <span className="text-slate-400">Progreso</span>
-                                    <span className="text-white font-bold">
+                                    <span className="text-muted-foreground">Progreso</span>
+                                    <span className="text-foreground font-bold">
                                       {(subOrder.quantity_cut || 0) - (subOrder.quantity_delivered || 0)}/{subOrder.quantity_requested - (subOrder.quantity_delivered || 0)}
                                     </span>
                                   </div>
-                                  <div className="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
+                                  <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
                                     <div
                                       className={`h-full rounded-full transition-all duration-500 ${
                                         (subOrder.quantity_cut || 0) - (subOrder.quantity_delivered || 0) >= subOrder.quantity_requested - (subOrder.quantity_delivered || 0)
                                           ? 'bg-green-500'
                                           : (subOrder.quantity_cut || 0) - (subOrder.quantity_delivered || 0) > 0
                                           ? 'bg-yellow-500'
-                                          : 'bg-slate-600'
+                                          : 'bg-secondary'
                                       }`}
                                       style={{
                                         width: `${Math.min((((subOrder.quantity_cut || 0) - (subOrder.quantity_delivered || 0)) / (subOrder.quantity_requested - (subOrder.quantity_delivered || 0))) * 100, 100)}%`
@@ -1275,27 +947,27 @@ export default function PlantaPedidoDetallePage() {
 
                             {/* Contenido expandido de la suborden */}
                             {isSubExpanded && isSubPending && (
-                              <div className="px-4 pb-4 space-y-4 border-t border-slate-700 pt-4">
+                              <div className="px-4 pb-4 space-y-4 border-t border-border pt-4">
                                 {/* Información del material y remanente */}
                                 {subOrder.material_product && (
-                                  <div className="bg-slate-900/50 rounded-xl p-4 border border-slate-700">
+                                  <div className="bg-background/50 rounded-xl p-4 border border-border">
                                     <div className="grid grid-cols-2 gap-4 text-sm">
                                       <div>
-                                        <span className="text-slate-400">Material asignado:</span>
-                                        <p className="font-bold text-white text-base">{subOrder.material_product.name}</p>
+                                        <span className="text-muted-foreground">Material asignado:</span>
+                                        <p className="font-bold text-foreground text-base">{subOrder.material_product.name}</p>
                                       </div>
                                       <div>
-                                        <span className="text-slate-400">Longitud:</span>
-                                        <p className="font-bold text-white text-base">{subMaterialLength}m</p>
+                                        <span className="text-muted-foreground">Longitud:</span>
+                                        <p className="font-bold text-foreground text-base">{subMaterialLength}m</p>
                                       </div>
                                       {subRemnant && parseFloat(subRemnant) > 0 && (
                                         <>
                                           <div>
-                                            <span className="text-slate-400">Remanente generado:</span>
+                                            <span className="text-muted-foreground">Remanente generado:</span>
                                             <p className="font-bold text-orange-400 text-base">{subRemnant}m</p>
                                           </div>
                                           <div>
-                                            <span className="text-slate-400">Chapa Restante:</span>
+                                            <span className="text-muted-foreground">Chapa Restante:</span>
                                             <p className={`font-bold text-base ${
                                               parseFloat(subRemnant) > 1 ? 'text-orange-400' : 'text-green-400'
                                             }`}>
@@ -1309,7 +981,7 @@ export default function PlantaPedidoDetallePage() {
                                 )}
 
                                 <div>
-                                  <label className="block text-base font-bold text-white mb-2 uppercase">
+                                  <label className="block text-base font-bold text-foreground mb-2 uppercase">
                                     {(() => {
                                       const materialSize = selectedMaterial?.length || 0
                                       const productSize = cutOrder.product?.length_meters || 
@@ -1319,23 +991,19 @@ export default function PlantaPedidoDetallePage() {
                                       return isCut ? 'Cantidad a Cortar:' : 'Cantidad a Recoger:'
                                     })()}
                                   </label>
-                                  <input
-                                    type="number"
-                                    min="1"
+                                  <QuantityStepper
+                                    value={parseInt(quantityInputs[subOrder.id] || '0')}
+                                    onChange={(v) => setQuantityInputs(prev => ({ ...prev, [subOrder.id]: v.toString() }))}
                                     max={subOrder.quantity_requested - (subOrder.quantity_cut || 0)}
-                                    value={quantityInputs[subOrder.id] || ''}
-                                    onChange={(e) => setQuantityInputs(prev => ({ ...prev, [subOrder.id]: e.target.value }))}
-                                    className="w-full p-4 bg-slate-900 border-2 border-slate-700 rounded-xl text-white text-2xl font-bold text-center"
-                                    placeholder="0"
                                   />
                                 </div>
 
                                 <button
                                   onClick={() => handleConfirmCut(subOrder)}
                                   disabled={!quantityInputs[subOrder.id] || parseInt(quantityInputs[subOrder.id]) < 1 || isSubProcessing}
-                                  className="w-full h-20 bg-green-600 hover:bg-green-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-bold text-2xl rounded-2xl transition-all transform active:scale-95 shadow-lg uppercase"
+                                  className="w-full h-20 bg-green-600 hover:bg-green-700 disabled:bg-secondary disabled:cursor-not-allowed text-foreground font-bold text-2xl rounded-2xl transition-all transform active:scale-95 shadow-lg uppercase"
                                 >
-                                  {isSubProcessing ? 'Procesando...' : '✂️ Confirmar Corte'}
+                                  {isSubProcessing ? 'Procesando...' : 'Confirmar Corte'}
                                 </button>
                               </div>
                             )}
@@ -1349,8 +1017,8 @@ export default function PlantaPedidoDetallePage() {
             )
           })
         ) : (
-          <div className="bg-slate-800/50 rounded-lg p-12 border border-slate-700 text-center">
-            <p className="text-slate-400 text-lg">
+          <div className="bg-card/50 rounded-lg p-12 border border-border text-center">
+            <p className="text-muted-foreground text-lg">
               No hay órdenes de corte para este pedido
             </p>
           </div>
@@ -1359,7 +1027,7 @@ export default function PlantaPedidoDetallePage() {
         {/* Sección de Artículos a Preparar */}
         {pedido.preparation_items && pedido.preparation_items.filter((item: any) => item.assigned_inventory_id).length > 0 && (
           <div className="mt-8 space-y-4">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
               <Package className="w-6 h-6" />
               Artículos a Preparar
             </h2>
@@ -1376,16 +1044,16 @@ export default function PlantaPedidoDetallePage() {
                   key={item.id}
                   className={`rounded-lg border-2 p-6 ${
                     isCompleted
-                      ? 'bg-slate-800/50 border-green-500'
-                      : 'bg-slate-800/70 border-blue-500'
+                      ? 'bg-card/50 border-green-500'
+                      : 'bg-card/70 border-blue-500'
                   }`}
                 >
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-3">
                       <Package className={`w-6 h-6 ${isCompleted ? 'text-green-500' : 'text-blue-500'}`} />
                       <div>
-                        <h3 className="text-lg font-bold text-white">{item.product.name}</h3>
-                        <p className="text-sm text-slate-400">{item.product.code}</p>
+                        <h3 className="text-lg font-bold text-foreground">{item.product.name}</h3>
+                        <p className="text-sm text-muted-foreground">{item.product.code}</p>
                       </div>
                     </div>
                     {isCompleted && (
@@ -1396,12 +1064,12 @@ export default function PlantaPedidoDetallePage() {
                   {/* Progreso */}
                   <div className="mb-4">
                     <div className="flex justify-between text-sm mb-2">
-                      <span className="text-slate-300 font-medium">Progreso</span>
-                      <span className="text-slate-400">
+                      <span className="text-foreground/90 font-medium">Progreso</span>
+                      <span className="text-muted-foreground">
                         {item.quantity_prepared} / {item.quantity_requested} unidades
                       </span>
                     </div>
-                    <div className="w-full bg-slate-700 rounded-full h-3">
+                    <div className="w-full bg-muted rounded-full h-3">
                       <div
                         className={`h-3 rounded-full transition-all ${
                           isCompleted ? 'bg-green-500' : 'bg-blue-500'
@@ -1413,7 +1081,7 @@ export default function PlantaPedidoDetallePage() {
 
                   {/* Stock disponible */}
                   {item.assigned_inventory && (
-                    <div className="text-sm text-slate-400 mb-4">
+                    <div className="text-sm text-muted-foreground mb-4">
                       Stock disponible: {item.assigned_inventory.stock_disponible} unidades
                     </div>
                   )}
@@ -1421,43 +1089,34 @@ export default function PlantaPedidoDetallePage() {
                   {/* Selector de cantidad y botón */}
                   {!isCompleted && (
                     <div className="space-y-3">
-                      <div className="flex items-center gap-3">
-                        <label className="text-sm font-medium text-slate-300 whitespace-nowrap">
-                          Cantidad a preparar:
-                        </label>
-                        <input
-                          type="number"
-                          min={1}
-                          max={remaining}
-                          defaultValue={1}
-                          id={`prep-quantity-${item.id}`}
-                          className="w-20 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
-                        />
-                        <span className="text-sm text-slate-400">
-                          de {remaining} restantes
-                        </span>
-                      </div>
+                      <label className="text-sm font-medium text-foreground/90">
+                        Cantidad a preparar ({remaining} restantes):
+                      </label>
+                      <QuantityStepper
+                        size="sm"
+                        value={parseInt(quantityInputs[item.id] || '1')}
+                        onChange={(v) => setQuantityInputs(prev => ({ ...prev, [item.id]: v.toString() }))}
+                        max={remaining}
+                      />
 
                       <button
                         onClick={async () => {
-                          const input = document.getElementById(`prep-quantity-${item.id}`) as HTMLInputElement
-                          const quantity = parseInt(input.value) || 1
-                          
+                          const quantity = parseInt(quantityInputs[item.id] || '1')
+
                           if (quantity <= 0 || quantity > remaining) {
-                            alert('Cantidad inválida')
+                            toast.error('Cantidad inválida')
                             return
                           }
 
                           try {
                             const { prepareItem } = await import('@/app/actions/preparation')
                             await prepareItem(item.id, quantity, operator?.id)
-                            // Recargar pedido para actualizar el estado
                             await loadPedido()
                           } catch (error: any) {
-                            alert(error.message || 'Error al preparar artículo')
+                            toast.error(error.message || 'Error al preparar artículo')
                           }
                         }}
-                        className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold text-lg transition-colors"
+                        className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-500 text-foreground rounded-lg font-semibold text-lg transition-colors"
                       >
                         Marcar como Preparado
                       </button>
@@ -1465,8 +1124,9 @@ export default function PlantaPedidoDetallePage() {
                   )}
 
                   {isCompleted && (
-                    <div className="text-center py-3 text-green-500 font-semibold text-lg">
-                      ✓ Artículo completamente preparado
+                    <div className="flex items-center justify-center gap-2 py-3 text-green-500 font-semibold text-lg">
+                      <CheckCircle2 className="w-5 h-5" />
+                      Artículo completamente preparado
                     </div>
                   )}
                 </div>
@@ -1480,11 +1140,11 @@ export default function PlantaPedidoDetallePage() {
       {pedido?.cut_orders?.map((cutOrder: any) => (
         showChangeStockModal[cutOrder.id] && (
           <div key={cutOrder.id} className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-            <div className="bg-slate-900 rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col border-2 border-slate-700">
+            <div className="bg-background rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col border-2 border-border">
               {/* Header */}
-              <div className="p-6 border-b border-slate-700">
-                <h3 className="text-2xl font-bold text-white mb-2">Cambiar Stock Asignado</h3>
-                <p className="text-slate-400">
+              <div className="p-6 border-b border-border">
+                <h3 className="text-2xl font-bold text-foreground mb-2">Cambiar Stock Asignado</h3>
+                <p className="text-muted-foreground">
                   Orden: <strong>{cutOrder.cut_number}</strong> - {cutOrder.product?.name}
                 </p>
               </div>
@@ -1493,13 +1153,13 @@ export default function PlantaPedidoDetallePage() {
               <div className="p-6 overflow-y-auto flex-1">
                 {loadingStock[cutOrder.id] ? (
                   <div className="text-center py-12">
-                    <div className="text-white text-lg">Cargando stock disponible...</div>
+                    <div className="text-foreground text-lg">Cargando stock disponible...</div>
                   </div>
                 ) : (
                   <>
                     {/* Selector de cantidad */}
                     <div className="mb-6">
-                      <label className="block text-white font-semibold mb-2">
+                      <label className="block text-foreground font-semibold mb-2">
                         Cantidad de chapas a cambiar:
                       </label>
                       <div className="flex items-center gap-3">
@@ -1510,7 +1170,7 @@ export default function PlantaPedidoDetallePage() {
                             setQuantityToChange(prev => ({ ...prev, [cutOrder.id]: newValue }))
                           }}
                           disabled={(quantityToChange[cutOrder.id] || cutOrder.quantity_requested) <= 1}
-                          className="w-14 h-14 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:cursor-not-allowed text-white rounded-xl text-2xl font-bold transition-colors border-2 border-slate-600"
+                          className="w-14 h-14 bg-muted hover:bg-secondary disabled:bg-card disabled:cursor-not-allowed text-foreground rounded-xl text-2xl font-bold transition-colors border-2 border-border"
                         >
                           -
                         </button>
@@ -1523,7 +1183,7 @@ export default function PlantaPedidoDetallePage() {
                             const value = parseInt(e.target.value) || 1
                             setQuantityToChange(prev => ({ ...prev, [cutOrder.id]: Math.min(Math.max(1, value), cutOrder.quantity_requested) }))
                           }}
-                          className="flex-1 p-4 bg-slate-800 border-2 border-slate-700 rounded-xl text-white text-lg text-center focus:border-amber-500 focus:outline-none"
+                          className="flex-1 p-4 bg-card border-2 border-border rounded-xl text-foreground text-lg text-center focus:border-amber-500 focus:outline-none"
                         />
                         <button
                           onClick={() => {
@@ -1532,18 +1192,18 @@ export default function PlantaPedidoDetallePage() {
                             setQuantityToChange(prev => ({ ...prev, [cutOrder.id]: newValue }))
                           }}
                           disabled={(quantityToChange[cutOrder.id] || cutOrder.quantity_requested) >= cutOrder.quantity_requested}
-                          className="w-14 h-14 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:cursor-not-allowed text-white rounded-xl text-2xl font-bold transition-colors border-2 border-slate-600"
+                          className="w-14 h-14 bg-muted hover:bg-secondary disabled:bg-card disabled:cursor-not-allowed text-foreground rounded-xl text-2xl font-bold transition-colors border-2 border-border"
                         >
                           +
                         </button>
                       </div>
-                      <p className="text-slate-500 text-sm mt-1">
+                      <p className="text-muted-foreground text-sm mt-1">
                         Máximo: {cutOrder.quantity_requested} chapas
                       </p>
                     </div>
 
                     <div className="mb-4">
-                      <p className="text-slate-400 text-sm mb-2">
+                      <p className="text-muted-foreground text-sm mb-2">
                         Stock disponible para <strong>{cutOrder.product?.code}</strong>:
                       </p>
                     </div>
@@ -1562,25 +1222,26 @@ export default function PlantaPedidoDetallePage() {
                               onClick={() => setSelectedStock(prev => ({ ...prev, [cutOrder.id]: stock }))}
                               className={`p-4 rounded-xl border-2 transition-all ${
                                 isSelected
-                                  ? 'bg-slate-800 border-amber-500 shadow-lg'
+                                  ? 'bg-card border-amber-500 shadow-lg'
                                   : isCurrent
-                                  ? 'bg-slate-800 border-blue-500'
-                                  : 'bg-slate-800 border-slate-700 hover:bg-slate-700'
+                                  ? 'bg-card border-blue-500'
+                                  : 'bg-card border-border hover:bg-muted'
                               }`}
                             >
                               <div className="text-center">
-                                <div className="text-xl font-bold text-white mb-1">
+                                <div className="text-xl font-bold text-foreground mb-1">
                                   {product?.code}
                                 </div>
-                                <div className="text-slate-400 text-sm">
+                                <div className="text-muted-foreground text-sm">
                                   {size}m
                                 </div>
-                                <div className="text-slate-500 text-xs mt-1">
+                                <div className="text-muted-foreground text-xs mt-1">
                                   Disponible: {stock.stock_disponible}
                                 </div>
                                 {isCurrent && (
-                                  <div className="text-blue-400 text-xs mt-1 font-semibold">
-                                    ✓ Actual
+                                  <div className="flex items-center gap-1 text-blue-400 text-xs mt-1 font-semibold">
+                                    <CheckCircle2 className="w-3 h-3" />
+                                    Actual
                                   </div>
                                 )}
                               </div>
@@ -1589,7 +1250,7 @@ export default function PlantaPedidoDetallePage() {
                         })}
                       </div>
                     ) : (
-                      <div className="text-center py-8 text-slate-400">
+                      <div className="text-center py-8 text-muted-foreground">
                         No hay stock disponible para este producto
                       </div>
                     )}
@@ -1598,17 +1259,17 @@ export default function PlantaPedidoDetallePage() {
               </div>
 
               {/* Footer */}
-              <div className="p-6 border-t border-slate-700 flex gap-3">
+              <div className="p-6 border-t border-border flex gap-3">
                 <button
                   onClick={() => setShowChangeStockModal(prev => ({ ...prev, [cutOrder.id]: false }))}
-                  className="flex-1 px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-semibold text-lg transition-colors"
+                  className="flex-1 px-6 py-3 bg-muted hover:bg-secondary text-foreground rounded-xl font-semibold text-lg transition-colors"
                 >
                   Cancelar
                 </button>
                 <button
                   onClick={() => handleStockChange(cutOrder.id, cutOrder)}
                   disabled={!selectedStock[cutOrder.id] || processing[cutOrder.id]}
-                  className="flex-1 px-6 py-3 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-xl font-semibold text-lg transition-colors"
+                  className="flex-1 px-6 py-3 bg-amber-600 hover:bg-amber-500 disabled:bg-muted disabled:cursor-not-allowed text-foreground rounded-xl font-semibold text-lg transition-colors"
                 >
                   {processing[cutOrder.id] ? 'Procesando...' : 'Confirmar Cambio'}
                 </button>

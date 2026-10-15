@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { AlertTriangle } from 'lucide-react'
 
 interface ErrorModalProps {
@@ -82,18 +82,21 @@ export function useError() {
     })
   }
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     setConfig(prev => ({ ...prev, isOpen: false }))
-  }
+  }, [])
 
-  const ErrorDialog = () => (
+  // Memoizado: si se redefine en cada render, React lo trata como un componente
+  // distinto y remonta el modal (reinicia su animación de entrada = parpadeo)
+  // cada vez que el componente que llama a useError() se vuelve a renderizar.
+  const ErrorDialog = useCallback(() => (
     <ErrorModal
       isOpen={config.isOpen}
       title={config.title}
       message={config.message}
       onClose={handleClose}
     />
-  )
+  ), [config, handleClose])
 
   return { showError, ErrorDialog }
 }

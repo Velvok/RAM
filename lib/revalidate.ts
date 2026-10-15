@@ -69,7 +69,6 @@ export function revalidateStock() {
   // Luego páginas
   revalidatePath('/admin/stock', 'page')
   revalidatePath('/admin', 'page')
-  revalidatePath('/admin/recortes', 'page')
 }
 
 /**
