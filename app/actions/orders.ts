@@ -6,6 +6,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { revalidateOrders, revalidateStock, revalidateOrderStatus } from '@/lib/revalidate'
 import { notifyPedidoCompletado } from '@/lib/ram-outbound'
 import { extractSizeFromCode } from '@/lib/product-utils'
+import { MODIFIABLE_APPROVED_STATUSES, lineUnits, lineUnitsUpdate } from '@/lib/order-modification'
 
 export async function getOrders() {
   // Deshabilitar caché del servidor para obtener siempre datos frescos
@@ -234,6 +235,205 @@ export async function approveOrderOnHold(orderId: string) {
   }
 }
 
+// Comprueba que hay stock disponible para `units` unidades de la línea.
+// Añade el error a `errors` si no lo hay.
+async function checkLineStock(
+  supabase: ReturnType<typeof createAdminClient>,
+  line: any,
+  units: number,
+  errors: string[]
+) {
+  const { isChapaProduct } = await import('@/lib/product-utils')
+  const isChapa = isChapaProduct(
+    line.product?.code || '',
+    line.product?.category,
+    line.product?.name
+  )
+
+  if (isChapa) {
+    // Para chapas, verificar que hay stock disponible del producto exacto
+    const { data: inventory } = await supabase
+      .from('inventory')
+      .select('stock_total, stock_reservado, stock_en_proceso')
+      .eq('product_id', line.product_id)
+      .limit(1)
+      .maybeSingle()
+
+    const stockDisponible = inventory ? (inventory.stock_total || 0) - (inventory.stock_reservado || 0) - (inventory.stock_en_proceso || 0) : 0
+    
+    if (!inventory || stockDisponible < units) {
+      errors.push(`No hay stock suficiente para ${line.product?.name} (${line.product?.code}). Disponible: ${stockDisponible}, Solicitado: ${units}. Sugiero aprobar el pedido en pausa.`)
+    }
+  } else {
+    // Para artículos normales, verificar que hay stock disponible del producto exacto
+    const { data: inventory } = await supabase
+      .from('inventory')
+      .select('stock_disponible')
+      .eq('product_id', line.product_id)
+      .limit(1)
+      .maybeSingle()
+
+    const stockDisponible = inventory?.stock_disponible || 0
+
+    if (!inventory || stockDisponible < units) {
+      errors.push(`No hay stock suficiente para ${line.product?.name} (${line.product?.code}). Disponible: ${stockDisponible}, Solicitado: ${units}. Sugiero aprobar el pedido en pausa.`)
+    }
+  }
+}
+
+// Crea la orden de corte (chapas, con asignación automática de stock) o el
+// preparation_item (artículos normales, reservando stock) para `units` unidades
+// de la línea. Los errores se añaden a `errors`. Devuelve false si no se llegó a
+// crear la orden de corte / preparation_item.
+async function createLineFulfillment(
+  supabase: ReturnType<typeof createAdminClient>,
+  orderId: string,
+  line: any,
+  units: number,
+  userId: string | undefined,
+  errors: string[]
+): Promise<boolean> {
+  // Identificar si es chapa usando la tabla de productos de corte (isChapaProduct)
+  const { isChapaProduct } = await import('@/lib/product-utils')
+  const isChapa = isChapaProduct(
+    line.product?.code || '',
+    line.product?.category,
+    line.product?.name
+  )
+
+  console.log(`\n🔍 Procesando línea:`, {
+    product_name: line.product?.name,
+    product_code: line.product?.code,
+    product_category: line.product?.category,
+    isChapa,
+    units
+  })
+  
+  if (isChapa) {
+    // ========== CHAPAS: Crear orden de corte ==========
+    console.log(`📋 Línea (CHAPA): ${line.product?.name}, Unidades: ${units}`)
+    
+    // Tamaño de cada pieza (extraído del código del producto)
+    const productSize = extractSizeFromCode(line.product?.code || '') ||
+                       line.product?.length_meters ||
+                       line.length_meters ||
+                       line.quantity
+    
+    // Crear UNA orden de corte agrupada para todas las unidades
+    const cutNumber = `CUT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    
+    // Crear la orden de corte AGRUPADA
+    const { data: cutOrderData, error: cutError } = await supabase
+      .from('cut_orders')
+      .insert({
+        cut_number: cutNumber,
+        order_id: orderId,
+        order_line_id: line.id,
+        product_id: line.product_id,
+        quantity_requested: units,
+        quantity_cut: 0,
+        status: 'pendiente',
+        evo_item_number: line.evo_item_number || null,
+      })
+      .select()
+    
+    if (cutError) {
+      console.error('Error creando orden de corte:', cutError)
+      errors.push(`Error creando orden de corte: ${cutError.message}`)
+      return false
+    }
+
+    if (!cutOrderData || cutOrderData.length === 0) {
+      console.error('No se devolvió ninguna orden de corte después del insert')
+      errors.push('Error: No se pudo crear la orden de corte')
+      return false
+    }
+
+    const cutOrder = cutOrderData[0]
+
+    console.log(`✅ Orden de corte creada: ${cutNumber} - ${units} unidades de ${productSize}m`)
+    
+    // ASIGNACIÓN AUTOMÁTICA DE STOCK
+    // Buscar stock disponible del tamaño exacto o mayor
+    try {
+      const { findBestStockMatch, assignStockToCutOrder, reserveStock } = await import('./stock-management')
+      
+      // Buscar stock para el tamaño del producto
+      const bestMatch = await findBestStockMatch(line.product_id, productSize)
+      
+      if (bestMatch) {
+        // Asignar el stock a la orden de corte
+        await assignStockToCutOrder(
+          cutOrder.id, 
+          bestMatch.inventory_id,
+          bestMatch.product_id,  // ID del producto de la pieza asignada
+          bestMatch.quantity     // Tamaño de la pieza
+        )
+        
+        // Reservar stock (optimizado - una sola query)
+        const { data: currentStock } = await supabase
+          .from('inventory')
+          .select('stock_reservado')
+          .eq('id', bestMatch.inventory_id)
+          .single()
+
+        const newReservado = (currentStock?.stock_reservado || 0) + units
+
+        await supabase
+          .from('inventory')
+          .update({ stock_reservado: newReservado })
+          .eq('id', bestMatch.inventory_id)
+
+        // Registrar movimiento único
+        await supabase.from('stock_movements').insert({
+          product_id: bestMatch.product_id,
+          movement_type: 'reserva',
+          quantity: units,
+          stock_before: currentStock?.stock_reservado || 0,
+          stock_after: newReservado,
+          user_id: userId,
+          notes: `Reserva de ${units} unidades de ${bestMatch.product_code}`,
+        })
+        
+        console.log(`✅ Stock asignado: ${bestMatch.product_code} ${bestMatch.quantity}m × ${units} unidades (${bestMatch.isExact ? 'exacto' : 'aproximado'})`)
+      } else {
+        errors.push(`⚠️ No hay stock disponible para ${line.product?.name} (${productSize}m × ${units})`)
+        console.warn(`⚠️ No hay stock disponible para ${cutNumber}`)
+      }
+    } catch (stockError: any) {
+      errors.push(`Error asignando stock a ${cutNumber}: ${stockError.message}`)
+      console.error('Error asignando stock:', stockError)
+    }
+    
+  } else {
+    // ========== ARTÍCULOS NORMALES: Crear preparation_item ==========
+    console.log(`📦 Línea (ARTÍCULO NORMAL): ${line.product?.name}, Unidades: ${units}`)
+    console.log(`   → Código: ${line.product?.code}`)
+    console.log(`   → Product ID: ${line.product_id}`)
+    console.log(`   → Order Line ID: ${line.id}`)
+    
+    // Fallback: Si el producto no es reconocido como chapa ni accesorio, generar preparation_item por defecto
+    if (line.product?.category !== 'accesorios' && !line.product?.category?.includes('accesorio')) {
+      console.warn(`⚠️ Producto ${line.product?.code} (${line.product?.name}) no reconocido como chapa ni accesorio, generando preparation_item por defecto`)
+    }
+    
+    try {
+      const { createPreparationItem } = await import('./preparation')
+      console.log(`   → Llamando a createPreparationItem...`)
+      const result = await createPreparationItem(orderId, line.id, line.product_id, units, true, line.evo_item_number || null)
+      console.log(`✅ Preparation item creado:`, result)
+      console.log(`✅ Stock reservado: ${units} unidades`)
+    } catch (prepError: any) {
+      console.error('❌ Error creando preparation_item:', prepError)
+      console.error('   Stack:', prepError.stack)
+      errors.push(`Error creando preparation_item para ${line.product?.name}: ${prepError.message}`)
+      return false
+    }
+  }
+
+  return true
+}
+
 // Aprobar pedido y generar órdenes de corte CON asignación automática de stock
 export async function approveOrder(orderId: string) {
   const supabase = createAdminClient()
@@ -261,49 +461,12 @@ export async function approveOrder(orderId: string) {
 
   const errors: string[] = []
 
-  // Importar isChapaProduct para verificar stock
-  const { isChapaProduct } = await import('@/lib/product-utils')
-
   // PRIMERO: Verificar stock disponible para todos los productos antes de crear items
   for (const line of order.order_lines || []) {
     // line.quantity es el total en metros para chapas (units * length_meters), no la
     // cantidad de piezas: hay que usar line.units igual que al crear la orden de corte.
     const units = line.units || Math.ceil(Number(line.quantity)) || 0
-    const isChapa = isChapaProduct(
-      line.product?.code || '',
-      line.product?.category,
-      line.product?.name
-    )
-
-    if (isChapa) {
-      // Para chapas, verificar que hay stock disponible del producto exacto
-      const { data: inventory } = await supabase
-        .from('inventory')
-        .select('stock_total, stock_reservado, stock_en_proceso')
-        .eq('product_id', line.product_id)
-        .limit(1)
-        .maybeSingle()
-
-      const stockDisponible = inventory ? (inventory.stock_total || 0) - (inventory.stock_reservado || 0) - (inventory.stock_en_proceso || 0) : 0
-      
-      if (!inventory || stockDisponible < units) {
-        errors.push(`No hay stock suficiente para ${line.product?.name} (${line.product?.code}). Disponible: ${stockDisponible}, Solicitado: ${units}. Sugiero aprobar el pedido en pausa.`)
-      }
-    } else {
-      // Para artículos normales, verificar que hay stock disponible del producto exacto
-      const { data: inventory } = await supabase
-        .from('inventory')
-        .select('stock_disponible')
-        .eq('product_id', line.product_id)
-        .limit(1)
-        .maybeSingle()
-
-      const stockDisponible = inventory?.stock_disponible || 0
-
-      if (!inventory || stockDisponible < units) {
-        errors.push(`No hay stock suficiente para ${line.product?.name} (${line.product?.code}). Disponible: ${stockDisponible}, Solicitado: ${units}. Sugiero aprobar el pedido en pausa.`)
-      }
-    }
+    await checkLineStock(supabase, line, units, errors)
   }
 
   // Si hay errores de stock, no procesar y lanzar error
@@ -317,143 +480,8 @@ export async function approveOrder(orderId: string) {
     // Cantidad de unidades que pide el cliente
     const units = line.units || Math.ceil(line.quantity) || 1
 
-    // Identificar si es chapa usando la tabla de productos de corte (isChapaProduct)
-    const { isChapaProduct } = await import('@/lib/product-utils')
-    const isChapa = isChapaProduct(
-      line.product?.code || '',
-      line.product?.category,
-      line.product?.name
-    )
+    await createLineFulfillment(supabase, orderId, line, units, user?.id, errors)
 
-    console.log(`\n🔍 Procesando línea:`, {
-      product_name: line.product?.name,
-      product_code: line.product?.code,
-      product_category: line.product?.category,
-      isChapa,
-      units
-    })
-    
-    if (isChapa) {
-      // ========== CHAPAS: Crear orden de corte ==========
-      console.log(`📋 Línea (CHAPA): ${line.product?.name}, Unidades: ${units}`)
-      
-      // Tamaño de cada pieza (extraído del código del producto)
-      const productSize = extractSizeFromCode(line.product?.code || '') ||
-                         line.product?.length_meters ||
-                         line.length_meters ||
-                         line.quantity
-      
-      // Crear UNA orden de corte agrupada para todas las unidades
-      const cutNumber = `CUT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-      
-      // Crear la orden de corte AGRUPADA
-      const { data: cutOrderData, error: cutError } = await supabase
-        .from('cut_orders')
-        .insert({
-          cut_number: cutNumber,
-          order_id: orderId,
-          order_line_id: line.id,
-          product_id: line.product_id,
-          quantity_requested: units,
-          quantity_cut: 0,
-          status: 'pendiente',
-          evo_item_number: line.evo_item_number || null,
-        })
-        .select()
-      
-      if (cutError) {
-        console.error('Error creando orden de corte:', cutError)
-        errors.push(`Error creando orden de corte: ${cutError.message}`)
-        continue
-      }
-
-      if (!cutOrderData || cutOrderData.length === 0) {
-        console.error('No se devolvió ninguna orden de corte después del insert')
-        errors.push('Error: No se pudo crear la orden de corte')
-        continue
-      }
-
-      const cutOrder = cutOrderData[0]
-
-      console.log(`✅ Orden de corte creada: ${cutNumber} - ${units} unidades de ${productSize}m`)
-      
-      // ASIGNACIÓN AUTOMÁTICA DE STOCK
-      // Buscar stock disponible del tamaño exacto o mayor
-      try {
-        const { findBestStockMatch, assignStockToCutOrder, reserveStock } = await import('./stock-management')
-        
-        // Buscar stock para el tamaño del producto
-        const bestMatch = await findBestStockMatch(line.product_id, productSize)
-        
-        if (bestMatch) {
-          // Asignar el stock a la orden de corte
-          await assignStockToCutOrder(
-            cutOrder.id, 
-            bestMatch.inventory_id,
-            bestMatch.product_id,  // ID del producto de la pieza asignada
-            bestMatch.quantity     // Tamaño de la pieza
-          )
-          
-          // Reservar stock (optimizado - una sola query)
-          const { data: currentStock } = await supabase
-            .from('inventory')
-            .select('stock_reservado')
-            .eq('id', bestMatch.inventory_id)
-            .single()
-
-          const newReservado = (currentStock?.stock_reservado || 0) + units
-
-          await supabase
-            .from('inventory')
-            .update({ stock_reservado: newReservado })
-            .eq('id', bestMatch.inventory_id)
-
-          // Registrar movimiento único
-          await supabase.from('stock_movements').insert({
-            product_id: bestMatch.product_id,
-            movement_type: 'reserva',
-            quantity: units,
-            stock_before: currentStock?.stock_reservado || 0,
-            stock_after: newReservado,
-            user_id: user?.id,
-            notes: `Reserva de ${units} unidades de ${bestMatch.product_code}`,
-          })
-          
-          console.log(`✅ Stock asignado: ${bestMatch.product_code} ${bestMatch.quantity}m × ${units} unidades (${bestMatch.isExact ? 'exacto' : 'aproximado'})`)
-        } else {
-          errors.push(`⚠️ No hay stock disponible para ${line.product?.name} (${productSize}m × ${units})`)
-          console.warn(`⚠️ No hay stock disponible para ${cutNumber}`)
-        }
-      } catch (stockError: any) {
-        errors.push(`Error asignando stock a ${cutNumber}: ${stockError.message}`)
-        console.error('Error asignando stock:', stockError)
-      }
-      
-    } else {
-      // ========== ARTÍCULOS NORMALES: Crear preparation_item ==========
-      console.log(`📦 Línea (ARTÍCULO NORMAL): ${line.product?.name}, Unidades: ${units}`)
-      console.log(`   → Código: ${line.product?.code}`)
-      console.log(`   → Product ID: ${line.product_id}`)
-      console.log(`   → Order Line ID: ${line.id}`)
-      
-      // Fallback: Si el producto no es reconocido como chapa ni accesorio, generar preparation_item por defecto
-      if (line.product?.category !== 'accesorios' && !line.product?.category?.includes('accesorio')) {
-        console.warn(`⚠️ Producto ${line.product?.code} (${line.product?.name}) no reconocido como chapa ni accesorio, generando preparation_item por defecto`)
-      }
-      
-      try {
-        const { createPreparationItem } = await import('./preparation')
-        console.log(`   → Llamando a createPreparationItem...`)
-        const result = await createPreparationItem(orderId, line.id, line.product_id, units, true, line.evo_item_number || null)
-        console.log(`✅ Preparation item creado:`, result)
-        console.log(`✅ Stock reservado: ${units} unidades`)
-      } catch (prepError: any) {
-        console.error('❌ Error creando preparation_item:', prepError)
-        console.error('   Stack:', prepError.stack)
-        errors.push(`Error creando preparation_item para ${line.product?.name}: ${prepError.message}`)
-      }
-    }
-    
     // Pequeño delay para evitar duplicados en el timestamp
     await new Promise(resolve => setTimeout(resolve, 10))
   }
@@ -515,6 +543,73 @@ export async function approveOrder(orderId: string) {
   return { 
     success: true
   }
+}
+
+// Aprobar la ampliación de un pedido modificado desde EVO: crea cortes /
+// preparaciones (con reserva de stock) solo para order_lines.quantity_pending_approval.
+// Lo que ya estaba aprobado no se toca.
+export async function approveOrderModification(orderId: string) {
+  const supabase = createAdminClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+
+  const { data: order, error: orderError } = await supabase
+    .from('orders')
+    .select('id, status, order_lines(*, product:products(*))')
+    .eq('id', orderId)
+    .single()
+
+  if (orderError) throw orderError
+  if (!MODIFIABLE_APPROVED_STATUSES.includes(order.status)) {
+    throw new Error(`No se puede aprobar la ampliación de un pedido en estado "${order.status}"`)
+  }
+
+  const pendingLines = (order.order_lines || []).filter((l: any) => (l.quantity_pending_approval || 0) > 0)
+  if (pendingLines.length === 0) {
+    throw new Error('Este pedido no tiene ampliaciones pendientes de aprobar')
+  }
+
+  const errors: string[] = []
+
+  // PRIMERO: Verificar stock disponible solo para lo pendiente
+  for (const line of pendingLines) {
+    await checkLineStock(supabase, line, line.quantity_pending_approval, errors)
+  }
+
+  if (errors.length > 0) {
+    console.log('❌ Errores de stock detectados en la ampliación:', errors)
+    throw new Error(errors.join('\n'))
+  }
+
+  for (const line of pendingLines) {
+    const pending = line.quantity_pending_approval
+    const created = await createLineFulfillment(supabase, orderId, line, pending, user?.id, errors)
+    if (!created) continue
+
+    // Lo pendiente pasa a aprobado
+    const { error: lineError } = await supabase
+      .from('order_lines')
+      .update({ ...lineUnitsUpdate(line, lineUnits(line) + pending), quantity_pending_approval: 0 })
+      .eq('id', line.id)
+    if (lineError) errors.push(`Error actualizando línea de ${line.product?.name}: ${lineError.message}`)
+
+    // Pequeño delay para evitar duplicados en el timestamp
+    await new Promise(resolve => setTimeout(resolve, 10))
+  }
+
+  // Solo recalcular si la planta ya había empezado: un pedido 'finalizado' con
+  // cortes nuevos vuelve a 'en_corte'. 'aprobado' y 'aprobado_en_pausa' se quedan igual.
+  if (order.status === 'en_corte' || order.status === 'finalizado') {
+    await updateOrderStatus(orderId)
+  }
+
+  revalidateOrders(orderId)
+  revalidateStock()
+
+  if (errors.length > 0) {
+    return { success: false, errors }
+  }
+  return { success: true }
 }
 
 // Mantener función legacy para compatibilidad (ahora llama a approveOrder)

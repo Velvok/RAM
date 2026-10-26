@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { generateCutOrders, getOrderById, approveOrderOnHold, undoOrderDelivery } from '@/app/actions/orders'
+import { generateCutOrders, getOrderById, approveOrderOnHold, approveOrderModification, undoOrderDelivery } from '@/app/actions/orders'
 import { useRouter } from 'next/navigation'
 import { useConfirm } from '@/components/confirm-modal'
 import { useError } from '@/components/error-modal'
@@ -113,6 +113,39 @@ export default function OrderActions({
     }
   }
 
+  async function handleApproveModification() {
+    const confirmed = await confirm(
+      'Aprobar Ampliación del Pedido',
+      'EVO ha modificado este pedido añadiendo artículos. ¿Aprobar la ampliación? Se comprobará el stock y se crearán órdenes de corte / preparación solo para lo añadido.',
+      { variant: 'success', confirmText: 'Sí, aprobar ampliación' }
+    )
+
+    if (!confirmed) return
+
+    setLoading(true)
+    try {
+      const result = await approveOrderModification(order.id)
+      await reloadOrder()
+
+      // Revalidar para sincronizar con tablet
+      try {
+        await fetch(`/api/revalidate?path=/admin/pedidos/${order.id}`, { method: 'POST' })
+        await fetch(`/api/revalidate?path=/planta/pedidos/${order.id}`, { method: 'POST' })
+      } catch (e) {
+        console.log('Revalidación fallida')
+      }
+
+      if (result.success) {
+        showSuccess('Ampliación aprobada. Órdenes de corte / preparación creadas y stock asignado.', 'Ampliación Aprobada')
+      } else {
+        showError(result.errors?.join('\n') || 'La ampliación se aprobó con incidencias', 'Ampliación con Incidencias')
+      }
+    } catch (error: any) {
+      showError(error?.message || 'No se pudo aprobar la ampliación', 'Error al Aprobar')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   async function handleUndoDelivery() {
     const confirmed = await confirm(
@@ -155,6 +188,10 @@ export default function OrderActions({
     (order.preparation_items?.some((pi: any) => pi.assigned_inventory_id) || false)
   )
 
+  // Modificación de EVO con artículos añadidos pendientes de aprobar
+  const hasPendingModification = order.status !== 'nuevo' &&
+    (order.lines?.some((l: any) => (l.quantity_pending_approval || 0) > 0) || false)
+
   // Modo header: solo botones sin cuadro
   if (isHeaderMode) {
     return (
@@ -173,6 +210,13 @@ export default function OrderActions({
                 Aprobar en Pausa
               </Button>
             </>
+          )}
+
+          {/* Ampliación pendiente (modificación desde EVO) */}
+          {hasPendingModification && (
+            <Button variant="success" size="sm" onClick={handleApproveModification} disabled={loading}>
+              Aprobar Ampliación
+            </Button>
           )}
 
           {/* Estado Aprobado en Pausa */}

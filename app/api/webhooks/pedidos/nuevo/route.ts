@@ -3,6 +3,8 @@ import { after } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
 import { createWebhookVerifier } from '@/lib/webhook-security'
+import { applyOrderModification, MODIFIABLE_APPROVED_STATUSES } from '@/lib/order-modification'
+import { updateOrderStatus } from '@/app/actions/orders'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -16,7 +18,9 @@ interface RefEvo {
 
 interface PedidoNuevoPayload {
   id_evento: string
-  tipo_evento: 'pedido_creado'
+  // EVO envía las modificaciones como 'pedido_creado' o 'pedido_modificado' según
+  // la versión; no se usa para decidir nada (ver processPedidoNuevo)
+  tipo_evento: 'pedido_creado' | 'pedido_modificado'
   id_pedido: string
   ref_evo: RefEvo
   fecha: string
@@ -149,12 +153,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid ref_evo structure' }, { status: 400 })
     }
 
-    // Idempotencia
-    const { data: existingEvent } = await supabase
+    // Idempotencia: EVO reutiliza id_evento al modificar un pedido (lo borra y lo
+    // vuelve a crear), así que la clave es id_evento + fecha. Un reintento del
+    // mismo envío trae la misma fecha; una modificación nueva, otra distinta.
+    const eventKey = payload.fecha ? `${payload.id_evento}|${payload.fecha}` : payload.id_evento
+
+    const { data: existingEvents } = await supabase
       .from('evo_events')
-      .select('id')
-      .eq('id_evento', payload.id_evento)
-      .maybeSingle()
+      .select('id, id_evento, payload')
+      .in('id_evento', [eventKey, payload.id_evento])
+
+    // Las filas anteriores a este cambio se guardaron con el id_evento sin fecha
+    const existingEvent = (existingEvents || []).find(e =>
+      e.id_evento === eventKey || (e.payload as any)?.fecha === payload.fecha
+    )
 
     if (existingEvent) {
       console.log(`⏭️ Event ${payload.id_evento} already processed`)
@@ -169,7 +181,7 @@ export async function POST(request: NextRequest) {
     const { error: insertEventError } = await supabase
       .from('evo_events')
       .insert({
-        id_evento: payload.id_evento,
+        id_evento: eventKey,
         tipo_evento: payload.tipo_evento,
         payload: payload,
         processed_at: new Date().toISOString(),
@@ -190,7 +202,7 @@ export async function POST(request: NextRequest) {
     // Procesar en background con after()
     after(async () => {
       try {
-        await processPedidoNuevo(payload)
+        await processPedidoNuevo(payload, eventKey)
       } catch (error) {
         console.error('Error in after() processing:', error)
       }
@@ -212,7 +224,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function processPedidoNuevo(payload: PedidoNuevoPayload) {
+async function processPedidoNuevo(payload: PedidoNuevoPayload, eventKey: string) {
   console.log(`🔄 Processing pedido ${payload.id_pedido}...`)
   const supabase = createAdminClient()
   const errors: string[] = []
@@ -220,25 +232,27 @@ async function processPedidoNuevo(payload: PedidoNuevoPayload) {
 
   try {
     // Verificar si el pedido ya existe → MODIFICACIÓN DE PEDIDO
-    // RAM envía modificaciones con el mismo id_pedido. Hacemos rollback completo
-    // del pedido viejo (devolver stock, eliminar cuts/prep/lines) y creamos uno nuevo.
+    // EVO modifica un pedido borrándolo y volviéndolo a crear con el mismo
+    // id_pedido, así que `items` es siempre el estado completo nuevo.
     const { data: existingOrder } = await supabase
       .from('orders')
-      .select('id, status')
+      .select('id, status, evo_order_id')
       .eq('evo_order_id', payload.id_pedido)
       .maybeSingle()
 
     if (existingOrder) {
-      console.log(`🔄 Order ${payload.id_pedido} already exists (status: ${existingOrder.status}). Rolling back to recreate as new...`)
+      console.log(`🔄 Order ${payload.id_pedido} already exists (status: ${existingOrder.status}). Applying modification...`)
 
-      const { data: rollbackResult, error: rollbackError } = await supabase
-        .rpc('rollback_order', { p_order_id: existingOrder.id })
-
-      if (rollbackError) {
-        throw new Error(`Error rolling back existing order: ${rollbackError.message}`)
+      if (existingOrder.status !== 'nuevo' && !MODIFIABLE_APPROVED_STATUSES.includes(existingOrder.status)) {
+        await updateEventStatus(
+          supabase,
+          eventKey,
+          false,
+          [`Modificación ignorada: el pedido está en estado '${existingOrder.status}'`],
+          existingOrder.id
+        )
+        return
       }
-
-      console.log(`✅ Rollback complete:`, rollbackResult)
     }
 
     // Crear o obtener cliente
@@ -366,38 +380,122 @@ async function processPedidoNuevo(payload: PedidoNuevoPayload) {
     console.log(`   Found ${productIds.size}/${allEvoIds.length} products`)
 
     if (productIds.size === 0) {
-      await updateEventStatus(supabase, payload.id_evento, false, ['No valid products found', ...errors])
+      await updateEventStatus(supabase, eventKey, false, ['No valid products found', ...errors])
       return
     }
 
-    // Crear pedido siempre con status 'nuevo'
-    // Las cut_orders se crean solo al aprobar el pedido
-    const initialStatus = 'nuevo'
-    console.log(`➕ Creating order with status ${initialStatus}...`)
-
-    const { data: order, error: orderError } = await supabase
-      .from('orders')
-      .insert({
-        evo_order_id: payload.id_pedido,
-        order_number: payload.id_pedido,
-        client_id: clientId,
-        status: initialStatus,
-        notes: `Pedido recibido desde EVO - ${ref_evo.codtipmov} ${ref_evo.nromov}`,
-        evo_data: {
-          ...payload,
-          ref_evo,
-          received_at: new Date().toISOString()
-        },
-        created_by: null,
-        ref_evo: ref_evo
-      })
-      .select('id')
-      .single()
-
-    if (orderError || !order) {
-      throw new Error(`Error creating order: ${orderError?.message}`)
+    const evoData = {
+      ...payload,
+      ref_evo,
+      received_at: new Date().toISOString()
     }
-    console.log(`✅ Order created: ${order.id}`)
+
+    // Pedido ya aprobado: aplicar diferencias sin tocar lo que sigue igual
+    if (existingOrder && existingOrder.status !== 'nuevo') {
+      const { warnings, pendingApproval } = await applyOrderModification(
+        supabase,
+        existingOrder,
+        payload.items,
+        productIds
+      )
+
+      await supabase
+        .from('orders')
+        .update({
+          client_id: clientId,
+          evo_data: evoData,
+          ref_evo: ref_evo,
+          notes: `Pedido modificado desde EVO - ${ref_evo.codtipmov} ${ref_evo.nromov}` +
+            (pendingApproval ? ' (ampliación pendiente de aprobar)' : '')
+        })
+        .eq('id', existingOrder.id)
+
+      // Las reducciones pueden completar un pedido que la planta ya había empezado.
+      // 'aprobado' y 'aprobado_en_pausa' no se recalculan (updateOrderStatus los
+      // pasaría a 'en_corte' por tener cortes pendientes).
+      if (existingOrder.status === 'en_corte' || existingOrder.status === 'finalizado') {
+        try {
+          await updateOrderStatus(existingOrder.id)
+        } catch (statusError) {
+          console.error('Error recalculating order status:', statusError)
+        }
+      }
+
+      const allErrors = [...errors, ...warnings]
+      console.log(`\n✅ Pedido ${payload.id_pedido} modified: ${allErrors.length} warnings/errors, pending approval: ${pendingApproval}`)
+      await updateEventStatus(
+        supabase,
+        eventKey,
+        errors.length === 0,
+        allErrors.length > 0 ? allErrors : null,
+        existingOrder.id
+      )
+      return
+    }
+
+    let order: { id: string }
+
+    if (existingOrder) {
+      // Pedido aún sin aprobar: no hay stock reservado, se sustituyen las líneas
+      console.log(`♻️ Replacing lines of order ${existingOrder.id} (status nuevo)...`)
+
+      const { error: prepDeleteError } = await supabase
+        .from('preparation_items')
+        .delete()
+        .eq('order_id', existingOrder.id)
+      if (prepDeleteError) {
+        throw new Error(`Error deleting preparation_items: ${prepDeleteError.message}`)
+      }
+
+      const { error: linesDeleteError } = await supabase
+        .from('order_lines')
+        .delete()
+        .eq('order_id', existingOrder.id)
+      if (linesDeleteError) {
+        throw new Error(`Error deleting order lines: ${linesDeleteError.message}`)
+      }
+
+      const { error: orderUpdateError } = await supabase
+        .from('orders')
+        .update({
+          client_id: clientId,
+          notes: `Pedido modificado desde EVO - ${ref_evo.codtipmov} ${ref_evo.nromov}`,
+          evo_data: evoData,
+          ref_evo: ref_evo
+        })
+        .eq('id', existingOrder.id)
+      if (orderUpdateError) {
+        throw new Error(`Error updating order: ${orderUpdateError.message}`)
+      }
+
+      order = { id: existingOrder.id }
+    } else {
+      // Crear pedido siempre con status 'nuevo'
+      // Las cut_orders se crean solo al aprobar el pedido
+      const initialStatus = 'nuevo'
+      console.log(`➕ Creating order with status ${initialStatus}...`)
+
+      const { data: newOrder, error: orderError } = await supabase
+        .from('orders')
+        .insert({
+          evo_order_id: payload.id_pedido,
+          order_number: payload.id_pedido,
+          client_id: clientId,
+          status: initialStatus,
+          notes: `Pedido recibido desde EVO - ${ref_evo.codtipmov} ${ref_evo.nromov}`,
+          evo_data: evoData,
+          created_by: null,
+          ref_evo: ref_evo
+        })
+        .select('id')
+        .single()
+
+      if (orderError || !newOrder) {
+        throw new Error(`Error creating order: ${orderError?.message}`)
+      }
+      order = newOrder
+      console.log(`✅ Order created: ${order.id}`)
+    }
 
     // Crear líneas del pedido en bulk
     const orderLines = payload.items
@@ -460,7 +558,7 @@ async function processPedidoNuevo(payload: PedidoNuevoPayload) {
 
     await updateEventStatus(
       supabase,
-      payload.id_evento,
+      eventKey,
       errors.length === 0,
       errors.length > 0 ? errors : null,
       order.id
@@ -470,7 +568,7 @@ async function processPedidoNuevo(payload: PedidoNuevoPayload) {
     console.error('❌ Error processing pedido:', error)
     await updateEventStatus(
       supabase,
-      payload.id_evento,
+      eventKey,
       false,
       [error instanceof Error ? error.message : 'Unknown error']
     )

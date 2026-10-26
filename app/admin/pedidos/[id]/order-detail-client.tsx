@@ -281,8 +281,13 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                     <span className="font-semibold">
-                      {line.units || Math.ceil(line.quantity) || 1} unidades
+                      {line.units || Math.ceil(line.quantity) || (line.quantity_pending_approval ? 0 : 1)} unidades
                     </span>
+                    {line.quantity_pending_approval > 0 && (
+                      <span className="ml-2 inline-flex items-center rounded-md bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning">
+                        +{line.quantity_pending_approval} pendientes de aprobar
+                      </span>
+                    )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                     {formatCurrency(line.unit_price)}
