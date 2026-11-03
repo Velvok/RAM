@@ -1,11 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { handleSemanticSearch } from '@/lib/ai-provider'
+import { getAdminUserId } from '@/lib/auth/guards'
+
+const MAX_BODY_CHARS = 200_000
 
 export async function POST(request: NextRequest) {
-  try {
-    const { query, dashboardData } = await request.json()
+  if (!(await getAdminUserId())) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+  }
+  // Tope de tamaño: cada petición se manda entera al modelo (coste por token)
+  const raw = await request.text()
+  if (raw.length > MAX_BODY_CHARS) {
+    return NextResponse.json({ error: 'Petición demasiado grande' }, { status: 413 })
+  }
 
-    if (!query || typeof query !== 'string') {
+  try {
+    const { query, dashboardData } = JSON.parse(raw)
+
+    if (!query || typeof query !== 'string' || query.length > 1000) {
       return NextResponse.json(
         { error: 'Query inválida' },
         { status: 400 }

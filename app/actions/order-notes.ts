@@ -1,5 +1,6 @@
 'use server'
 
+import { requireAdmin, requireStaff } from '@/lib/auth/guards'
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
@@ -15,6 +16,8 @@ export interface OrderNote {
 }
 
 export async function createOrderNote(orderId: string, content: string): Promise<OrderNote> {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   const { data: { user } } = await supabase.auth.getUser()
@@ -49,6 +52,8 @@ export async function createOrderNote(orderId: string, content: string): Promise
 }
 
 export async function getOrderNotes(orderId: string): Promise<OrderNote[]> {
+  await requireStaff()
+
   const supabase = createAdminClient()
 
   const { data, error } = await supabase
@@ -63,6 +68,8 @@ export async function getOrderNotes(orderId: string): Promise<OrderNote[]> {
 }
 
 export async function markNoteAsRead(noteId: string, operatorName: string): Promise<void> {
+  await requireStaff()
+
   const supabase = createAdminClient()
 
   const { data: note, error: fetchError } = await supabase
@@ -89,6 +96,8 @@ export async function markNoteAsRead(noteId: string, operatorName: string): Prom
 }
 
 export async function getUnreadNotesCountByOrders(orderIds: string[]): Promise<Record<string, number>> {
+  await requireStaff()
+
   if (!orderIds.length) return {}
   const supabase = createAdminClient()
 
@@ -108,6 +117,8 @@ export async function getUnreadNotesCountByOrders(orderIds: string[]): Promise<R
 }
 
 export async function deleteOrderNote(noteId: string, orderId: string): Promise<void> {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   const { error } = await supabase

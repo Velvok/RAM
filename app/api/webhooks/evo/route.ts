@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { safeEqual } from '@/lib/auth/planta-session'
 import { createClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
 
@@ -31,7 +32,7 @@ export async function POST(request: NextRequest) {
     const headersList = await headers()
     const webhookSecret = headersList.get('x-evo-webhook-secret')
 
-    if (webhookSecret !== process.env.EVO_WEBHOOK_SECRET) {
+    if (!safeEqual(webhookSecret, process.env.EVO_WEBHOOK_SECRET)) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }

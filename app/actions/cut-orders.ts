@@ -1,11 +1,14 @@
 'use server'
 
+import { requireAdmin, requireStaff } from '@/lib/auth/guards'
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/server'
 import { updateOrderStatus } from './orders'
 import { revalidateCuts, revalidateOrders, revalidateStock } from '@/lib/revalidate'
 
 export async function getCutOrders(status?: string) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   let query = supabase
@@ -35,6 +38,8 @@ export async function getCutOrders(status?: string) {
 }
 
 export async function getCutOrderById(id: string) {
+  await requireStaff()
+
   const supabase = createAdminClient()
 
   const { data, error } = await supabase
@@ -55,6 +60,8 @@ export async function getCutOrderById(id: string) {
 }
 
 export async function assignCutOrder(cutOrderId: string, operatorId: string) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   const { data, error } = await supabase
@@ -72,6 +79,8 @@ export async function assignCutOrder(cutOrderId: string, operatorId: string) {
 }
 
 export async function startCutOrder(cutOrderId: string, operatorId: string) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   // Guard: no se puede (re)iniciar una orden ya completada
@@ -121,6 +130,8 @@ export async function startCutOrder(cutOrderId: string, operatorId: string) {
 }
 
 export async function pauseCutOrder(cutOrderId: string) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   const { data, error } = await supabase

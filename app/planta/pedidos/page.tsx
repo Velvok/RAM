@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { Package, LogOut, Search, X, Clock, MessageSquare, ChevronRight, Scissors, Calendar } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -18,6 +17,7 @@ const STATUS_FILTERS = [
   { id: 'aprobado_en_pausa', label: 'En Pausa' },
   { id: 'en_corte', label: 'En Corte' },
   { id: 'finalizado', label: 'Finalizado' },
+  { id: 'modificado', label: 'Modificado' },
 ]
 
 export default function PlantaPedidosPage() {
@@ -87,23 +87,25 @@ export default function PlantaPedidosPage() {
     } catch (e) {}
   }
 
+  // Notas sin leer: consulta periódica por server action. (Realtime iba con la
+  // clave anónima sobre order_notes, que ya no es legible sin sesión.)
   useEffect(() => {
     if (!pedidos.length) return
-    const supabase = createClient()
-    const channel = supabase
-      .channel('order_notes_list')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'order_notes' },
-        () => refreshUnreadNotes(pedidos.map(p => p.id))
-      )
-      .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
+    const ids = pedidos.map(p => p.id)
+    const interval = setInterval(() => {
+      if (!document.hidden) refreshUnreadNotes(ids)
+    }, 15000)
+    return () => clearInterval(interval)
   }, [pedidos])
 
-  function handleLogout() {
+  async function handleLogout() {
     localStorage.removeItem('operator')
+    try {
+      const { logoutPlanta } = await import('@/app/actions/auth')
+      await logoutPlanta()
+    } catch (e) {
+      console.error('Error cerrando sesión de planta:', e)
+    }
     router.push('/')
   }
 

@@ -17,8 +17,8 @@ Edita el archivo `.env.local` con estos valores:
 
 ```env
 # Supabase
-NEXT_PUBLIC_SUPABASE_URL=https://efhpkccbsshcuvsdcevy.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVmaHBrY2Nic3NoY3V2c2RjZXZ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4MDkxMDIsImV4cCI6MjA4ODM4NTEwMn0.1j_e_FcK9fwF5jmpWRSs1MmRunW5CnbIRqkXLS35oMQ
+NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-key>
 SUPABASE_SERVICE_ROLE_KEY=<TU_SERVICE_ROLE_KEY_AQUI>
 
 # Vercel AI (opcional por ahora)
@@ -33,7 +33,7 @@ EVO_WEBHOOK_SECRET=tu_webhook_secret_seguro_aqui
 
 ## 🔐 Obtener Service Role Key
 
-1. Ir a: https://supabase.com/dashboard/project/efhpkccbsshcuvsdcevy/settings/api
+1. Ir a: https://supabase.com/dashboard/project/<project-ref>/settings/api
 2. Copiar el valor de **service_role** (secret)
 3. Pegarlo en `SUPABASE_SERVICE_ROLE_KEY`
 

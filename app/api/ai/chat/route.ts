@@ -1,11 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { chatWithAssistant } from '@/lib/ai-provider'
+import { getAdminUserId } from '@/lib/auth/guards'
+
+const MAX_BODY_CHARS = 200_000
+const MAX_MESSAGES = 40
 
 export async function POST(request: NextRequest) {
-  try {
-    const { messages, dashboardData } = await request.json()
+  if (!(await getAdminUserId())) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+  }
+  // Tope de tamaño: cada petición se manda entera al modelo (coste por token)
+  const raw = await request.text()
+  if (raw.length > MAX_BODY_CHARS) {
+    return NextResponse.json({ error: 'Petición demasiado grande' }, { status: 413 })
+  }
 
-    if (!messages || !Array.isArray(messages)) {
+  try {
+    const { messages, dashboardData } = JSON.parse(raw)
+
+    if (!messages || !Array.isArray(messages) || messages.length > MAX_MESSAGES) {
       return NextResponse.json(
         { error: 'Mensajes inválidos' },
         { status: 400 }

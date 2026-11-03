@@ -1,5 +1,6 @@
 'use server'
 
+import { requireStaff } from '@/lib/auth/guards'
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { notifyChapaPreparada } from '@/lib/ram-outbound'
@@ -9,6 +10,8 @@ import { notifyChapaPreparada } from '@/lib/ram-outbound'
  * Marca la orden como completada
  */
 export async function confirmReassignmentPickup(cutOrderId: string) {
+  await requireStaff()
+
   const supabase = createAdminClient()
 
   // Obtener información de la orden

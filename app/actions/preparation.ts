@@ -1,5 +1,6 @@
 'use server'
 
+import { requireAdmin, requireStaff } from '@/lib/auth/guards'
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidateOrders, revalidateStock } from '@/lib/revalidate'
 import { notifyChapaPreparada } from '@/lib/ram-outbound'
@@ -16,6 +17,8 @@ export async function createPreparationItem(
   reserveStock: boolean = true,
   evoItemNumber?: string | null
 ) {
+  await requireAdmin()
+
   // Usar admin client para bypass RLS
   const { createAdminClient } = await import('@/lib/supabase/server')
   const supabase = createAdminClient()
@@ -92,8 +95,12 @@ export async function createPreparationItem(
 export async function prepareItem(
   itemId: string,
   quantityPrepared: number,
-  operatorId?: string
+  clientOperatorId?: string
 ) {
+  const actor = await requireStaff()
+  // El operario es el de la sesión de planta; el del cliente solo cuenta si actúa un admin
+  const operatorId = actor.kind === 'operator' ? actor.operatorId : clientOperatorId
+
   // Usar admin client para bypass RLS
   const { createAdminClient } = await import('@/lib/supabase/server')
   const supabase = createAdminClient()
@@ -144,16 +151,9 @@ export async function prepareItem(
   }]
   
   // Obtener código del operario si se proporcionó
-  let operario = operatorId || 'operario' // Fallback si no se proporciona operatorId
-  if (operatorId) {
-    const { data: opData } = await supabase
-      .from('plant_operators')
-      .select('name, code')
-      .eq('id', operatorId)
-      .single()
-    
-    operario = (opData as any)?.code || opData?.name || operatorId
-  }
+  // (La tabla plant_operators que se consultaba aquí no existe: a EVO siempre
+  // se le ha enviado el id del operario, y se mantiene así.)
+  const operario = operatorId || 'operario'
   
   // 5. Encolar evento a EVO PRIMERO (antes de actualizar BD)
   // Si esto falla, no se actualiza el preparation_item
@@ -222,6 +222,8 @@ export async function assignStockToPreparationItem(
   inventoryId: string,
   quantityToReserve: number
 ) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   console.log(`\n📦 === ASIGNANDO STOCK A PREPARATION_ITEM ===`)
@@ -323,6 +325,8 @@ export async function assignStockToPreparationItem(
  * Obtener preparation_items de un pedido
  */
 export async function getPreparationItemsByOrder(orderId: string) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   const { data, error } = await supabase

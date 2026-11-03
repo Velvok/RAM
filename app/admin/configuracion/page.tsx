@@ -69,20 +69,22 @@ export default function ConfiguracionPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     try {
-      if (editingUser) {
-        await updateUser(editingUser.id, {
-          full_name: formData.full_name,
-          role: formData.role,
-          newPin: formData.pin || undefined,
-        })
-      } else {
-        await createUser({
-          email: formData.email || undefined,
-          full_name: formData.full_name,
-          role: formData.role,
-          pin: formData.pin || undefined,
-          password: formData.password || undefined,
-        })
+      const result = editingUser
+        ? await updateUser(editingUser.id, {
+            full_name: formData.full_name,
+            role: formData.role,
+            newPin: formData.pin || undefined,
+          })
+        : await createUser({
+            email: formData.email || undefined,
+            full_name: formData.full_name,
+            role: formData.role,
+            pin: formData.pin || undefined,
+            password: formData.password || undefined,
+          })
+      if (result && 'error' in result && result.error) {
+        toast.error(result.error)
+        return
       }
       setShowModal(false)
       loadUsers()

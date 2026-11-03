@@ -1,7 +1,18 @@
-import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { PLANTA_COOKIE, verifyPlantaToken } from '@/lib/auth/planta-session'
+
+const PLANTA_PUBLIC = ['/planta', '/planta/login']
 
 export async function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl
+
+  // Páginas de planta: exigen la sesión firmada que crea el login por PIN
+  if (pathname.startsWith('/planta') && !PLANTA_PUBLIC.includes(pathname)) {
+    if (!verifyPlantaToken(request.cookies.get(PLANTA_COOKIE)?.value)) {
+      return NextResponse.redirect(new URL('/planta/login', request.url))
+    }
+  }
+
   const response = NextResponse.next({
     request: {
       headers: request.headers,

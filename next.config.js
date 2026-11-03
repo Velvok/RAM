@@ -55,16 +55,9 @@ const nextConfig = {
           },
         ],
       },
-      {
-        // Páginas dinámicas - caché corto con revalidación
-        source: '/:path*',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: 'public, max-age=0, s-maxage=60, stale-while-revalidate=120',
-          },
-        ],
-      },
+      // (Se quitó una regla '/:path*' con 'public, s-maxage=60': al ser la
+      // última pisaba el no-store de /api y marcaba como cacheables en CDN las
+      // páginas de admin y planta, que son privadas y dinámicas.)
     ]
   },
 }

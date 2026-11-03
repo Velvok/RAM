@@ -149,6 +149,7 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
     aprobado_en_pausa: orders.filter(o => o.status === 'aprobado_en_pausa').length,
     en_corte: orders.filter(o => o.status === 'en_corte').length,
     finalizado: orders.filter(o => o.status === 'finalizado').length,
+    modificado: orders.filter(o => o.status === 'modificado').length,
     entregado: orders.filter(o => o.status === 'entregado').length
   }
 
@@ -159,6 +160,7 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
     { id: 'aprobado_en_pausa', label: 'En Pausa', count: statusCounts.aprobado_en_pausa },
     { id: 'en_corte', label: 'En Corte', count: statusCounts.en_corte },
     { id: 'finalizado', label: 'Finalizados', count: statusCounts.finalizado },
+    { id: 'modificado', label: 'Modificados', count: statusCounts.modificado },
     { id: 'entregado', label: 'Entregados', count: statusCounts.entregado },
   ]
 

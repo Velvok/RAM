@@ -1,9 +1,12 @@
 'use server'
 
+import { requireStaff } from '@/lib/auth/guards'
 import { createAdminClient } from '@/lib/supabase/server'
 import { extractFamilyCode, extractSizeFromCode, isChapaProduct } from '@/lib/product-utils'
 
 export async function getAvailableStock(productCode: string) {
+  await requireStaff()
+
   const supabase = createAdminClient()
 
   // Obtener el tamaño del producto solicitado usando el CÓDIGO
@@ -12,10 +15,29 @@ export async function getAvailableStock(productCode: string) {
   // Extraer el código de familia del CÓDIGO del producto
   const familyCode = extractFamilyCode(productCode)
 
-  // Buscar TODO el stock disponible
+  // Solo productos de la misma familia: el código de familia es siempre un
+  // prefijo del código del producto, así que se filtra en la BD por prefijo y
+  // el filtro exacto de abajo descarta los falsos positivos.
+  let productQuery = supabase.from('products').select('id, code, name')
+  if (familyCode) {
+    const escaped = familyCode.replace(/[\\%_]/g, c => `\\${c}`)
+    productQuery = productQuery.ilike('code', `${escaped}%`)
+  }
+  const { data: products, error: productsError } = await productQuery
+
+  if (productsError) {
+    console.error('Error obteniendo productos:', productsError)
+    throw productsError
+  }
+
+  if (!products || products.length === 0) {
+    return []
+  }
+
   const { data: inventory, error } = await supabase
     .from('inventory')
     .select('id, product_id, stock_disponible, stock_reservado, stock_total')
+    .in('product_id', products.map(p => p.id))
     .gt('stock_disponible', 0)
 
   if (error) {
@@ -25,18 +47,6 @@ export async function getAvailableStock(productCode: string) {
 
   if (!inventory || inventory.length === 0) {
     return []
-  }
-
-  // Obtener los productos separadamente
-  const productIds = inventory.map(item => item.product_id)
-  const { data: products, error: productsError } = await supabase
-    .from('products')
-    .select('id, code, name')
-    .in('id', productIds)
-
-  if (productsError) {
-    console.error('Error obteniendo productos:', productsError)
-    throw productsError
   }
 
   // Crear un mapa de productos por ID

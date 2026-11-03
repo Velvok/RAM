@@ -2,8 +2,16 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+import { cookies, headers } from 'next/headers'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
-import bcrypt from 'bcryptjs'
+import { adminUserIdFor, getAdminUserId, getPlantaOperatorId } from '@/lib/auth/guards'
+import { PLANTA_COOKIE, PLANTA_SESSION_MAX_AGE, createPlantaToken } from '@/lib/auth/planta-session'
+import { findOperatorWithPin, isValidPin } from '@/lib/auth/pin'
+
+// Límite de PIN fallidos por IP. Las tablets de planta comparten IP pública,
+// así que el umbral deja margen para equivocarse sin bloquear la planta.
+const PIN_MAX_FAILURES = 20
+const PIN_WINDOW_MINUTES = 15
 
 export async function loginWithEmail(formData: FormData) {
   // El login debe pasar por el cliente SSR (sincroniza cookies de sesión);
@@ -15,10 +23,16 @@ export async function loginWithEmail(formData: FormData) {
     password: formData.get('password') as string,
   }
 
-  const { error } = await supabase.auth.signInWithPassword(data)
+  const { data: signIn, error } = await supabase.auth.signInWithPassword(data)
 
-  if (error) {
-    return { error: error.message }
+  if (error || !signIn.user) {
+    return { error: 'Email o contraseña incorrectos' }
+  }
+
+  // Solo pueden entrar al panel los usuarios admin/manager activos
+  if (!(await adminUserIdFor(signIn.user))) {
+    await supabase.auth.signOut()
+    return { error: 'Este usuario no tiene acceso al panel de administración' }
   }
 
   // Verificar si es primer login (bypass de RLS con service role)
@@ -30,57 +44,78 @@ export async function loginWithEmail(formData: FormData) {
     .single()
 
   revalidatePath('/', 'layout')
-  
+
   if (user?.first_login) {
     redirect('/admin/first-login')
   }
-  
+
   redirect('/admin')
+}
+
+async function clientIp(): Promise<string> {
+  const h = await headers()
+  return h.get('x-forwarded-for')?.split(',')[0]?.trim() || h.get('x-real-ip') || 'desconocida'
 }
 
 export async function loginWithPin(pin: string) {
   try {
+    if (!isValidPin(pin)) {
+      return { error: 'PIN incorrecto' }
+    }
+
     const supabase = createAdminClient()
+    const ip = await clientIp()
+    const since = new Date(Date.now() - PIN_WINDOW_MINUTES * 60_000).toISOString()
 
-    const { data: users, error } = await supabase
+    const { count } = await supabase
+      .from('pin_login_attempts')
+      .select('id', { count: 'exact', head: true })
+      .eq('ip', ip)
+      .gte('created_at', since)
+
+    if ((count || 0) >= PIN_MAX_FAILURES) {
+      return { error: `Demasiados intentos fallidos. Espera ${PIN_WINDOW_MINUTES} minutos.` }
+    }
+
+    const user = await findOperatorWithPin(supabase, pin)
+
+    if (!user) {
+      await supabase.from('pin_login_attempts').insert({ ip })
+      return { error: 'PIN incorrecto' }
+    }
+
+    await supabase
       .from('users')
-      .select('*')
-      .eq('role', 'operator')
-      .eq('is_active', true)
+      .update({ last_login_at: new Date().toISOString() })
+      .eq('id', user.id)
 
-    if (error) {
-      console.error('Error fetching users:', error)
-      return { error: 'Error de conexión. Verifica tu conexión a internet.' }
-    }
+    const store = await cookies()
+    store.set(PLANTA_COOKIE, createPlantaToken(user.id), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: PLANTA_SESSION_MAX_AGE,
+    })
 
-    if (!users || users.length === 0) {
-      return { error: 'No hay operarios registrados en el sistema' }
-    }
-
-    for (const user of users) {
-      if (user.pin_hash && await bcrypt.compare(pin, user.pin_hash)) {
-        await supabase
-          .from('users')
-          .update({ last_login_at: new Date().toISOString() })
-          .eq('id', user.id)
-
-        return { 
-          success: true, 
-          firstLogin: user.first_login,
-          user: {
-            id: user.id,
-            full_name: user.full_name,
-            role: user.role
-          }
-        }
+    return {
+      success: true,
+      firstLogin: user.first_login,
+      user: {
+        id: user.id,
+        full_name: user.full_name,
+        role: user.role
       }
     }
-
-    return { error: 'PIN incorrecto' }
   } catch (error) {
     console.error('Login error:', error)
     return { error: 'Error del servidor. Por favor, intenta más tarde.' }
   }
+}
+
+export async function logoutPlanta() {
+  const store = await cookies()
+  store.delete(PLANTA_COOKIE)
 }
 
 export async function logout() {
@@ -89,59 +124,27 @@ export async function logout() {
   redirect('/')
 }
 
-export async function signUp(formData: FormData) {
-  const supabase = createAdminClient()
-
-  const data = {
-    email: formData.get('email') as string,
-    password: formData.get('password') as string,
-  }
-
-  const { error } = await supabase.auth.signUp(data)
-
-  if (error) {
-    return { error: error.message }
-  }
-
-  revalidatePath('/', 'layout')
-  redirect('/admin')
-}
-
-export async function createOperatorWithPin(fullName: string, pin: string) {
-  const supabase = createAdminClient()
-
-  const pinHash = await bcrypt.hash(pin, 10)
-
-  const { data, error } = await supabase
-    .from('users')
-    .insert({
-      full_name: fullName,
-      role: 'operator',
-      pin_hash: pinHash,
-      is_active: true,
-      first_login: true,
-    })
-    .select()
-    .single()
-
-  if (error) {
-    return { error: error.message }
-  }
-
-  return { success: true, user: data }
-}
-
-export async function changePassword(email: string, newPassword: string) {
-  // updateUser() opera sobre la sesión activa: necesita el cliente SSR,
-  // no el de service role (que no tiene ninguna sesión asociada).
+export async function changePassword(_email: string, newPassword: string) {
+  // updateUser() opera sobre la sesión activa: necesita el cliente SSR.
+  // El email que manda el cliente se ignora: se usa siempre el de la sesión.
   const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user?.email) {
+    return { error: 'Sesión no válida. Vuelve a iniciar sesión.' }
+  }
+
+  if (!newPassword || newPassword.length < 6) {
+    return { error: 'La contraseña debe tener al menos 6 caracteres' }
+  }
 
   const { error } = await supabase.auth.updateUser({
     password: newPassword
   })
 
   if (error) {
-    return { error: error.message }
+    console.error('Error cambiando contraseña:', error)
+    return { error: 'No se pudo cambiar la contraseña' }
   }
 
   // Marcar first_login como false (bypass de RLS con service role)
@@ -149,26 +152,41 @@ export async function changePassword(email: string, newPassword: string) {
   await adminClient
     .from('users')
     .update({ first_login: false })
-    .eq('email', email)
+    .eq('email', user.email.toLowerCase())
 
   return { success: true }
 }
 
 export async function changePin(userId: string, newPin: string) {
+  // Solo el propio operario (sesión de planta) o un admin
+  const operatorId = await getPlantaOperatorId()
+  if (operatorId !== userId && !(await getAdminUserId())) {
+    return { error: 'No autorizado. Vuelve a iniciar sesión.' }
+  }
+
+  if (!isValidPin(newPin)) {
+    return { error: 'El PIN debe tener entre 4 y 6 dígitos' }
+  }
+
   const supabase = createAdminClient()
 
-  const pinHash = await bcrypt.hash(newPin, 10)
+  const other = await findOperatorWithPin(supabase, newPin)
+  if (other && other.id !== userId) {
+    return { error: 'Ese PIN ya lo usa otro operario. Elige otro.' }
+  }
 
+  const { hashPin } = await import('@/lib/auth/pin')
   const { error } = await supabase
     .from('users')
-    .update({ 
-      pin_hash: pinHash,
+    .update({
+      pin_hash: await hashPin(newPin),
       first_login: false
     })
     .eq('id', userId)
 
   if (error) {
-    return { error: error.message }
+    console.error('Error cambiando PIN:', error)
+    return { error: 'No se pudo cambiar el PIN' }
   }
 
   return { success: true }

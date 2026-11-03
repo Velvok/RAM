@@ -1,5 +1,6 @@
 'use server'
 
+import { requireAdmin } from '@/lib/auth/guards'
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/server'
 
@@ -12,11 +13,13 @@ export async function reassignCutOrder(
   toCutOrderId: string,
   reason?: string
 ) {
+  const actor = await requireAdmin()
+
   const supabase = createAdminClient()
 
   // Obtener usuario actual
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Usuario no autenticado')
+  // Guarda real (la anterior usaba el cliente de servicio, sin sesión: user era siempre null)
+  const user = { id: actor.kind === 'admin' ? actor.userId : null }
 
   // 1. Obtener información del corte origen (debe estar completado)
   const { data: fromCutOrder, error: fromError } = await supabase
@@ -169,11 +172,13 @@ async function updateOrderStatus(orderId: string) {
  * Revertir una reasignación (solo Master Admin)
  */
 export async function revertReassignment(reassignmentId: string) {
+  const actor = await requireAdmin()
+
   const supabase = createAdminClient()
 
   // Obtener usuario actual
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Usuario no autenticado')
+  // Guarda real (la anterior usaba el cliente de servicio, sin sesión: user era siempre null)
+  const user = { id: actor.kind === 'admin' ? actor.userId : null }
 
   // TODO: Verificar que el usuario sea Master Admin
 

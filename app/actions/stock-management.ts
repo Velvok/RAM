@@ -1,5 +1,6 @@
 'use server'
 
+import { requireAdmin, requireStaff } from '@/lib/auth/guards'
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { revalidateStock } from '@/lib/revalidate'
@@ -55,6 +56,8 @@ export async function findBestStockMatch(
   productId: string,
   quantityNeeded: number
 ) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   // Primero obtener el producto solicitado para extraer su código base
@@ -161,6 +164,8 @@ export async function assignStockToCutOrder(
   productId: string,
   quantity: number
 ) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   console.log(`📝 assignStockToCutOrder llamado:`)
@@ -263,6 +268,8 @@ async function checkAndActivateOrderOnHold(orderId: string) {
  * Reserva múltiples unidades en una sola operación
  */
 export async function reserveStockBatch(inventoryId: string, quantity: number) {
+  await requireStaff()
+
   const supabase = createAdminClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -321,6 +328,8 @@ export async function reserveStockBatch(inventoryId: string, quantity: number) {
  * NOTA: Reserva UNA UNIDAD completa (la pieza entera)
  */
 export async function reserveStock(inventoryId: string) {
+  await requireStaff()
+
   const supabase = createAdminClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -383,6 +392,8 @@ export async function reserveStock(inventoryId: string) {
  * Se llama cuando se cambia de material asignado
  */
 export async function unreserveStock(inventoryId: string, quantity: number) {
+  await requireStaff()
+
   const supabase = createAdminClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -436,6 +447,8 @@ export async function unreserveStock(inventoryId: string, quantity: number) {
  * Se llama al iniciar un corte
  */
 export async function releaseToInProcess(inventoryId: string, quantity: number) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -488,6 +501,8 @@ export async function releaseToInProcess(inventoryId: string, quantity: number) 
  * Se llama al finalizar un corte
  */
 export async function consumeStock(inventoryId: string, quantity: number) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -560,6 +575,8 @@ export async function generateRemnantStock(
   baseProductCode: string,
   remnantSize: number
 ) {
+  await requireStaff()
+
   const supabase = createAdminClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -733,6 +750,8 @@ export async function getAvailableStockOptions(
   productId: string,
   minQuantity: number
 ) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   const { data, error } = await supabase
@@ -751,6 +770,8 @@ export async function getAvailableStockOptions(
  * Obtener información del stock asignado a una orden de corte
  */
 export async function getAssignedStock(cutOrderId: string) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   const { data: cutOrder, error } = await supabase
@@ -776,6 +797,8 @@ export async function getAssignedStock(cutOrderId: string) {
  * Permite stock negativo si no hay disponibilidad
  */
 export async function reassignStock(fromCutOrderId: string, toCutOrderId: string, quantityToReassign: number = 1) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -989,6 +1012,8 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
  * Filtra por tamaño del producto
  */
 export async function getCompletedOrdersForReassignment(productSize: number) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   // Obtener todas las órdenes completadas con stock asignado

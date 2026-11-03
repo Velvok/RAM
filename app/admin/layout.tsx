@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { adminUserIdFor } from '@/lib/auth/guards'
 import { AdminShell } from '@/components/admin-shell'
 
 export default async function AdminLayout({
@@ -11,6 +12,11 @@ export default async function AdminLayout({
   const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) {
+    redirect('/login')
+  }
+
+  // Tener cuenta no basta: solo usuarios admin/manager activos de la tabla users
+  if (!(await adminUserIdFor(user))) {
     redirect('/login')
   }
 

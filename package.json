@@ -10,7 +10,10 @@
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "clean": "./clean-cache.sh && npm run dev",
-    "clean-only": "./clean-cache.sh"
+    "clean-only": "./clean-cache.sh",
+    "typecheck": "tsc --noEmit",
+    "aislamiento": "./scripts/verificar-aislamiento.sh",
+    "test": "vitest run"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.4",
@@ -56,7 +59,8 @@
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",
     "tailwindcss-animate": "^1.0.7",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^3.2.7"
   },
   "engines": {
     "node": ">=18.0.0"

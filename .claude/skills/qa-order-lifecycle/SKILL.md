@@ -69,9 +69,12 @@ sin indicios de ser un sandbox por el nombre de host) cuando:
 ## Mapa del ciclo de vida
 
 Estados reales de `orders.status` (constraint en
-`supabase/migrations/00035_update_orders_status_check.sql:11`, idéntico a
-`lib/order-status.ts:4-11`): `nuevo | aprobado | aprobado_en_pausa | en_corte | finalizado |
-entregado | cancelado`.
+`supabase/migrations/00066_add_modificado_status.sql`, idéntico a
+`lib/order-status.ts`): `nuevo | aprobado | aprobado_en_pausa | en_corte | finalizado |
+modificado | parcialmente_entregado | entregado | cancelado`. `modificado` = ampliación
+desde EVO pendiente de aprobar (`lib/order-modification.ts`); el estado real mientras tanto
+está en `orders.status_before_modification` y `updateOrderStatus` escribe ahí en vez de pisar
+`modificado`.
 
 | Transición | Función | Archivo |
 |---|---|---|

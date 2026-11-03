@@ -5,7 +5,7 @@ type SupabaseAdmin = ReturnType<typeof createAdminClient>
 // Estados en los que una modificación de EVO se aplica por diferencias sobre lo
 // ya aprobado. 'nuevo' se trata aparte (se sustituyen las líneas sin más) y el
 // resto (entregado, parcialmente_entregado, cancelado) no admite modificación.
-export const MODIFIABLE_APPROVED_STATUSES = ['aprobado', 'aprobado_en_pausa', 'en_corte', 'finalizado']
+export const MODIFIABLE_APPROVED_STATUSES = ['aprobado', 'aprobado_en_pausa', 'en_corte', 'finalizado', 'modificado']
 
 export interface ModificationItem {
   id_articulo: string
@@ -16,6 +16,7 @@ export interface ModificationItem {
 interface FulfillmentItem {
   id: string
   table: 'cut_orders' | 'preparation_items'
+  doneColumn: 'quantity_cut' | 'quantity_prepared'
   requested: number
   done: number
   inventoryId: string | null
@@ -65,8 +66,11 @@ async function releaseReservation(
   }
 }
 
-// Reduce `amount` unidades no hechas de un corte / preparación, liberando su
-// reserva. Si queda a 0 sin nada hecho, se elimina.
+// Quita `amount` unidades de un corte / preparación y libera su reserva. Se
+// aplica también sobre lo ya cortado / preparado: esas piezas ya están cargadas
+// en EVO (que es quien inicia la modificación) y vuelven a stock disponible al
+// liberar la reserva; no se envía nada a EVO. Si queda a 0 se elimina; si no se
+// puede (historial que lo referencia), se deja a 0 como completado.
 async function reduceFulfillmentItem(
   supabase: SupabaseAdmin,
   item: FulfillmentItem,
@@ -83,7 +87,8 @@ async function reduceFulfillmentItem(
   }
 
   const newRequested = item.requested - amount
-  if (newRequested === 0 && item.done === 0) {
+  const newDone = Math.min(item.done, newRequested)
+  if (newRequested === 0) {
     const { error } = await supabase.from(item.table).delete().eq('id', item.id)
     if (!error) return
     console.warn(`⚠️ No se pudo eliminar ${item.table} ${item.id}, se deja a 0:`, error.message)
@@ -93,7 +98,8 @@ async function reduceFulfillmentItem(
     .from(item.table)
     .update({
       quantity_requested: newRequested,
-      ...(item.done >= newRequested ? { status: 'completada' } : {})
+      [item.doneColumn]: newDone,
+      ...(newDone >= newRequested ? { status: 'completada' } : {})
     })
     .eq('id', item.id)
   if (error) throw new Error(`Error actualizando ${item.table}: ${error.message}`)
@@ -102,11 +108,12 @@ async function reduceFulfillmentItem(
 /**
  * Aplica una modificación de EVO (estado completo nuevo de `items`) a un pedido
  * ya aprobado, comparando por artículo:
- * - Bajadas / líneas eliminadas: se reducen cortes y preparaciones no hechos y
- *   se libera su reserva. Nunca por debajo de lo ya cortado / preparado (ya
- *   notificado a EVO).
+ * - Bajadas / líneas eliminadas: se aplican siempre, también sobre lo ya
+ *   cortado / preparado (EVO ya tiene esos movimientos): se reducen cortes y
+ *   preparaciones y se libera su reserva, que vuelve a stock disponible.
  * - Subidas / líneas nuevas: quedan en order_lines.quantity_pending_approval
  *   hasta aprobar la ampliación (approveOrderModification). Lo ya aprobado sigue.
+ *   El webhook pone el pedido en 'modificado' mientras haya algo pendiente.
  *
  * Devuelve avisos (no bloqueantes) para registrar en evo_events.
  */
@@ -120,8 +127,6 @@ export async function applyOrderModification(
 
   // Cantidad objetivo por producto (sumando líneas del mismo artículo)
   const targets = new Map<string, { quantity: number; evoItemNumber: string | null }>()
-  const evoCodeByProduct = new Map<string, string>()
-  for (const [evoId, p] of productIds) evoCodeByProduct.set(p.id, evoId)
   for (const item of items) {
     const product = productIds.get(item.id_articulo)
     if (!product) continue
@@ -173,6 +178,7 @@ export async function applyOrderModification(
     addFulfillment(c.order_line_id, {
       id: c.id,
       table: 'cut_orders',
+      doneColumn: 'quantity_cut',
       requested: c.quantity_requested,
       done: c.quantity_cut || 0,
       inventoryId: c.material_base_id ? inventoryByProduct.get(c.material_base_id) || null : null,
@@ -182,6 +188,7 @@ export async function applyOrderModification(
     addFulfillment(p.order_line_id, {
       id: p.id,
       table: 'preparation_items',
+      doneColumn: 'quantity_prepared',
       requested: p.quantity_requested,
       done: p.quantity_prepared || 0,
       inventoryId: p.assigned_inventory_id,
@@ -196,6 +203,16 @@ export async function applyOrderModification(
     const productLines = lines.filter(l => l.product_id === productId)
     const target = targets.get(productId)?.quantity || 0
     const approved = productLines.reduce((sum, l) => sum + lineUnits(l), 0)
+
+    // EVO retira una línea que solo tenía unidades pendientes de aprobar: se elimina
+    if (target === 0 && approved === 0) {
+      for (const line of productLines) {
+        if ((fulfillmentByLine.get(line.id) || []).length > 0) continue
+        const { error } = await supabase.from('order_lines').delete().eq('id', line.id)
+        if (error) console.warn(`⚠️ No se pudo eliminar la línea ${line.id}:`, error.message)
+      }
+      continue
+    }
 
     if (target >= approved) {
       // Aumento (o sin cambios): el delta queda pendiente de aprobar en la primera línea
@@ -229,27 +246,28 @@ export async function applyOrderModification(
       continue
     }
 
-    // Reducción: quitar de las líneas más recientes primero, sin tocar lo ya hecho
+    // Reducción: quitar de las líneas más recientes primero. Se aplica siempre lo
+    // que pide EVO, también sobre lo ya cortado / preparado (ver reduceFulfillmentItem)
     let toReduce = approved - target
     for (const line of [...productLines].reverse()) {
       const fulfillment = fulfillmentByLine.get(line.id) || []
       const units = lineUnits(line)
-      const lineDone = fulfillment.reduce((sum, f) => sum + f.done, 0)
-      const lineReduction = Math.min(toReduce, Math.max(0, units - lineDone))
+      const lineReduction = Math.min(toReduce, units)
       toReduce -= lineReduction
 
       let remaining = lineReduction
       for (const item of [...fulfillment].reverse()) {
         if (remaining === 0) break
-        const amount = Math.min(remaining, Math.max(0, item.requested - item.done))
+        const amount = Math.min(remaining, item.requested)
         if (amount === 0) continue
         await reduceFulfillmentItem(supabase, item, amount, order.evo_order_id)
         item.requested -= amount
+        item.done = Math.min(item.done, item.requested)
         remaining -= amount
       }
 
       const newUnits = units - lineReduction
-      const hasFulfillment = fulfillment.some(f => f.requested > 0 || f.done > 0)
+      const hasFulfillment = fulfillment.some(f => f.requested > 0)
       if (newUnits === 0 && !hasFulfillment) {
         const { error } = await supabase.from('order_lines').delete().eq('id', line.id)
         if (!error) continue
@@ -261,12 +279,6 @@ export async function applyOrderModification(
         .update({ ...lineUnitsUpdate(line, newUnits), quantity_pending_approval: 0 })
         .eq('id', line.id)
       if (error) throw new Error(`Error actualizando línea: ${error.message}`)
-    }
-
-    if (toReduce > 0) {
-      warnings.push(
-        `Producto ${evoCodeByProduct.get(productId) || productId}: no se pueden quitar ${toReduce} unidades porque ya están cortadas/preparadas`
-      )
     }
   }
 

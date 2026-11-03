@@ -68,7 +68,7 @@ export class WebhookSecurity {
 
     const token = authHeader.substring(7) // Remove "Bearer "
     
-    if (token !== this.config.secret) {
+    if (!this.safeCompare(token, this.config.secret)) {
       return { valid: false, error: 'Invalid bearer token' }
     }
 

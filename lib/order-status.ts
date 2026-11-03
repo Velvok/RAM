@@ -1,4 +1,4 @@
-import { AlertCircle, CheckCircle, Clock, Package, PauseCircle, Truck, XCircle, LucideIcon } from 'lucide-react'
+import { AlertCircle, CheckCircle, Clock, Package, PauseCircle, RefreshCw, Truck, XCircle, LucideIcon } from 'lucide-react'
 import type { BadgeProps } from '@/components/ui/badge'
 
 export type OrderStatus =
@@ -7,6 +7,7 @@ export type OrderStatus =
   | 'aprobado_en_pausa'
   | 'en_corte'
   | 'finalizado'
+  | 'modificado'
   | 'parcialmente_entregado'
   | 'entregado'
   | 'cancelado'
@@ -23,6 +24,7 @@ const ORDER_STATUS_CONFIG: Record<OrderStatus, OrderStatusConfig> = {
   aprobado_en_pausa: { label: 'En pausa', badgeVariant: 'warning', icon: PauseCircle },
   en_corte: { label: 'En corte', badgeVariant: 'info', icon: Clock },
   finalizado: { label: 'Finalizado', badgeVariant: 'success', icon: CheckCircle },
+  modificado: { label: 'Modificado', badgeVariant: 'warning', icon: RefreshCw },
   parcialmente_entregado: { label: 'Parcialmente entregado', badgeVariant: 'info', icon: Truck },
   entregado: { label: 'Entregado', badgeVariant: 'default', icon: CheckCircle },
   cancelado: { label: 'Cancelado', badgeVariant: 'destructive', icon: XCircle },

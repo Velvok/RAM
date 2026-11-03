@@ -1,5 +1,6 @@
 'use server'
 
+import { requireAdmin } from '@/lib/auth/guards'
 import { createAdminClient } from '@/lib/supabase/server'
 
 /**
@@ -8,6 +9,8 @@ import { createAdminClient } from '@/lib/supabase/server'
  */
 
 export async function getDashboardData() {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   // ============================================
@@ -19,8 +22,8 @@ export async function getDashboardData() {
     .from('orders')
     .select('status', { count: 'exact' })
   
-  const pendingOrders = orderStats?.filter(o => 
-    ['nuevo', 'aprobado'].includes(o.status)
+  const pendingOrders = orderStats?.filter(o =>
+    ['nuevo', 'aprobado', 'modificado'].includes(o.status)
   ).length || 0
 
   const inProductionOrders = orderStats?.filter(o => 
@@ -124,6 +127,8 @@ export async function getDashboardData() {
 }
 
 export async function getAvailableOperators() {
+  await requireAdmin()
+
   const supabase = createAdminClient()
   
   const { data } = await supabase
@@ -136,6 +141,8 @@ export async function getAvailableOperators() {
 }
 
 export async function getAvailableOrdersForReassignment(productId: string, minLength?: number) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
   
   // Primero obtener TODOS los pedidos para ver qué hay
@@ -161,7 +168,7 @@ export async function getAvailableOrdersForReassignment(productId: string, minLe
         product:products!cut_orders_product_id_fkey(code, name)
       )
     `)
-    .in('status', ['aprobado', 'en_corte', 'finalizado'])
+    .in('status', ['aprobado', 'en_corte', 'finalizado', 'modificado'])
     .order('created_at', { ascending: false })
 
   if (error) {

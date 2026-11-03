@@ -1,0 +1,20 @@
+# CI mínima: tipos y tests en cada push y PR. Sin secretos. El lint queda fuera: el script
+# `next lint` ya no existe en Next 16; hay que pasar a `eslint .` con un eslint.config.mjs.
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test

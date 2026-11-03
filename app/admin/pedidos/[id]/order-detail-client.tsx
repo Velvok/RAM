@@ -78,6 +78,12 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
   useAutoRefresh(order.id, () => getOrderById(order.id), {
     enabled: true,
     interval: 10, // Verificar cada 10 segundos
+    // Aplicar los cambios sin recargar la página entera
+    onChange: (updated) => {
+      setOrder(updated)
+      setRefreshKey(prev => prev + 1)
+      loadActivityLog()
+    },
   })
 
   // Cargar log de actividades
@@ -154,6 +160,8 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                   ? 'bg-blue-100 text-blue-800'
                   : order.status === 'finalizado'
                   ? 'bg-green-100 text-green-800'
+                  : order.status === 'modificado'
+                  ? 'bg-orange-100 text-orange-800'
                   : order.status === 'parcialmente_entregado'
                   ? 'bg-indigo-100 text-indigo-800'
                   : order.status === 'entregado'
@@ -165,6 +173,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                order.status === 'aprobado' ? 'Aprobado' :
                order.status === 'en_corte' ? 'En Corte' :
                order.status === 'finalizado' ? 'Finalizado' :
+               order.status === 'modificado' ? 'Modificado · pendiente de aprobar' :
                order.status === 'parcialmente_entregado' ? 'Parcialmente Entregado' :
                order.status === 'entregado' ? 'Entregado' :
                order.status}

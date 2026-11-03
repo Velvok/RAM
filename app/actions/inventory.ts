@@ -1,11 +1,14 @@
 'use server'
 
+import { requireAdmin } from '@/lib/auth/guards'
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidateInventory } from '@/lib/revalidate'
 import { enqueueOutboundEvent } from '@/lib/ram-outbound'
 
 export async function getInventory() {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   // Primero obtener el total de productos para saber cuántos lotes necesitamos
@@ -63,6 +66,8 @@ export async function getInventory() {
 }
 
 export async function getInventoryByProduct(productId: string) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   const { data, error } = await supabase
@@ -86,6 +91,8 @@ export async function getInventoryByProduct(productId: string) {
 }
 
 export async function updateStock(productId: string, quantity: number, type: 'add' | 'subtract') {
+  await requireAdmin()
+
   const supabase = createAdminClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -124,6 +131,8 @@ export async function updateStock(productId: string, quantity: number, type: 'ad
 }
 
 export async function adjustStock(productId: string, newQuantity: number, notes: string) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
   const { data: { user } } = await supabase.auth.getUser()
 

@@ -1,5 +1,6 @@
 'use server'
 
+import { requireStaff } from '@/lib/auth/guards'
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
@@ -10,6 +11,8 @@ export async function reassignStock(
   quantity: number,
   quantityForNewMaterial: number
 ) {
+  await requireStaff()
+
   const supabase = createAdminClient()
 
   // Obtener la cut_order actual
@@ -39,23 +42,24 @@ export async function reassignStock(
     )
   }
 
-  // Obtener el producto del nuevo material
-  const { data: product, error: productError } = await supabase
-    .from('products')
-    .select('name')
-    .eq('id', productId)
-    .single()
+  // Producto del nuevo material e inventario del material original, en paralelo
+  const [productRes, oldInventoryRes, { unreserveStock }] = await Promise.all([
+    supabase
+      .from('products')
+      .select('name')
+      .eq('id', productId)
+      .single(),
+    supabase
+      .from('inventory')
+      .select('id')
+      .eq('product_id', cutOrder.material_base_id)
+      .single(),
+    import('./stock-management'),
+  ])
 
+  const { data: product, error: productError } = productRes
   if (productError) throw productError
-
-  const { reserveStock, unreserveStock } = await import('./stock-management')
-
-  // Obtener inventory_id del stock original
-  const { data: oldInventory } = await supabase
-    .from('inventory')
-    .select('id')
-    .eq('product_id', cutOrder.material_base_id)
-    .single()
+  const { data: oldInventory } = oldInventoryRes
 
   // CASO 1: Reasignación COMPLETA — solo tiene sentido como swap en sitio
   // cuando todavía no se ha cortado nada; si ya hay quantity_cut > 0, cambiar

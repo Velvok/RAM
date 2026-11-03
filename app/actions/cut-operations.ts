@@ -1,7 +1,7 @@
 'use server'
 
+import { requireStaff } from '@/lib/auth/guards'
 import { createAdminClient } from '@/lib/supabase/server'
-import { reserveStock } from './stock-management'
 import { extractSizeFromCode, extractFamilyCode } from '@/lib/product-utils'
 import { updateOrderStatus } from './orders'
 import { notifyCorteRealizado, notifyChapaPreparada, type CorteMovimiento } from '@/lib/ram-outbound'
@@ -14,9 +14,23 @@ export async function processCutOrder(params: {
   quantityToCut: number
   operatorId: string
 }) {
-  const { cutOrderId, selectedMaterialId, materialLength, quantityToCut, operatorId } = params
-  
+  const actor = await requireStaff()
+
+  const { cutOrderId, selectedMaterialId, materialLength, quantityToCut } = params
+  // El operario es el de la sesión de planta; el del cliente solo cuenta si actúa un admin
+  const operatorId = actor.kind === 'operator' ? actor.operatorId : params.operatorId
+
   const supabase = createAdminClient()
+
+  // Nombre del operario para el historial. (La tabla plant_operators que se
+  // consultaba antes no existe: a EVO siempre se le ha enviado el id.)
+  const operatorPromise = supabase
+    .from('users')
+    .select('full_name')
+    .eq('id', operatorId)
+    .maybeSingle()
+    .then(r => r) // arranca ya: el builder de Supabase es perezoso
+  const operario = operatorId
   
   console.log(`\n🔍 Buscando orden de corte con ID: ${cutOrderId}`)
   
@@ -178,19 +192,6 @@ export async function processCutOrder(params: {
   await updateOrderStatus(cutOrder.order_id)
   
   // PROCESO DE STOCK
-  console.log(`\n🔍 VERIFICACIÓN DE RESERVAS ANTES DEL PROCESO DE STOCK`)
-  const { data: stockBeforeProcess } = await supabase
-    .from('inventory')
-    .select('product_id, stock_total, stock_reservado, stock_disponible')
-    .eq('product_id', cutOrder.product_id)
-    .single()
-  
-  console.log(`   Producto ${cutOrder.product_id}:`, {
-    total: stockBeforeProcess?.stock_total || 0,
-    reservado: stockBeforeProcess?.stock_reservado || 0,
-    disponible: stockBeforeProcess?.stock_disponible || 0
-  })
-  
   if (isExactMatch) {
     // ========== MATCH EXACTO ==========
     // En match exacto, las piezas ya existen y están reservadas.
@@ -224,15 +225,6 @@ export async function processCutOrder(params: {
           id_articulo: cutOrder.product.evo_product_id,
           cantidad: quantityToCut,
         }]
-
-        // Obtener código del operario
-        const { data: opData } = await supabase
-          .from('plant_operators')
-          .select('name, code')
-          .eq('id', operatorId)
-          .single()
-
-        const operario = (opData as any)?.code || opData?.name || operatorId
 
         console.log(`📤 Notificando a EVO chapa_preparada (PREP):`, {
           id_pedido: evoOrderId,
@@ -279,31 +271,9 @@ export async function processCutOrder(params: {
     console.log(`   Remanente: ${remnantPerSheet}m`)
     console.log(`   cutOrder.product_id: ${cutOrder.product_id}`)
     console.log(`   ⏭️ NO modificamos stock local - EVO será la única fuente de verdad`)
-
-    for (let i = 0; i < sheetsUsed; i++) {
-      try {
-        console.log(`\n${'─'.repeat(50)}`)
-        console.log(`📦 PROCESANDO CHAPA ${i + 1}/${sheetsUsed}`)
-        console.log(`${'─'.repeat(50)}`)
-
-        // Reservar stock de la chapa usada
-        console.log(`   📦 Reservando stock de chapa ${usedProduct.code} (${materialLength}m)`)
-        const { error: reserveError } = await supabase.rpc('reserve_stock', {
-          p_inventory_id: actualInventoryId,
-          p_quantity: 1
-        })
-
-        if (reserveError) {
-          console.error(`   ❌ Error reservando stock: ${reserveError.message}`)
-        } else {
-          console.log(`   ✅ Stock reservado correctamente`)
-        }
-
-      } catch (error) {
-        console.error(`\n❌ ERROR en chapa ${i + 1}/${sheetsUsed}:`, error)
-        throw error
-      }
-    }
+    // (Aquí había un bucle que llamaba a reserve_stock con p_quantity una vez
+    // por chapa. Esa función solo acepta p_inventory_id, así que fallaba
+    // siempre sin efecto: se quita para no hacer N viajes inútiles a la BD.)
 
     console.log(`\n✅ Proceso completado: ${sheetsUsed} chapas cortadas`)
     console.log(`   📉 Chapas originales: -${sheetsUsed} × ${materialLength}m (EVO actualizará)`)
@@ -384,15 +354,6 @@ export async function processCutOrder(params: {
             }
           }
 
-          // Obtener código del operario
-          const { data: opData } = await supabase
-            .from('plant_operators')
-            .select('name, code')
-            .eq('id', operatorId)
-            .single()
-
-          const operario = (opData as any)?.code || opData?.name || operatorId
-
           console.log(`📤 Notificando a EVO corte_realizado:`, {
             id_pedido: evoOrderId,
             ref_evo: refEvo,
@@ -421,11 +382,8 @@ export async function processCutOrder(params: {
   }
   
   // Registrar actividad en el historial
-  const { data: operator } = await supabase
-    .from('plant_operators')
-    .select('name')
-    .eq('id', operatorId)
-    .single()
+  const { data: operatorRow } = await operatorPromise
+  const operator = operatorRow ? { name: operatorRow.full_name } : null
   
   console.log(`📝 Registrando actividad en historial:`, {
     order_id: cutOrder.order_id,

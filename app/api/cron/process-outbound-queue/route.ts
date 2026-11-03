@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { processPendingQueue } from '@/lib/ram-outbound'
+import { safeEqual } from '@/lib/auth/planta-session'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -12,16 +13,16 @@ export const maxDuration = 60
  * - Vía cron job de Vercel (vercel.json: crons)
  * - Vía Supabase pg_cron
  *
- * Si CRON_SECRET está configurado, requiere Authorization: Bearer {CRON_SECRET}
+ * Requiere Authorization: Bearer {CRON_SECRET}. Sin CRON_SECRET configurado
+ * responde 503: nunca queda abierto.
  */
 export async function GET(request: NextRequest) {
-  // Verificar autenticación si hay CRON_SECRET
   const cronSecret = process.env.CRON_SECRET
-  if (cronSecret) {
-    const authHeader = request.headers.get('authorization')
-    if (authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+  if (!cronSecret) {
+    return NextResponse.json({ error: 'Not configured' }, { status: 503 })
+  }
+  if (!safeEqual(request.headers.get('authorization'), `Bearer ${cronSecret}`)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   try {
@@ -36,7 +37,7 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error('Error procesando cola:', error)
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: 'Error procesando la cola' },
       { status: 500 }
     )
   }

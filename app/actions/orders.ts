@@ -1,14 +1,17 @@
 'use server'
 
+import { requireAdmin, requireStaff } from '@/lib/auth/guards'
 import { revalidatePath } from 'next/cache'
 import { unstable_noStore } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidateOrders, revalidateStock, revalidateOrderStatus } from '@/lib/revalidate'
 import { notifyPedidoCompletado } from '@/lib/ram-outbound'
 import { extractSizeFromCode } from '@/lib/product-utils'
-import { MODIFIABLE_APPROVED_STATUSES, lineUnits, lineUnitsUpdate } from '@/lib/order-modification'
+import { lineUnits, lineUnitsUpdate } from '@/lib/order-modification'
 
 export async function getOrders() {
+  await requireAdmin()
+
   // Deshabilitar caché del servidor para obtener siempre datos frescos
   unstable_noStore()
   
@@ -28,6 +31,8 @@ export async function getOrders() {
 }
 
 export async function getOrderById(id: string) {
+  await requireStaff()
+
   const supabase = createAdminClient()
 
   const { data, error } = await supabase
@@ -59,6 +64,8 @@ export async function getOrderById(id: string) {
 }
 
 export async function cancelOrder(orderId: string) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   // Guard: no se puede cancelar un pedido ya entregado o ya cancelado
@@ -107,6 +114,8 @@ export async function cancelOrder(orderId: string) {
 
 // Aprobar pedido EN PAUSA (sin asignar stock automáticamente)
 export async function approveOrderOnHold(orderId: string) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   // Obtener usuario actual (admin)
@@ -137,78 +146,8 @@ export async function approveOrderOnHold(orderId: string) {
     // Cantidad de unidades que pide el cliente
     const units = line.units || Math.ceil(line.quantity) || 1
 
-    // Identificar si es chapa usando la tabla de productos de corte (isChapaProduct)
-    const { isChapaProduct } = await import('@/lib/product-utils')
-    const isChapa = isChapaProduct(
-      line.product?.code || '',
-      line.product?.category,
-      line.product?.name
-    )
+    await createLineFulfillmentOnHold(supabase, orderId, line, units, errors)
 
-    console.log(`\n🔍 Procesando línea (EN PAUSA):`, {
-      product_name: line.product?.name,
-      product_code: line.product?.code,
-      product_category: line.product?.category,
-      isChapa,
-      units
-    })
-    
-    if (isChapa) {
-      // ========== CHAPAS: Crear orden de corte SIN asignar stock ==========
-      console.log(`📋 Línea (CHAPA - EN PAUSA): ${line.product?.name}, Unidades: ${units}`)
-      
-      // Tamaño de cada pieza (extraído del código del producto)
-      const productSize = extractSizeFromCode(line.product?.code || '') ||
-                         line.product?.length_meters ||
-                         line.length_meters ||
-                         line.quantity
-      
-      // Crear UNA orden de corte agrupada para todas las unidades
-      const cutNumber = `CUT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-      
-      // Crear la orden de corte AGRUPADA (SIN STOCK ASIGNADO)
-      const { data: cutOrderData, error: cutError } = await supabase
-        .from('cut_orders')
-        .insert({
-          cut_number: cutNumber,
-          order_id: orderId,
-          order_line_id: line.id,
-          product_id: line.product_id,
-          quantity_requested: units,
-          quantity_cut: 0,
-          status: 'pendiente',
-          evo_item_number: line.evo_item_number || null,
-          // NO asignamos material_base_id ni material_base_quantity
-        })
-        .select()
-      
-      if (cutError) {
-        console.error('Error creando orden de corte:', cutError)
-        errors.push(`Error creando orden de corte: ${cutError.message}`)
-        continue
-      }
-
-      console.log(`✅ Orden de corte creada EN PAUSA: ${cutNumber} - ${units} unidades de ${productSize}m (sin stock asignado)`)
-      
-    } else {
-      // ========== ARTÍCULOS NORMALES: Crear preparation_item SIN reservar stock ==========
-      console.log(`📦 Línea (ARTÍCULO NORMAL - EN PAUSA): ${line.product?.name}, Unidades: ${units}`)
-      console.log(`   → Código: ${line.product?.code}`)
-      console.log(`   → Product ID: ${line.product_id}`)
-      console.log(`   → Order Line ID: ${line.id}`)
-      
-      try {
-        const { createPreparationItem } = await import('./preparation')
-        console.log(`   → Llamando a createPreparationItem...`)
-        const result = await createPreparationItem(orderId, line.id, line.product_id, units, false) // false = no reservar stock
-        console.log(`✅ Preparation item creado (sin stock reservado):`, result)
-      } catch (prepError: any) {
-        console.error('❌ Error creando preparation_item:', prepError)
-        console.error('   Stack:', prepError.stack)
-        errors.push(`Error creando preparation_item para ${line.product?.name}: ${prepError.message}`)
-      }
-    }
-    
     // Pequeño delay para evitar duplicados en el timestamp
     await new Promise(resolve => setTimeout(resolve, 10))
   }
@@ -232,6 +171,90 @@ export async function approveOrderOnHold(orderId: string) {
   return { 
     success: true,
     message: 'Pedido aprobado en pausa. El stock deberá asignarse manualmente.'
+  }
+}
+
+// Crea la orden de corte (chapas) o el preparation_item (artículos normales)
+// para `units` unidades de la línea SIN asignar ni reservar stock (aprobación en
+// pausa). Los errores se añaden a `errors`. Devuelve false si no se creó nada.
+async function createLineFulfillmentOnHold(
+  supabase: ReturnType<typeof createAdminClient>,
+  orderId: string,
+  line: any,
+  units: number,
+  errors: string[]
+): Promise<boolean> {
+  // Identificar si es chapa usando la tabla de productos de corte (isChapaProduct)
+  const { isChapaProduct } = await import('@/lib/product-utils')
+  const isChapa = isChapaProduct(
+    line.product?.code || '',
+    line.product?.category,
+    line.product?.name
+  )
+
+  console.log(`\n🔍 Procesando línea (EN PAUSA):`, {
+    product_name: line.product?.name,
+    product_code: line.product?.code,
+    product_category: line.product?.category,
+    isChapa,
+    units
+  })
+
+  if (isChapa) {
+    // ========== CHAPAS: Crear orden de corte SIN asignar stock ==========
+    console.log(`📋 Línea (CHAPA - EN PAUSA): ${line.product?.name}, Unidades: ${units}`)
+
+    // Tamaño de cada pieza (extraído del código del producto)
+    const productSize = extractSizeFromCode(line.product?.code || '') ||
+                       line.product?.length_meters ||
+                       line.length_meters ||
+                       line.quantity
+
+    // Crear UNA orden de corte agrupada para todas las unidades
+    const cutNumber = `CUT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+
+    // Crear la orden de corte AGRUPADA (SIN STOCK ASIGNADO)
+    const { error: cutError } = await supabase
+      .from('cut_orders')
+      .insert({
+        cut_number: cutNumber,
+        order_id: orderId,
+        order_line_id: line.id,
+        product_id: line.product_id,
+        quantity_requested: units,
+        quantity_cut: 0,
+        status: 'pendiente',
+        evo_item_number: line.evo_item_number || null,
+        // NO asignamos material_base_id ni material_base_quantity
+      })
+
+    if (cutError) {
+      console.error('Error creando orden de corte:', cutError)
+      errors.push(`Error creando orden de corte: ${cutError.message}`)
+      return false
+    }
+
+    console.log(`✅ Orden de corte creada EN PAUSA: ${cutNumber} - ${units} unidades de ${productSize}m (sin stock asignado)`)
+    return true
+  }
+
+  // ========== ARTÍCULOS NORMALES: Crear preparation_item SIN reservar stock ==========
+  console.log(`📦 Línea (ARTÍCULO NORMAL - EN PAUSA): ${line.product?.name}, Unidades: ${units}`)
+  console.log(`   → Código: ${line.product?.code}`)
+  console.log(`   → Product ID: ${line.product_id}`)
+  console.log(`   → Order Line ID: ${line.id}`)
+
+  try {
+    const { createPreparationItem } = await import('./preparation')
+    console.log(`   → Llamando a createPreparationItem...`)
+    const result = await createPreparationItem(orderId, line.id, line.product_id, units, false, line.evo_item_number || null) // false = no reservar stock
+    console.log(`✅ Preparation item creado (sin stock reservado):`, result)
+    return true
+  } catch (prepError: any) {
+    console.error('❌ Error creando preparation_item:', prepError)
+    console.error('   Stack:', prepError.stack)
+    errors.push(`Error creando preparation_item para ${line.product?.name}: ${prepError.message}`)
+    return false
   }
 }
 
@@ -436,6 +459,8 @@ async function createLineFulfillment(
 
 // Aprobar pedido y generar órdenes de corte CON asignación automática de stock
 export async function approveOrder(orderId: string) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   // Obtener usuario actual (admin)
@@ -545,22 +570,27 @@ export async function approveOrder(orderId: string) {
   }
 }
 
-// Aprobar la ampliación de un pedido modificado desde EVO: crea cortes /
-// preparaciones (con reserva de stock) solo para order_lines.quantity_pending_approval.
-// Lo que ya estaba aprobado no se toca.
-export async function approveOrderModification(orderId: string) {
+// Aprobar la ampliación de un pedido modificado desde EVO (estado 'modificado'):
+// crea cortes / preparaciones solo para order_lines.quantity_pending_approval y
+// devuelve el pedido al estado que tenía. Lo que ya estaba aprobado no se toca.
+// Con onHold se crean sin asignar stock (como approveOrderOnHold) y el pedido
+// queda en 'aprobado_en_pausa' hasta asignarlo a mano.
+export async function approveOrderModification(orderId: string, options?: { onHold?: boolean }) {
+  await requireAdmin()
+
+  const onHold = options?.onHold ?? false
   const supabase = createAdminClient()
 
   const { data: { user } } = await supabase.auth.getUser()
 
   const { data: order, error: orderError } = await supabase
     .from('orders')
-    .select('id, status, order_lines(*, product:products(*))')
+    .select('id, status, status_before_modification, order_lines(*, product:products(*))')
     .eq('id', orderId)
     .single()
 
   if (orderError) throw orderError
-  if (!MODIFIABLE_APPROVED_STATUSES.includes(order.status)) {
+  if (order.status !== 'modificado') {
     throw new Error(`No se puede aprobar la ampliación de un pedido en estado "${order.status}"`)
   }
 
@@ -571,19 +601,23 @@ export async function approveOrderModification(orderId: string) {
 
   const errors: string[] = []
 
-  // PRIMERO: Verificar stock disponible solo para lo pendiente
-  for (const line of pendingLines) {
-    await checkLineStock(supabase, line, line.quantity_pending_approval, errors)
-  }
+  // PRIMERO: Verificar stock disponible solo para lo pendiente (en pausa no hace falta)
+  if (!onHold) {
+    for (const line of pendingLines) {
+      await checkLineStock(supabase, line, line.quantity_pending_approval, errors)
+    }
 
-  if (errors.length > 0) {
-    console.log('❌ Errores de stock detectados en la ampliación:', errors)
-    throw new Error(errors.join('\n'))
+    if (errors.length > 0) {
+      console.log('❌ Errores de stock detectados en la ampliación:', errors)
+      throw new Error(errors.join('\n'))
+    }
   }
 
   for (const line of pendingLines) {
     const pending = line.quantity_pending_approval
-    const created = await createLineFulfillment(supabase, orderId, line, pending, user?.id, errors)
+    const created = onHold
+      ? await createLineFulfillmentOnHold(supabase, orderId, line, pending, errors)
+      : await createLineFulfillment(supabase, orderId, line, pending, user?.id, errors)
     if (!created) continue
 
     // Lo pendiente pasa a aprobado
@@ -597,9 +631,17 @@ export async function approveOrderModification(orderId: string) {
     await new Promise(resolve => setTimeout(resolve, 10))
   }
 
+  // Volver al estado real del pedido (la planta ha podido seguir trabajando
+  // mientras tanto; updateOrderStatus lo mantiene en status_before_modification).
+  const restoredStatus = onHold ? 'aprobado_en_pausa' : (order.status_before_modification || 'aprobado')
+  await supabase
+    .from('orders')
+    .update({ status: restoredStatus, status_before_modification: null })
+    .eq('id', orderId)
+
   // Solo recalcular si la planta ya había empezado: un pedido 'finalizado' con
   // cortes nuevos vuelve a 'en_corte'. 'aprobado' y 'aprobado_en_pausa' se quedan igual.
-  if (order.status === 'en_corte' || order.status === 'finalizado') {
+  if (restoredStatus === 'en_corte' || restoredStatus === 'finalizado') {
     await updateOrderStatus(orderId)
   }
 
@@ -614,6 +656,8 @@ export async function approveOrderModification(orderId: string) {
 
 // Mantener función legacy para compatibilidad (ahora llama a approveOrder)
 export async function generateCutOrders(orderId: string) {
+  await requireAdmin()
+
   console.log('🔵 generateCutOrders llamado con orderId:', orderId)
   const result = await approveOrder(orderId)
   console.log('🔵 generateCutOrders retornando:', result)
@@ -622,23 +666,31 @@ export async function generateCutOrders(orderId: string) {
 
 // Actualizar estado del pedido basado en el estado de sus órdenes de corte Y preparation_items
 export async function updateOrderStatus(orderId: string) {
+  await requireStaff()
+
   const supabase = createAdminClient()
 
-  // Obtener todas las órdenes de corte del pedido
-  const { data: cutOrders, error: cutError } = await supabase
-    .from('cut_orders')
-    .select('status, quantity_requested, quantity_cut')
-    .eq('order_id', orderId)
-
+  // Cortes, preparaciones y estado actual del pedido, en paralelo
+  const [cutRes, prepRes, currentRes] = await Promise.all([
+    supabase
+      .from('cut_orders')
+      .select('status, quantity_requested, quantity_cut')
+      .eq('order_id', orderId),
+    supabase
+      .from('preparation_items')
+      .select('status, quantity_requested, quantity_prepared')
+      .eq('order_id', orderId),
+    supabase
+      .from('orders')
+      .select('status')
+      .eq('id', orderId)
+      .single(),
+  ])
+  const { data: cutOrders, error: cutError } = cutRes
   if (cutError) throw cutError
-
-  // Obtener todos los preparation_items del pedido
-  const { data: prepItems, error: prepError } = await supabase
-    .from('preparation_items')
-    .select('status, quantity_requested, quantity_prepared')
-    .eq('order_id', orderId)
-
+  const { data: prepItems, error: prepError } = prepRes
   if (prepError) throw prepError
+  const current = currentRes.data
 
   // Si no hay ni órdenes de corte ni preparation_items, el pedido debe estar en 'nuevo'
   if ((!cutOrders || cutOrders.length === 0) && (!prepItems || prepItems.length === 0)) {
@@ -682,10 +734,14 @@ export async function updateOrderStatus(orderId: string) {
 
   console.log(`📊 Estado del pedido ${orderId}: ${completedItems}/${totalItems} completados (${completedCutOrders} cortes + ${completedPrepItems} preparados) → ${newStatus}`)
 
-  // Actualizar estado del pedido
+  // Un pedido 'modificado' (ampliación de EVO sin aprobar) conserva ese estado
+  // mientras la planta trabaja lo ya aprobado: el estado real se guarda en
+  // status_before_modification y se restaura al aprobar la ampliación.
   await supabase
     .from('orders')
-    .update({ status: newStatus })
+    .update(current?.status === 'modificado'
+      ? { status_before_modification: newStatus }
+      : { status: newStatus })
     .eq('id', orderId)
 
   // Revalidar de forma agresiva para actualizar la tablet inmediatamente
@@ -703,6 +759,8 @@ export async function updateOrderStatus(orderId: string) {
  * Consume el stock reservado de todas las órdenes completadas
  */
 export async function markOrderAsDelivered(orderId: string) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   // Obtener usuario actual
@@ -932,6 +990,8 @@ export async function markOrderAsDelivered(orderId: string) {
  * Restaura el stock consumido y revierte el estado del pedido
  */
 export async function undoOrderDelivery(orderId: string) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   // Obtener usuario actual

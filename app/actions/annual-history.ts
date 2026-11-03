@@ -1,5 +1,6 @@
 'use server'
 
+import { requireAdmin } from '@/lib/auth/guards'
 import { createAdminClient } from '@/lib/supabase/server'
 
 /**
@@ -42,6 +43,8 @@ export async function getAnnualHistory(
   year: number,
   productIds?: string[]
 ): Promise<ProductHistoryData[]> {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   // Si no se especifican productos, obtener los primeros 6 del historial
@@ -163,6 +166,8 @@ export async function getAnnualHistory(
  * Obtener productos disponibles para el historial (todos los activos)
  */
 export async function getProductsForHistory() {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   const { data: products, error } = await supabase
@@ -185,6 +190,8 @@ export async function getProductsForHistory() {
  * Obtener productos seleccionados por el usuario (guardados en BD)
  */
 export async function getDefaultProducts() {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   // Obtener productos seleccionados de la tabla user_selected_products
@@ -241,6 +248,8 @@ export async function getDefaultProducts() {
  * Actualizar productos seleccionados (guardar en BD)
  */
 export async function updateSelectedProducts(productIds: string[]) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   // Eliminar todos los productos seleccionados actuales
@@ -276,6 +285,8 @@ export async function updateSelectedProducts(productIds: string[]) {
  * Obtener años disponibles en el historial
  */
 export async function getAvailableYears() {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   const { data, error } = await supabase

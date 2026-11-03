@@ -1,5 +1,6 @@
 'use server'
 
+import { requireAdmin } from '@/lib/auth/guards'
 import { createAdminClient } from '@/lib/supabase/server'
 
 /**
@@ -7,6 +8,8 @@ import { createAdminClient } from '@/lib/supabase/server'
  * Solo para limpieza manual de pedidos creados antes del fix
  */
 export async function deleteCutOrdersForOrder(orderId: string) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   const { error } = await supabase

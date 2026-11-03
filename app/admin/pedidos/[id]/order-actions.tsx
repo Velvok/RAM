@@ -113,18 +113,24 @@ export default function OrderActions({
     }
   }
 
-  async function handleApproveModification() {
-    const confirmed = await confirm(
-      'Aprobar Ampliación del Pedido',
-      'EVO ha modificado este pedido añadiendo artículos. ¿Aprobar la ampliación? Se comprobará el stock y se crearán órdenes de corte / preparación solo para lo añadido.',
-      { variant: 'success', confirmText: 'Sí, aprobar ampliación' }
-    )
+  async function handleApproveModification(onHold = false) {
+    const confirmed = onHold
+      ? await confirm(
+          'Aprobar Ampliación en Pausa',
+          'EVO ha modificado este pedido añadiendo artículos. ¿Aprobar la ampliación en pausa? Se crearán órdenes de corte / preparación solo para lo añadido, SIN asignar stock. El pedido quedará en pausa hasta asignar el stock a mano.',
+          { variant: 'warning', confirmText: 'Sí, aprobar en pausa' }
+        )
+      : await confirm(
+          'Aprobar Ampliación del Pedido',
+          'EVO ha modificado este pedido añadiendo artículos. ¿Aprobar la ampliación? Se comprobará el stock y se crearán órdenes de corte / preparación solo para lo añadido.',
+          { variant: 'success', confirmText: 'Sí, aprobar ampliación' }
+        )
 
     if (!confirmed) return
 
     setLoading(true)
     try {
-      const result = await approveOrderModification(order.id)
+      const result = await approveOrderModification(order.id, { onHold })
       await reloadOrder()
 
       // Revalidar para sincronizar con tablet
@@ -136,7 +142,12 @@ export default function OrderActions({
       }
 
       if (result.success) {
-        showSuccess('Ampliación aprobada. Órdenes de corte / preparación creadas y stock asignado.', 'Ampliación Aprobada')
+        showSuccess(
+          onHold
+            ? 'Ampliación aprobada en pausa. El stock deberá asignarse manualmente desde el detalle del pedido.'
+            : 'Ampliación aprobada. Órdenes de corte / preparación creadas y stock asignado.',
+          'Ampliación Aprobada'
+        )
       } else {
         showError(result.errors?.join('\n') || 'La ampliación se aprobó con incidencias', 'Ampliación con Incidencias')
       }
@@ -189,8 +200,7 @@ export default function OrderActions({
   )
 
   // Modificación de EVO con artículos añadidos pendientes de aprobar
-  const hasPendingModification = order.status !== 'nuevo' &&
-    (order.lines?.some((l: any) => (l.quantity_pending_approval || 0) > 0) || false)
+  const hasPendingModification = order.status === 'modificado'
 
   // Modo header: solo botones sin cuadro
   if (isHeaderMode) {
@@ -214,9 +224,14 @@ export default function OrderActions({
 
           {/* Ampliación pendiente (modificación desde EVO) */}
           {hasPendingModification && (
-            <Button variant="success" size="sm" onClick={handleApproveModification} disabled={loading}>
-              Aprobar Ampliación
-            </Button>
+            <>
+              <Button variant="success" size="sm" onClick={() => handleApproveModification(false)} disabled={loading}>
+                Aprobar Ampliación
+              </Button>
+              <Button variant="pause" size="sm" onClick={() => handleApproveModification(true)} disabled={loading}>
+                Ampliación en Pausa
+              </Button>
+            </>
           )}
 
           {/* Estado Aprobado en Pausa */}

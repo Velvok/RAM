@@ -5,6 +5,7 @@ import { headers } from 'next/headers'
 import { createWebhookVerifier } from '@/lib/webhook-security'
 import { applyOrderModification, MODIFIABLE_APPROVED_STATUSES } from '@/lib/order-modification'
 import { updateOrderStatus } from '@/app/actions/orders'
+import { runAsSystem } from '@/lib/auth/guards'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -200,9 +201,10 @@ export async function POST(request: NextRequest) {
     console.log(`📥 Event ${payload.id_evento} registered for order ${payload.id_pedido}`)
 
     // Procesar en background con after()
+    // Sin usuario: las acciones que llame (updateOrderStatus) se ejecutan como sistema
     after(async () => {
       try {
-        await processPedidoNuevo(payload, eventKey)
+        await runAsSystem(() => processPedidoNuevo(payload, eventKey))
       } catch (error) {
         console.error('Error in after() processing:', error)
       }
@@ -236,7 +238,7 @@ async function processPedidoNuevo(payload: PedidoNuevoPayload, eventKey: string)
     // id_pedido, así que `items` es siempre el estado completo nuevo.
     const { data: existingOrder } = await supabase
       .from('orders')
-      .select('id, status, evo_order_id')
+      .select('id, status, status_before_modification, evo_order_id')
       .eq('evo_order_id', payload.id_pedido)
       .maybeSingle()
 
@@ -399,6 +401,13 @@ async function processPedidoNuevo(payload: PedidoNuevoPayload, eventKey: string)
         productIds
       )
 
+      // Con ampliación pendiente el pedido pasa a 'modificado' (hay que volver a
+      // aprobarlo), guardando el estado real al que volver. Si EVO retira la
+      // ampliación antes de aprobarla, vuelve solo a ese estado.
+      const realStatus = existingOrder.status === 'modificado'
+        ? existingOrder.status_before_modification || 'aprobado'
+        : existingOrder.status
+
       await supabase
         .from('orders')
         .update({
@@ -406,14 +415,17 @@ async function processPedidoNuevo(payload: PedidoNuevoPayload, eventKey: string)
           evo_data: evoData,
           ref_evo: ref_evo,
           notes: `Pedido modificado desde EVO - ${ref_evo.codtipmov} ${ref_evo.nromov}` +
-            (pendingApproval ? ' (ampliación pendiente de aprobar)' : '')
+            (pendingApproval ? ' (ampliación pendiente de aprobar)' : ''),
+          status: pendingApproval ? 'modificado' : realStatus,
+          status_before_modification: pendingApproval ? realStatus : null,
         })
         .eq('id', existingOrder.id)
 
       // Las reducciones pueden completar un pedido que la planta ya había empezado.
       // 'aprobado' y 'aprobado_en_pausa' no se recalculan (updateOrderStatus los
-      // pasaría a 'en_corte' por tener cortes pendientes).
-      if (existingOrder.status === 'en_corte' || existingOrder.status === 'finalizado') {
+      // pasaría a 'en_corte' por tener cortes pendientes). En 'modificado',
+      // updateOrderStatus actualiza status_before_modification.
+      if (realStatus === 'en_corte' || realStatus === 'finalizado') {
         try {
           await updateOrderStatus(existingOrder.id)
         } catch (statusError) {

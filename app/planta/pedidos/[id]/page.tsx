@@ -100,6 +100,7 @@ export default function PlantaPedidoDetallePage() {
   }, {
     enabled: true,
     interval: 10, // Verificar cada 10 segundos
+    onChange: setPedido, // aplicar los cambios sin recargar la página
   })
 
   async function loadNotes(orderId: string) {
@@ -112,18 +113,13 @@ export default function PlantaPedidoDetallePage() {
     }
   }
 
+  // Notas nuevas: consulta periódica por server action. (Realtime iba con la
+  // clave anónima sobre order_notes, que ya no es legible sin sesión.)
   useEffect(() => {
-    const supabase = createClient()
-    const channel = supabase
-      .channel(`order_notes_planta_${pedidoId}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'order_notes', filter: `order_id=eq.${pedidoId}` },
-        () => loadNotes(pedidoId)
-      )
-      .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
+    const interval = setInterval(() => {
+      if (!document.hidden) loadNotes(pedidoId)
+    }, 15000)
+    return () => clearInterval(interval)
   }, [pedidoId])
 
   async function handleMarkNoteRead(noteId: string) {
@@ -212,10 +208,9 @@ export default function PlantaPedidoDetallePage() {
         toast.success(result.message)
         setShowChangeStockModal(prev => ({ ...prev, [cutOrderId]: false }))
 
-        // Si es reasignación parcial (crea nueva orden), recargar toda la página
+        // Si es reasignación parcial (crea nueva orden), recargar el pedido
         if (quantity < cutOrder.quantity_requested) {
-          // Recargar página completa para mostrar la nueva cut_order
-          window.location.reload()
+          await loadPedido()
         } else {
           // Si es reasignación completa, actualizar localmente
           setPedido((prev: any) => {
@@ -235,14 +230,6 @@ export default function PlantaPedidoDetallePage() {
           // Recargar sugerencias para reflejar el cambio
           const lengthNeeded = extractSizeFromCode(cutOrder.product?.code || '')
           await toggleCutOrder(cutOrderId, cutOrder.product_id, lengthNeeded)
-
-          // Revalidar para sincronizar con admin
-          try {
-            await fetch(`/api/revalidate?path=/planta/pedidos/${pedidoId}`, { method: 'POST' })
-            await fetch(`/api/revalidate?path=/admin/pedidos/${pedido.id}`, { method: 'POST' })
-          } catch (e) {
-            console.error('Revalidación fallida')
-          }
         }
       } else {
         toast.error('Error al cambiar stock')
@@ -429,13 +416,6 @@ export default function PlantaPedidoDetallePage() {
       })
 
       await loadPedido()
-
-      try {
-        await fetch(`/api/revalidate?path=/planta/pedidos/${pedidoId}`, { method: 'POST' })
-        await fetch(`/api/revalidate?path=/admin/pedidos/${pedido.id}`, { method: 'POST' })
-      } catch (e) {
-        console.error('Revalidación manual fallida')
-      }
 
       setExpandedCutId(null)
       setQuantityInputs(prev => ({ ...prev, [cutId]: '' }))

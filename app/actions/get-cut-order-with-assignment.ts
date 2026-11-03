@@ -1,8 +1,11 @@
 'use server'
 
+import { requireStaff } from '@/lib/auth/guards'
 import { createAdminClient } from '@/lib/supabase/server'
 
 export async function getCutOrderWithAssignment(cutOrderId: string) {
+  await requireStaff()
+
   const supabase = createAdminClient()
 
   const { data: cutOrder, error } = await supabase

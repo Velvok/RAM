@@ -1,14 +1,20 @@
 'use server'
 
+import { requireAdmin } from '@/lib/auth/guards'
+import { findOperatorWithPin, hashPin, isValidPin } from '@/lib/auth/pin'
 import { createAdminClient } from '@/lib/supabase/server'
-import bcrypt from 'bcryptjs'
 import { revalidatePath } from 'next/cache'
 
+// Nunca pin_hash: estas filas llegan al navegador
+const USER_COLUMNS = 'id, email, full_name, role, is_active, first_login, last_login_at, created_at, updated_at'
+
 export async function getUsers() {
+  await requireAdmin()
+
   const supabase = createAdminClient()
   const { data, error } = await supabase
     .from('users')
-    .select('*')
+    .select(USER_COLUMNS)
     .order('created_at', { ascending: false })
 
   if (error) throw error
@@ -22,28 +28,43 @@ export async function createUser(userData: {
   pin?: string
   password?: string
 }) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   if (userData.role === 'operator') {
-    const pinHash = await bcrypt.hash(userData.pin || '111111', 10)
+    if (!isValidPin(userData.pin)) {
+      return { error: 'El PIN debe tener entre 4 y 6 dígitos' }
+    }
+    if (await findOperatorWithPin(supabase, userData.pin)) {
+      return { error: 'Ese PIN ya lo usa otro operario. Elige otro.' }
+    }
+
     const { data, error } = await supabase
       .from('users')
       .insert({
         full_name: userData.full_name,
         role: userData.role,
-        pin_hash: pinHash,
+        pin_hash: await hashPin(userData.pin),
         is_active: true,
         first_login: true,
       })
-      .select()
+      .select(USER_COLUMNS)
       .single()
 
     if (error) throw error
     return data
   } else {
+    if (!userData.email) {
+      return { error: 'El email es obligatorio' }
+    }
+    if (!userData.password || userData.password.length < 6) {
+      return { error: 'La contraseña inicial debe tener al menos 6 caracteres' }
+    }
+
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email: userData.email,
-      password: userData.password || 'admin1',
+      password: userData.password,
       email_confirm: true,
     })
 
@@ -53,13 +74,13 @@ export async function createUser(userData: {
       .from('users')
       .insert({
         id: authData.user.id,
-        email: userData.email,
+        email: userData.email.toLowerCase(),
         full_name: userData.full_name,
         role: userData.role,
         is_active: true,
         first_login: true,
       })
-      .select()
+      .select(USER_COLUMNS)
       .single()
 
     if (error) throw error
@@ -73,6 +94,8 @@ export async function updateUser(userId: string, userData: {
   is_active?: boolean
   newPin?: string
 }) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   const updateData: any = {
@@ -83,14 +106,21 @@ export async function updateUser(userId: string, userData: {
   if (userData.role) updateData.role = userData.role
   if (userData.is_active !== undefined) updateData.is_active = userData.is_active
   if (userData.newPin) {
-    updateData.pin_hash = await bcrypt.hash(userData.newPin, 10)
+    if (!isValidPin(userData.newPin)) {
+      return { error: 'El PIN debe tener entre 4 y 6 dígitos' }
+    }
+    const other = await findOperatorWithPin(supabase, userData.newPin)
+    if (other && other.id !== userId) {
+      return { error: 'Ese PIN ya lo usa otro operario. Elige otro.' }
+    }
+    updateData.pin_hash = await hashPin(userData.newPin)
   }
 
   const { data, error } = await supabase
     .from('users')
     .update(updateData)
     .eq('id', userId)
-    .select()
+    .select(USER_COLUMNS)
     .single()
 
   if (error) throw error
@@ -98,6 +128,8 @@ export async function updateUser(userId: string, userData: {
 }
 
 export async function deleteUser(userId: string) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   const { error } = await supabase

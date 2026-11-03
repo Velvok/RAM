@@ -1,5 +1,6 @@
 'use server'
 
+import { requireAdmin, requireStaff } from '@/lib/auth/guards'
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { unstable_noStore } from 'next/cache'
@@ -17,6 +18,8 @@ unstable_noStore()
 // =====================================================
 
 export async function getOrderById(orderId: string) {
+  await requireStaff()
+
   const supabase = createAdminClient()
 
   const { data, error } = await supabase
@@ -52,9 +55,12 @@ export async function getOrderById(orderId: string) {
 }
 
 export async function getOrdersForPlanta() {
+  await requireStaff()
+
   const supabase = createAdminClient()
 
-  // Pedidos activos: aprobados, en corte, finalizados
+  // Pedidos activos: aprobados, en corte, finalizados y modificados (ampliación de
+  // EVO sin aprobar: la planta sigue trabajando lo ya aprobado)
   // Y pedidos aprobados en pausa que tengan al menos una línea con stock asignado
   const { data: activeOrders, error: activeError } = await supabase
     .from('orders')
@@ -73,7 +79,7 @@ export async function getOrdersForPlanta() {
         assigned_inventory_id
       )
     `)
-    .in('status', ['aprobado', 'en_corte', 'finalizado'])
+    .in('status', ['aprobado', 'en_corte', 'finalizado', 'modificado'])
     .order('created_at', { ascending: false })
 
   if (activeError) throw activeError
@@ -116,6 +122,8 @@ export async function getOrdersForPlanta() {
 // =====================================================
 
 export async function getOrderActivityLog(orderId: string) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
   
   const { data, error } = await supabase
@@ -133,6 +141,8 @@ export async function getOrderActivityLog(orderId: string) {
 // =====================================================
 
 export async function getAvailableStockForProduct(productId: string, minLength?: number) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
   
   let query = supabase
@@ -152,6 +162,8 @@ export async function getAvailableStockForProduct(productId: string, minLength?:
 }
 
 export async function getStockSuggestions(productId: string, quantityNeeded: number) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
   
   const { data, error } = await supabase
@@ -170,6 +182,8 @@ export async function getStockSuggestions(productId: string, quantityNeeded: num
 }
 
 export async function checkStockAvailability(productId: string) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
   
   const { data, error } = await supabase
@@ -187,6 +201,8 @@ export async function checkStockAvailability(productId: string) {
 // =====================================================
 
 export async function getCutOrderById(cutOrderId: string) {
+  await requireStaff()
+
   const supabase = createAdminClient()
   
   const { data, error } = await supabase
@@ -210,6 +226,8 @@ export async function getCutOrderById(cutOrderId: string) {
 // =====================================================
 
 export async function getAllClients() {
+  await requireAdmin()
+
   const supabase = createAdminClient()
   
   const { data, error } = await supabase
@@ -222,6 +240,8 @@ export async function getAllClients() {
 }
 
 export async function getClientById(clientId: string) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
   
   const { data, error } = await supabase
@@ -239,6 +259,8 @@ export async function getClientById(clientId: string) {
 // =====================================================
 
 export async function getAllProducts() {
+  await requireAdmin()
+
   const supabase = createAdminClient()
   
   const { data, error } = await supabase
@@ -252,6 +274,8 @@ export async function getAllProducts() {
 }
 
 export async function getProductById(productId: string) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
   
   const { data, error } = await supabase

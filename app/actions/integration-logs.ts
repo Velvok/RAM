@@ -1,5 +1,6 @@
 'use server'
 
+import { requireAdmin } from '@/lib/auth/guards'
 import { createAdminClient } from '@/lib/supabase/server'
 
 export interface IntegrationLog {
@@ -31,6 +32,8 @@ export interface LogsFilters {
 }
 
 export async function getIntegrationLogs(filters: LogsFilters = {}) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   let query = supabase
@@ -82,6 +85,8 @@ export async function getIntegrationLogs(filters: LogsFilters = {}) {
 }
 
 export async function getLogsStats() {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   // Estadísticas últimas 24h
@@ -121,6 +126,8 @@ export async function getLogsStats() {
 }
 
 export async function getEventTypes() {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   const { data } = await supabase
@@ -137,6 +144,8 @@ export async function getEventTypes() {
 }
 
 export async function retryOutboundEvent(eventId: string) {
+  await requireAdmin()
+
   console.log(`🔄 === MANUAL RETRY INITIATED ===`)
   console.log(`🆔 Event ID: ${eventId}`)
   console.log(`⏰ Timestamp: ${new Date().toISOString()}`)
@@ -175,6 +184,8 @@ export async function retryOutboundEvent(eventId: string) {
  * eventos pending automáticamente sin cron job.
  */
 export async function processNextPendingEventAuto() {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   try {
@@ -206,6 +217,8 @@ export async function processNextPendingEventAuto() {
 }
 
 export async function sendTestEvent() {
+  await requireAdmin()
+
   const { enqueueOutboundEvent } = await import('@/lib/ram-outbound')
 
   const eventId = await enqueueOutboundEvent({
@@ -226,6 +239,8 @@ export async function sendTestEvent() {
  * Bypassa RLS usando admin client. Usado por el provider de notificaciones en polling.
  */
 export async function getRecentEventsForNotifications(sinceIso?: string) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
   const since = sinceIso || new Date(Date.now() - 5 * 60 * 1000).toISOString()
 
@@ -253,6 +268,8 @@ export async function getRecentEventsForNotifications(sinceIso?: string) {
 }
 
 export async function markEventsAsViewed() {
+  await requireAdmin()
+
   const supabase = createAdminClient()
 
   // Marcar todos los eventos outbound fallidos como vistos

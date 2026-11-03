@@ -8,7 +8,8 @@
 import { WebhookSecurity } from '../lib/webhook-security'
 
 // Configuración
-const WEBHOOK_SECRET = 'evo_ram_webhook_2026_05_07_secure_token_kj8x9m2n3p4q5r6s7t8u9v0w1x2y3z4'
+const WEBHOOK_SECRET = process.env.EVO_WEBHOOK_SECRET || ''
+if (!WEBHOOK_SECRET) throw new Error('Define EVO_WEBHOOK_SECRET (node --env-file=.env.local ...)')
 const WEBHOOK_URL = 'https://comercial-ram.vercel.app/api/webhooks/stock/actualizado'
 
 // Crear instancia de seguridad

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { processOutboundEvent } from '@/lib/ram-outbound'
+import { safeEqual } from '@/lib/auth/planta-session'
 
 /**
  * Worker que procesa eventos pending cada X segundos.
@@ -8,11 +9,12 @@ import { processOutboundEvent } from '@/lib/ram-outbound'
  * del webhook (que causa HTTP 401 en Vercel).
  */
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('authorization')
-  const CRON_SECRET = process.env.CRON_SECRET || 'your-secret-key'
-
-  // Verificar autenticación para evitar llamadas no autorizadas
-  if (authHeader !== `Bearer ${CRON_SECRET}`) {
+  const CRON_SECRET = process.env.CRON_SECRET
+  // Sin secreto configurado no se abre (antes caía a un valor por defecto conocido)
+  if (!CRON_SECRET) {
+    return NextResponse.json({ error: 'Not configured' }, { status: 503 })
+  }
+  if (!safeEqual(request.headers.get('authorization'), `Bearer ${CRON_SECRET}`)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -64,7 +66,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('❌ Worker error:', error)
     return NextResponse.json(
-      { error: 'Internal server error', message: error instanceof Error ? error.message : 'Unknown error' },
+      { error: 'Internal server error' },
       { status: 500 }
     )
   }

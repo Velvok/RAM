@@ -197,8 +197,9 @@ async function processPedidoEntregado(payload: PedidoEntregadoPayload, id_evento
     // Validar que el pedido esté en un estado desde el que tenga sentido entregar.
     // Incluye 'parcialmente_entregado' para permitir que una entrega posterior
     // complete lo que falta (si no, un pedido con una primera entrega parcial
-    // nunca podría recibir el resto).
-    const deliverableStatuses = ['en_corte', 'finalizado', 'parcialmente_entregado']
+    // nunca podría recibir el resto). 'modificado' (ampliación de EVO sin aprobar)
+    // también: lo ya aprobado puede estar listo y EVO puede entregarlo.
+    const deliverableStatuses = ['en_corte', 'finalizado', 'modificado', 'parcialmente_entregado']
     if (!deliverableStatuses.includes(order.status)) {
       console.log('❌ Order status is not deliverable:', order.status)
       errors.push(`Order must be in one of [${deliverableStatuses.join(', ')}] status to be delivered, current status: ${order.status}`)

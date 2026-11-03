@@ -1,8 +1,11 @@
 'use server'
 
+import { requireAdmin } from '@/lib/auth/guards'
 import { createAdminClient } from '@/lib/supabase/server'
 
 export async function getDeliveryHistory(orderId: string) {
+  await requireAdmin()
+
   const supabase = createAdminClient()
   
   const { data, error } = await supabase
