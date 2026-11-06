@@ -3,6 +3,7 @@ import { after } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
 import { createWebhookVerifier } from '@/lib/webhook-security'
+import { recordMovements } from '@/lib/historial-movimientos'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -268,6 +269,35 @@ async function processStockUpdate(payload: StockActualizadoPayload) {
       .filter((u): u is NonNullable<typeof u> => u !== null)
 
     console.log(`💾 Upserting inventory for ${inventoryUpdates.length} products...`)
+
+    // 6b. Historial de compras: si EVO sube el total de un producto y nosotros no
+    // hemos generado piezas ni remanentes de ese producto en la última semana,
+    // la subida se registra como compra (entrada de proveedor).
+    try {
+      const ids = inventoryUpdates.map(u => u.product_id)
+      const before = new Map<string, number>()
+      for (let i = 0; i < ids.length; i += 200) {
+        const { data } = await supabase.from('inventory').select('product_id, stock_total').in('product_id', ids.slice(i, i + 200))
+        for (const r of data || []) before.set(r.product_id, Number(r.stock_total) || 0)
+      }
+      const increased = inventoryUpdates.filter(u => before.has(u.product_id) && Number(u.stock_total) > before.get(u.product_id)!)
+      if (increased.length) {
+        const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString()
+        const { data: ours } = await supabase
+          .from('product_movements')
+          .select('product_id')
+          .in('product_id', increased.map(u => u.product_id))
+          .in('movement_type', ['corte', 'remanente'])
+          .gte('occurred_at', weekAgo)
+        const skip = new Set((ours || []).map(o => o.product_id))
+        await recordMovements(supabase, increased.filter(u => !skip.has(u.product_id)).map(u => ({
+          productId: u.product_id, type: 'compra' as const, units: Number(u.stock_total) - before.get(u.product_id)!,
+          source: 'stock_actualizado', sourceRef: payload.id_evento,
+        })))
+      }
+    } catch (e) {
+      console.warn('⚠️ No se pudo registrar compras en el historial:', e)
+    }
 
     // 7. Upsert masivo en batches
     if (inventoryUpdates.length > 0) {

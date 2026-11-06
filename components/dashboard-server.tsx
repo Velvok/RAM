@@ -1,7 +1,7 @@
-import { getDashboardData } from '@/app/actions/dashboard-data'
-import { DashboardRAMClient } from '@/components/dashboard-ram-client'
+import { getOperationalDashboard } from '@/app/actions/dashboard-operativo'
+import { DashboardOperativo } from '@/components/dashboard-operativo'
 
 export async function DashboardServer() {
-  const dashboardData = await getDashboardData()
-  return <DashboardRAMClient data={dashboardData} />
+  const data = await getOperationalDashboard()
+  return <DashboardOperativo initial={data} />
 }

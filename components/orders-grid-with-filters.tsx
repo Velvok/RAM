@@ -2,7 +2,7 @@
 
 import { lineUnits } from '@/lib/order-modification'
 import { useState, useMemo, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { generateCutOrders } from '@/app/actions/orders'
 import { Package, Calendar, User, DollarSign, Loader2, Filter, LayoutGrid, List, RefreshCw, Check } from 'lucide-react'
 import { Card } from '@/components/ui/card'
@@ -30,7 +30,9 @@ const DOT_CLASS: Record<string, string> = {
 
 export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersProps) {
   const [loading, setLoading] = useState<string | null>(null)
-  const [statusFilter, setStatusFilter] = useState<string>('todos')
+  // ?status=xxx desde el dashboard abre la lista ya filtrada
+  const searchParams = useSearchParams()
+  const [statusFilter, setStatusFilter] = useState<string>(searchParams.get('status') || 'todos')
   const [searchQuery, setSearchQuery] = useState('')
   const [viewMode, setViewMode] = useState<'cards' | 'rows'>('rows')
   const [currentPage, setCurrentPage] = useState(0)

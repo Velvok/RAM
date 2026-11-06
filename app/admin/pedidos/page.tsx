@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { getOrders } from '@/app/actions/orders'
 import OrdersGridWithFilters from '@/components/orders-grid-with-filters'
 import GenerateTestOrderButton from './generate-test-order-button'
@@ -36,7 +37,9 @@ export default async function PedidosPage() {
         actions={<GenerateTestOrderButton />}
       />
 
-      <OrdersGridWithFilters orders={orders} />
+      <Suspense fallback={null}>
+        <OrdersGridWithFilters orders={orders} />
+      </Suspense>
     </div>
   )
 }

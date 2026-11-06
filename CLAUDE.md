@@ -16,6 +16,8 @@ npm run dev · npm run build · npm run start · npm run lint · npm run type-ch
 - `app/api/webhooks`: entradas de EVO (Bearer `EVO_WEBHOOK_SECRET`). Lo que llamen sin usuario va dentro de `runAsSystem()`.
 - `lib/ram-outbound.ts`: cola saliente hacia EVO (`outbound_events`, un evento a la vez con `evo_locks`).
 - `lib/order-modification.ts`: modificaciones de pedido que manda EVO (estado `modificado`).
+- `app/actions/dashboard-operativo.ts` + `components/dashboard-operativo.tsx`: dashboard operativo (`/admin`), todo calculado sobre tablas existentes.
+- `product_movements` (migración 00069) + `lib/historial-movimientos.ts`: historial de movimientos por producto (entregas, compras, cortes, remanentes) que alimenta `/admin/historial` (`app/actions/historial.ts`). Lo escriben el webhook de entrega, `processCutOrder` y el webhook `stock_actualizado`.
 - `supabase/migrations`: migraciones; se aplican con `./scripts/supabase-sql.sh -f`.
 
 ## Reglas

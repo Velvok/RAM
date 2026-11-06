@@ -3,6 +3,7 @@ import { after } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
 import { createWebhookVerifier } from '@/lib/webhook-security'
+import { recordMovements } from '@/lib/historial-movimientos'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -156,6 +157,7 @@ async function processPedidoEntregado(payload: PedidoEntregadoPayload, id_evento
         id,
         status,
         client_id,
+        order_number,
         ref_evo,
         evo_data,
         order_lines(
@@ -171,10 +173,12 @@ async function processPedidoEntregado(payload: PedidoEntregadoPayload, id_evento
           quantity_delivered,
           assigned_inventory_id,
           material_base_id,
+          product_id,
           product:products!cut_orders_product_id_fkey(evo_product_id, code, name)
         ),
         preparation_items(
           id,
+          product_id,
           quantity_requested,
           quantity_prepared,
           quantity_delivered,
@@ -378,6 +382,16 @@ async function processPedidoEntregado(payload: PedidoEntregadoPayload, id_evento
         notes: `Salida por entrega del pedido ${payload.ref_evo.nromov} - stock_total actualizado por EVO`
       })
     }
+    // Historial: unidades entregadas al cliente (solo lo no entregado antes)
+    const itemProduct = new Map<string, string>()
+    for (const co of order.cut_orders || []) itemProduct.set(co.id, co.product_id)
+    for (const pi of order.preparation_items || []) itemProduct.set(pi.id, pi.product_id)
+    await recordMovements(supabase, pendientes.map(item => ({
+      productId: itemProduct.get(item.id)!, type: 'entrega' as const, units: item.amount,
+      clientId: order.client_id, orderId: order.id, orderNumber: order.order_number,
+      source: 'webhook_entrega', sourceRef: `${id_evento}:${item.id}`,
+    })))
+
     // Marcar reservas de stock como inactivas
     console.log('🔄 Marking stock reservations as inactive...')
     await supabase
@@ -427,6 +441,8 @@ async function processPartialDelivery(
   for (const articulo of deliveredArticles) {
     deliveredItems.set(articulo.id_articulo, articulo.cantidad)
   }
+
+  const deliveredForHistory: Array<{ productId: string; units: number }> = []
 
   // Procesar cada artículo entregado
   for (const [idArticulo, cantidadEntregada] of deliveredItems) {
@@ -551,6 +567,10 @@ async function processPartialDelivery(
         }
       }
 
+      if (cantidadEntregada - remainingToDeliver > 0) {
+        deliveredForHistory.push({ productId: product.id, units: cantidadEntregada - remainingToDeliver })
+      }
+
       // Advertir si no se pudo entregar todo
       if (remainingToDeliver > 0) {
         const warning = `⚠️ Could not deliver ${remainingToDeliver} units of ${idArticulo} - not enough prepared items`
@@ -564,6 +584,13 @@ async function processPartialDelivery(
       errors.push(errorMsg)
     }
   }
+
+  // Historial: unidades entregadas al cliente en esta entrega parcial
+  await recordMovements(supabase, deliveredForHistory.map(d => ({
+    productId: d.productId, type: 'entrega' as const, units: d.units,
+    clientId: order.client_id, orderId: order.id, orderNumber: order.order_number,
+    source: 'webhook_entrega', sourceRef: `${payload.ref_evo?.nromov}:${payload.fecha}:${d.productId}`,
+  })))
 
   // Registrar actividad en el historial
   const totalDelivered = payload.articulos.reduce((sum: number, art: any) => sum + art.cantidad, 0)

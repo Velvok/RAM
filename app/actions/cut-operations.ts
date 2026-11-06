@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { extractSizeFromCode, extractFamilyCode } from '@/lib/product-utils'
 import { updateOrderStatus } from './orders'
 import { notifyCorteRealizado, notifyChapaPreparada, type CorteMovimiento } from '@/lib/ram-outbound'
+import { recordMovements } from '@/lib/historial-movimientos'
 import { revalidatePath } from 'next/cache'
 
 export async function processCutOrder(params: {
@@ -338,9 +339,18 @@ export async function processCutOrder(params: {
           if (remnantCode) {
             const { data: remnantProduct } = await supabase
               .from('products')
-              .select('evo_product_id')
+              .select('id, evo_product_id')
               .eq('code', remnantCode)
               .single()
+
+            // Historial: remanente que vuelve a stock
+            if (remnantProduct?.id) {
+              await recordMovements(supabase, [{
+                productId: remnantProduct.id, type: 'remanente', units: sheetsUsed,
+                clientId: cutOrder.order?.client_id, orderId: cutOrder.order_id, orderNumber: cutOrder.order?.order_number,
+                source: 'corte', sourceRef: `${cutOrderId}:${newQuantityCut}`,
+              }])
+            }
 
             if (remnantProduct?.evo_product_id) {
               movimientos.push({
@@ -379,6 +389,13 @@ export async function processCutOrder(params: {
     } else {
       console.log(`⏭️ Sin remanente (match exacto), no se notifica a EVO`)
     }
+
+    // Historial: chapas cortadas de otro largo
+    await recordMovements(supabase, [{
+      productId: cutOrder.product_id, type: 'corte', units: quantityToCut,
+      clientId: cutOrder.order?.client_id, orderId: cutOrder.order_id, orderNumber: cutOrder.order?.order_number,
+      source: 'corte', sourceRef: `${cutOrderId}:${newQuantityCut}`,
+    }])
   }
   
   // Registrar actividad en el historial
