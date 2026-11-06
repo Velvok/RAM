@@ -170,6 +170,7 @@ async function processPedidoEntregado(payload: PedidoEntregadoPayload, id_evento
           quantity_cut,
           quantity_delivered,
           assigned_inventory_id,
+          material_base_id,
           product:products!cut_orders_product_id_fkey(evo_product_id, code, name)
         ),
         preparation_items(
@@ -266,6 +267,12 @@ async function processPedidoEntregado(payload: PedidoEntregadoPayload, id_evento
 
     console.log(`📦 Delivery type: ${isCompleteDelivery ? 'COMPLETA' : (isPartialDelivery ? 'PARCIAL' : 'SIN ARTÍCULOS')}`)
 
+    // Un remito sin detalle de artículos es la entrega de todo lo pendiente,
+    // también después de una o varias entregas parciales.
+    if (!payload.articulos || payload.articulos.length === 0) {
+      isCompleteDelivery = true
+    }
+
     // Si es entrega parcial, procesar con lógica de retirada parcial
     if (!isCompleteDelivery) {
       console.log('🔄 Processing partial delivery...')
@@ -328,73 +335,49 @@ async function processPedidoEntregado(payload: PedidoEntregadoPayload, id_evento
     // IMPORTANTE: NO modificamos stock_total aquí - EVO es la fuente de verdad
     // y enviará stock_actualizado en tiempo real con el valor correcto
     console.log('🔄 Processing stock reservation release...')
-    const itemsToProcess = payload.articulos?.map(a => ({ id_articulo: a.codart, cantidad: a.cantidad })) || 
-      (order.order_lines || []).map((line: any) => ({
-        id_articulo: Array.isArray(line.product) ? line.product[0]?.evo_product_id : line.product?.evo_product_id,
-        cantidad: line.quantity
-      }))
-
-    console.log('📦 Items to process:', itemsToProcess.length)
-
-    for (const articulo of itemsToProcess) {
-      if (!articulo.id_articulo) continue
-
-      const { data: product } = await supabase
-        .from('products')
-        .select('id')
-        .eq('evo_product_id', articulo.id_articulo)
-        .maybeSingle()
-
-      if (product) {
-        // Liberar stock reservado (stock_total lo actualiza EVO vía stock_actualizado)
-        const { data: inventory } = await supabase
-          .from('inventory')
-          .select('id, stock_total, stock_reservado, product:products(code)')
-          .eq('product_id', product.id)
-          .maybeSingle()
-
-        if (inventory) {
-          const newReservado = Math.max(0, (inventory.stock_reservado || 0) - articulo.cantidad)
-          const productCode = (inventory.product as any)?.code || 'Unknown'
-
-          await supabase
-            .from('inventory')
-            .update({
-              stock_reservado: newReservado
-              // NO tocar stock_total - EVO lo actualizará vía stock_actualizado
-            })
-            .eq('id', inventory.id)
-
-          // Validar consistencia
-          if (newReservado > inventory.stock_total) {
-            console.error(`⚠️ INCONSISTENCIA DETECTADA: ${productCode}`)
-            console.error(`   stock_reservado (${newReservado}) > stock_total (${inventory.stock_total})`)
-            console.error(`   Esto indica un problema en la sincronización o reservas duplicadas`)
-          }
-
-          // Log detallado
-          console.log(`📦 Entrega procesada: ${productCode}`)
-          console.log(`   Cantidad entregada: ${articulo.cantidad}`)
-          console.log(`   stock_reservado: ${inventory.stock_reservado} → ${newReservado}`)
-          console.log(`   stock_total: ${inventory.stock_total} (sin cambios - EVO lo actualizará)`)
-
-          // Crear movimiento de stock de salida (solo para auditoría)
-          await supabase
-            .from('stock_movements')
-            .insert({
-              product_id: product.id,
-              movement_type: 'salida',
-              quantity: articulo.cantidad,
-              reference_id: order.id,
-              reference_type: 'order',
-              notes: `Salida por entrega - stock_total actualizado por EVO`
-            })
-        }
-      }
+    // Liberar la reserva de lo que queda sin entregar, en el inventario donde
+    // está reservado de verdad: el material de cada corte (tras un cambio de
+    // tamaño es otra chapa) o el asignado a cada preparación. Antes se liberaba
+    // por producto pedido, lo que dejaba reservas colgadas en el material real
+    // y, tras una entrega parcial, liberaba dos veces lo ya entregado.
+    const pendientes: Array<{ table: 'cut_orders' | 'preparation_items'; id: string; inventoryId: string | null; fallbackProductId: string | null; amount: number; done: number }> = []
+    for (const co of order.cut_orders || []) {
+      const amount = (co.quantity_cut || 0) - (co.quantity_delivered || 0)
+      if (amount > 0) pendientes.push({ table: 'cut_orders', id: co.id, inventoryId: co.assigned_inventory_id, fallbackProductId: co.material_base_id || null, amount, done: co.quantity_cut || 0 })
     }
-
-    console.log('✅ Stock reservation release completed')
-
+    for (const pi of order.preparation_items || []) {
+      const amount = (pi.quantity_prepared || 0) - (pi.quantity_delivered || 0)
+      if (amount > 0) pendientes.push({ table: 'preparation_items', id: pi.id, inventoryId: pi.assigned_inventory_id, fallbackProductId: null, amount, done: pi.quantity_prepared || 0 })
+    }
+    for (const item of pendientes) {
+      let inventory: { id: string; product_id: string; stock_reservado: number | null } | null = null
+      if (item.inventoryId) {
+        inventory = (await supabase.from('inventory').select('id, product_id, stock_reservado').eq('id', item.inventoryId).maybeSingle()).data
+      } else if (item.fallbackProductId) {
+        inventory = (await supabase.from('inventory').select('id, product_id, stock_reservado').eq('product_id', item.fallbackProductId).maybeSingle()).data
+      }
+      if (!inventory) {
+        errors.push(`No inventory found for ${item.table} ${item.id}`)
+        continue
+      }
+      const { error: unreserveError } = await supabase.rpc('unreserve_stock', { p_inventory_id: inventory.id, p_quantity: item.amount })
+      if (unreserveError) {
+        errors.push(`Error releasing stock for ${item.table} ${item.id}: ${unreserveError.message}`)
+        continue
+      }
+      await supabase.from(item.table).update({ quantity_delivered: item.done }).eq('id', item.id)
+      // Movimiento de salida (solo auditoría; stock_total lo actualiza EVO vía stock_actualizado)
+      await supabase.from('stock_movements').insert({
+        product_id: inventory.product_id,
+        movement_type: 'salida',
+        quantity: item.amount,
+        stock_before: inventory.stock_reservado || 0,
+        stock_after: Math.max(0, (inventory.stock_reservado || 0) - item.amount),
+        reference_id: order.id,
+        reference_type: 'order',
+        notes: `Salida por entrega del pedido ${payload.ref_evo.nromov} - stock_total actualizado por EVO`
+      })
+    }
     // Marcar reservas de stock como inactivas
     console.log('🔄 Marking stock reservations as inactive...')
     await supabase

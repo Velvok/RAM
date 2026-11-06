@@ -154,6 +154,10 @@ export async function prepareItem(
   // (La tabla plant_operators que se consultaba aquí no existe: a EVO siempre
   // se le ha enviado el id del operario, y se mantiene así.)
   const operario = operatorId || 'operario'
+  const { data: operatorRow } = operatorId
+    ? await supabase.from('users').select('full_name').eq('id', operatorId).maybeSingle()
+    : { data: null }
+  const operatorName = operatorRow?.full_name || 'Operario'
   
   // 5. Encolar evento a EVO PRIMERO (antes de actualizar BD)
   // Si esto falla, no se actualiza el preparation_item
@@ -196,7 +200,7 @@ export async function prepareItem(
   await supabase.from('order_activity_log').insert({
     order_id: item.order_id,
     activity_type: 'item_prepared',
-    description: `Operario preparó ${quantityPrepared} unidades de ${item.product.name}`,
+    description: `${operatorName} preparó ${quantityPrepared} unidades de ${item.product.name}`,
     metadata: {
       preparation_item_id: itemId,
       quantity: quantityPrepared,
@@ -314,6 +318,10 @@ export async function assignStockToPreparationItem(
       quantity: quantityToReserve
     }
   })
+
+  // Si el pedido estaba en pausa y ya tiene todo el stock, se activa
+  const { checkAndActivateOrderOnHold } = await import('@/app/actions/stock-management')
+  await checkAndActivateOrderOnHold(item.order_id)
 
   revalidateOrders(item.order_id)
   revalidateStock()

@@ -1178,7 +1178,7 @@ export default function PlantaPedidoDetallePage() {
                         </button>
                       </div>
                       <p className="text-muted-foreground text-sm mt-1">
-                        Máximo: {cutOrder.quantity_requested} chapas
+                        Máximo: {cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)} chapas (sin cortar)
                       </p>
                     </div>
 

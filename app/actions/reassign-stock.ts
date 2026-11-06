@@ -3,6 +3,7 @@
 import { requireStaff } from '@/lib/auth/guards'
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { checkAndActivateOrderOnHold } from './stock-management'
 
 export async function reassignStock(
   cutOrderId: string,
@@ -108,6 +109,9 @@ export async function reassignStock(
       })
       .eq('id', cutOrderId)
 
+    // Si el pedido estaba en pausa y ya tiene todo el stock, se activa
+    await checkAndActivateOrderOnHold(cutOrder.order_id)
+
     return {
       success: true,
       message: `✅ Material actualizado\n\n${quantityForNewMaterial} unidades ahora con ${product.name}`
@@ -190,6 +194,7 @@ export async function reassignStock(
     // si la orden original quedó completada)
     const { updateOrderStatus } = await import('./orders')
     await updateOrderStatus(cutOrder.order_id)
+    await checkAndActivateOrderOnHold(cutOrder.order_id)
 
     // Revalidar rutas
     revalidatePath('/admin/pedidos', 'layout')

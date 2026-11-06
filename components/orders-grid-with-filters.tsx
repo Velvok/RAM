@@ -1,5 +1,6 @@
 'use client'
 
+import { lineUnits } from '@/lib/order-modification'
 import { useState, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { generateCutOrders } from '@/app/actions/orders'
@@ -251,7 +252,7 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
             </div>
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
               <Package size={14} />
-              {order.lines?.reduce((sum: number, line: any) => sum + (line.units || 0), 0) || 0} unidades
+              {order.lines?.reduce((sum: number, line: any) => sum + lineUnits(line), 0) || 0} unidades
             </div>
           </div>
 
@@ -387,7 +388,7 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
                     </div>
                     <Badge variant="info" className="px-4 py-2 text-sm">
                       <Package size={14} />
-                      {group.orders.reduce((sum: number, o: any) => sum + (o.lines?.reduce((s: number, l: any) => s + (l.units || 0), 0) || 0), 0)} unidades
+                      {group.orders.reduce((sum: number, o: any) => sum + (o.lines?.reduce((s: number, l: any) => s + lineUnits(l), 0) || 0), 0)} unidades
                     </Badge>
                   </div>
 
@@ -448,7 +449,7 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
                         {order.total_amount?.toLocaleString('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 })}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {order.lines?.reduce((sum: number, line: any) => sum + (line.units || 0), 0) || 0}
+                        {order.lines?.reduce((sum: number, line: any) => sum + lineUnits(line), 0) || 0}
                       </TableCell>
                       <TableCell><OrderStatusBadge status={order.status} /></TableCell>
                       <TableCell>

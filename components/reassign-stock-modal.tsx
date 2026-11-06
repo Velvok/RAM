@@ -109,7 +109,7 @@ export default function ReassignStockModal({
           processedOrders.push({
             id: order.id,
             order_number: order.order_number,
-            customer_name: 'Cliente', // No tenemos client en la query
+            customer_name: (Array.isArray(order.client) ? order.client[0] : order.client)?.business_name || 'Sin cliente',
             cut_orders: validCutOrders
           })
         }

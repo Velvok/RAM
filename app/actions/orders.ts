@@ -737,6 +737,10 @@ export async function updateOrderStatus(orderId: string) {
   // Un pedido 'modificado' (ampliación de EVO sin aprobar) conserva ese estado
   // mientras la planta trabaja lo ya aprobado: el estado real se guarda en
   // status_before_modification y se restaura al aprobar la ampliación.
+  // Un pedido con una entrega parcial conserva ese estado aunque la planta
+  // termine lo que faltaba: solo el remito final (webhook) lo pasa a entregado.
+  if (current?.status === 'parcialmente_entregado') return
+
   await supabase
     .from('orders')
     .update(current?.status === 'modificado'
@@ -1069,10 +1073,52 @@ export async function undoOrderDelivery(orderId: string) {
     }
   }
 
+  // 1b. Volver a reservar lo que la entrega había liberado, en el inventario
+  // real de cada corte / preparación, y dejar los contadores de entregado a 0
+  // para que una nueva entrega vuelva a liberar exactamente lo mismo.
+  // (stock_total no se toca: lo sincroniza EVO.)
+  const { data: deliveredCuts } = await supabase
+    .from('cut_orders')
+    .select('id, quantity_delivered, assigned_inventory_id, material_base_id')
+    .eq('order_id', orderId)
+    .gt('quantity_delivered', 0)
+  const { data: deliveredPreps } = await supabase
+    .from('preparation_items')
+    .select('id, quantity_delivered, assigned_inventory_id')
+    .eq('order_id', orderId)
+    .gt('quantity_delivered', 0)
+  const toRestore: Array<{ table: 'cut_orders' | 'preparation_items'; id: string; inventoryId: string | null; fallbackProductId: string | null; amount: number }> = [
+    ...(deliveredCuts || []).map(c => ({ table: 'cut_orders' as const, id: c.id, inventoryId: c.assigned_inventory_id, fallbackProductId: c.material_base_id, amount: c.quantity_delivered })),
+    ...(deliveredPreps || []).map(p => ({ table: 'preparation_items' as const, id: p.id, inventoryId: p.assigned_inventory_id, fallbackProductId: null, amount: p.quantity_delivered })),
+  ]
+  for (const item of toRestore) {
+    const invQuery = supabase.from('inventory').select('id, product_id, stock_reservado')
+    const { data: inventory } = item.inventoryId
+      ? await invQuery.eq('id', item.inventoryId).maybeSingle()
+      : item.fallbackProductId
+        ? await invQuery.eq('product_id', item.fallbackProductId).maybeSingle()
+        : { data: null }
+    if (inventory) {
+      const before = inventory.stock_reservado || 0
+      await supabase.from('inventory').update({ stock_reservado: before + item.amount }).eq('id', inventory.id)
+      await supabase.from('stock_movements').insert({
+        product_id: inventory.product_id,
+        movement_type: 'reserva',
+        quantity: item.amount,
+        stock_before: before,
+        stock_after: before + item.amount,
+        reference_id: orderId,
+        reference_type: 'order',
+        notes: 'Reserva restaurada al deshacer la entrega',
+      })
+    }
+    await supabase.from(item.table).update({ quantity_delivered: 0 }).eq('id', item.id)
+  }
+
   // 2. Revertir el estado del pedido
   const { error: updateError } = await supabase
     .from('orders')
-    .update({ status: deliveryHistory.previous_status })
+    .update({ status: deliveryHistory.previous_status, delivered_at: null })
     .eq('id', orderId)
 
   if (updateError) throw updateError

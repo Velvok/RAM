@@ -156,6 +156,8 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                   ? 'bg-muted text-foreground'
                   : order.status === 'aprobado'
                   ? 'bg-yellow-100 text-yellow-800'
+                  : order.status === 'aprobado_en_pausa'
+                  ? 'bg-amber-100 text-amber-800'
                   : order.status === 'en_corte'
                   ? 'bg-blue-100 text-blue-800'
                   : order.status === 'finalizado'
@@ -171,6 +173,8 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
             >
               {order.status === 'nuevo' ? 'Nuevo' :
                order.status === 'aprobado' ? 'Aprobado' :
+               order.status === 'aprobado_en_pausa' ? 'En Pausa · sin stock asignado' :
+               order.status === 'cancelado' ? 'Cancelado' :
                order.status === 'en_corte' ? 'En Corte' :
                order.status === 'finalizado' ? 'Finalizado' :
                order.status === 'modificado' ? 'Modificado · pendiente de aprobar' :

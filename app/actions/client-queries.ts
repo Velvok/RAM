@@ -79,7 +79,7 @@ export async function getOrdersForPlanta() {
         assigned_inventory_id
       )
     `)
-    .in('status', ['aprobado', 'en_corte', 'finalizado', 'modificado'])
+    .in('status', ['aprobado', 'aprobado_en_pausa', 'en_corte', 'finalizado', 'modificado', 'parcialmente_entregado'])
     .order('created_at', { ascending: false })
 
   if (activeError) throw activeError

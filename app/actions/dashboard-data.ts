@@ -160,6 +160,7 @@ export async function getAvailableOrdersForReassignment(productId: string, minLe
       id,
       order_number,
       status,
+      client:clients(business_name),
       cut_orders!cut_orders_order_id_fkey(
         id,
         status,
@@ -168,7 +169,7 @@ export async function getAvailableOrdersForReassignment(productId: string, minLe
         product:products!cut_orders_product_id_fkey(code, name)
       )
     `)
-    .in('status', ['aprobado', 'en_corte', 'finalizado', 'modificado'])
+    .in('status', ['aprobado', 'en_corte', 'finalizado', 'modificado', 'parcialmente_entregado'])
     .order('created_at', { ascending: false })
 
   if (error) {

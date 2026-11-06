@@ -320,3 +320,31 @@ pedido sintético en cada ronda — **no en pedidos reales**)
     `markOrderAsDelivered` (`app/actions/orders.ts:727-735`, sin botón en UI) lo hace. El
     camino de entrega real (vía EVO) queda sin ese registro de auditoría aunque sí actualiza
     `orders.status` y `orders.delivered_at` correctamente.
+
+- 2026-11-06, ronda previa a la presentación (sin EVO real: EVO simulado en
+  `scripts/_tmp-evo-mock.mjs` recibiendo la cola y devolviendo confirmaciones;
+  pedidos sintéticos `QA-9000x` por el webhook real con el formato de EVO,
+  autorizado explícitamente por el usuario para esta ronda y borrados al final).
+  Probado de punta a punta: alta por webhook, aprobación normal y en pausa,
+  asignación de stock a un pedido en pausa, corte exacto (PREP), preparación,
+  cambio de tamaño con remanente (BAJA/ALTA/ALTA), reasignación entre pedidos
+  con confirmación en planta (PREP +n / −n), ampliación desde EVO (`modificado`)
+  y su aprobación, entrega parcial, entrega total, deshacer entrega, guard de
+  entrega sobre un pedido sin cortar. Bugs encontrados y arreglados en esa ronda:
+  - Un pedido `aprobado_en_pausa` no se activaba al asignarle stock desde el
+    admin (`checkAndActivateOrderOnHold` solo se llamaba desde `approveOrder`).
+  - El webhook de entrega sin `articulos` después de una entrega parcial caía
+    en la rama parcial y reventaba (`payload.articulos.reduce`).
+  - La entrega completa liberaba la reserva por producto pedido, no por el
+    material real de cada corte: tras un cambio de tamaño dejaba reserva
+    colgada en la chapa usada y, tras una parcial, liberaba dos veces.
+  - Deshacer una entrega solo cambiaba el estado: no restauraba la reserva ni
+    los contadores `quantity_delivered`.
+  - `updateOrderStatus` pisaba `parcialmente_entregado` con `finalizado` al
+    terminar la planta lo pendiente.
+  - Planta no veía pedidos `parcialmente_entregado` ni `aprobado_en_pausa`.
+  Hueco #7 (parcialmente_entregado) ya no aplica: el estado existe en el enum.
+  Las pruebas de guards llamando a las acciones directamente desde un script
+  fueron bloqueadas por el modo automático de permisos; los guards de
+  sobre-cambio de material, stock insuficiente y entrega sobre pedido sin cortar
+  sí se verificaron desde la UI / webhook.

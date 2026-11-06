@@ -213,29 +213,28 @@ export async function assignStockToCutOrder(
  * Verificar si todas las órdenes de corte tienen stock asignado
  * Si es así, cambiar el estado del pedido de 'aprobado_en_pausa' a 'aprobado'
  */
-async function checkAndActivateOrderOnHold(orderId: string) {
+// Un pedido 'aprobado_en_pausa' pasa a 'aprobado' cuando todas sus órdenes de
+// corte tienen material y todas sus preparaciones tienen inventario asignado.
+// Lo llaman approveOrder (assignStockToCutOrder), el cambio de material desde
+// el admin (reassign-stock.ts) y la asignación de preparaciones (preparation.ts).
+export async function checkAndActivateOrderOnHold(orderId: string) {
   const supabase = createAdminClient()
-  
-  console.log(`🔍 Verificando si pedido ${orderId} puede activarse...`)
-  
-  // Obtener todas las órdenes de corte del pedido
-  const { data: cutOrders, error } = await supabase
-    .from('cut_orders')
-    .select('id, material_base_id')
-    .eq('order_id', orderId)
-  
-  if (error) {
-    console.error('❌ Error checking cut orders:', error)
-    return
-  }
-  
-  console.log(`📋 Órdenes de corte encontradas: ${cutOrders?.length || 0}`)
-  console.log(`📊 Órdenes con stock:`, cutOrders?.filter(co => co.material_base_id !== null).length)
-  
-  // Verificar si TODAS tienen stock asignado (material_base_id no es null)
-  const allHaveStock = cutOrders?.every(co => co.material_base_id !== null)
-  
-  if (allHaveStock && cutOrders && cutOrders.length > 0) {
+
+  const [orderRes, cutRes, prepRes] = await Promise.all([
+    supabase.from('orders').select('status').eq('id', orderId).single(),
+    supabase.from('cut_orders').select('id, material_base_id').eq('order_id', orderId),
+    supabase.from('preparation_items').select('id, assigned_inventory_id').eq('order_id', orderId),
+  ])
+  if (orderRes.data?.status !== 'aprobado_en_pausa') return
+  if (cutRes.error || prepRes.error) return
+
+  const cutOrders = cutRes.data || []
+  const prepItems = prepRes.data || []
+  const allHaveStock =
+    cutOrders.every(co => co.material_base_id !== null) &&
+    prepItems.every(pi => pi.assigned_inventory_id !== null)
+
+  if (allHaveStock && cutOrders.length + prepItems.length > 0) {
     console.log(`✅ Todas las órdenes tienen stock asignado. Activando pedido...`)
     
     // Cambiar estado del pedido a 'aprobado'
