@@ -1,5 +1,6 @@
 'use client'
 
+import { SelectField } from '@/components/ui/select-field'
 import { useState, useEffect, useMemo, Fragment as FragmentRow } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { getIntegrationLogs, getLogsStats, retryOutboundEvent, sendTestEvent, type IntegrationLog, type LogsFilters } from '@/app/actions/integration-logs'
@@ -200,39 +201,36 @@ export function LogsClient({ initialLogs, totalLogs, eventTypes, initialStats }:
           </div>
 
           {/* Dirección */}
-          <select
+          <SelectField wrapperClassName="min-w-[190px]"
             value={filters.direction}
             onChange={(e) => setFilters(prev => ({ ...prev, direction: e.target.value as any, offset: 0 }))}
-            className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
+                      >
             <option value="all">Todas las direcciones</option>
             <option value="inbound">📥 Entrada (RAM → Velvok)</option>
             <option value="outbound">📤 Salida (Velvok → RAM)</option>
-          </select>
+          </SelectField>
 
           {/* Estado */}
-          <select
+          <SelectField wrapperClassName="min-w-[190px]"
             value={filters.status}
             onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value as any, offset: 0 }))}
-            className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
+                      >
             <option value="all">Todos los estados</option>
             <option value="success">✅ Exitoso</option>
             <option value="failed">❌ Fallido</option>
             <option value="pending">⏳ Pendiente</option>
-          </select>
+          </SelectField>
 
           {/* Tipo de evento */}
-          <select
+          <SelectField wrapperClassName="min-w-[190px]"
             value={filters.eventType || ''}
             onChange={(e) => setFilters(prev => ({ ...prev, eventType: e.target.value || undefined, offset: 0 }))}
-            className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
+                      >
             <option value="">Todos los tipos</option>
             {eventTypes.map(type => (
               <option key={type} value={type}>{type}</option>
             ))}
-          </select>
+          </SelectField>
 
           {/* Test ping */}
           <button

@@ -1,5 +1,6 @@
 'use client'
 
+import { SelectField } from '@/components/ui/select-field'
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { UserCog } from 'lucide-react'
@@ -77,10 +78,10 @@ export default function AssignOperatorModal({
               No hay operarios disponibles
             </div>
           ) : (
-            <select
+            <SelectField
               value={selectedOperator}
               onChange={(e) => setSelectedOperator(e.target.value)}
-              className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
+              className="h-12 text-base"
             >
               <option value="">No asignar ahora (asignar después en Cortes)</option>
               {operators.map((op) => (
@@ -88,7 +89,7 @@ export default function AssignOperatorModal({
                   {op.full_name}
                 </option>
               ))}
-            </select>
+            </SelectField>
           )}
 
           <p className="mt-3 text-xs text-muted-foreground">

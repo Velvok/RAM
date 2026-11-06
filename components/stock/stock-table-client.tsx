@@ -1,5 +1,6 @@
 'use client'
 
+import { SelectField } from '@/components/ui/select-field'
 import { useState, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { StockFilters } from './stock-filters'
@@ -352,10 +353,10 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
           {/* Selector de filas por página */}
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">Mostrar:</span>
-            <select
+            <SelectField
+              wrapperClassName="w-24"
               value={rowsPerPage}
               onChange={(e) => handleRowsPerPageChange(Number(e.target.value))}
-              className="border border-border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value={25}>25</option>
               <option value={50}>50</option>
@@ -363,7 +364,7 @@ export function StockTableClient({ inventory }: StockTableClientProps) {
               <option value={200}>200</option>
               <option value={500}>500</option>
               <option value={sortedInventory.length}>Todos ({sortedInventory.length})</option>
-            </select>
+            </SelectField>
             <span className="text-sm text-muted-foreground">filas</span>
           </div>
 

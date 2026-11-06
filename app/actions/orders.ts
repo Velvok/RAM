@@ -22,7 +22,9 @@ export async function getOrders() {
     .select(`
       *,
       client:clients(*),
-      lines:order_lines(*, product:products(*))
+      lines:order_lines(*, product:products(*)),
+      cut_orders:cut_orders!cut_orders_order_id_fkey(status, quantity_requested, quantity_cut, material_base_id),
+      preparation_items(status, quantity_requested, quantity_prepared, assigned_inventory_id)
     `)
     .order('created_at', { ascending: false })
 

@@ -14,6 +14,7 @@ import { useError } from '@/components/error-modal'
 import { extractSizeFromName, extractSizeFromCode } from '@/lib/product-utils'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import OrderNotesAdmin from '@/components/order-notes-admin'
+import { OrderStatusBadge } from '@/components/order-status-badge'
 
 export default function OrderDetailClient({ initialOrder }: { initialOrder: any }) {
   const [order, setOrder] = useState(initialOrder)
@@ -138,123 +139,63 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <Link href="/admin/pedidos">
-            <Button variant="outline" size="icon">
+      {/* Cabecera */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <Link href="/admin/pedidos" className="mt-0.5">
+            <Button variant="outline" size="icon" aria-label="Volver a pedidos">
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
-          <div className="flex items-center gap-3">
-            <h2 className="text-2xl font-bold text-foreground">
-              {order.order_number}
-            </h2>
-            <span
-              className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                order.status === 'nuevo'
-                  ? 'bg-muted text-foreground'
-                  : order.status === 'aprobado'
-                  ? 'bg-yellow-100 text-yellow-800'
-                  : order.status === 'aprobado_en_pausa'
-                  ? 'bg-amber-100 text-amber-800'
-                  : order.status === 'en_corte'
-                  ? 'bg-blue-100 text-blue-800'
-                  : order.status === 'finalizado'
-                  ? 'bg-green-100 text-green-800'
-                  : order.status === 'modificado'
-                  ? 'bg-orange-100 text-orange-800'
-                  : order.status === 'parcialmente_entregado'
-                  ? 'bg-indigo-100 text-indigo-800'
-                  : order.status === 'entregado'
-                  ? 'bg-purple-100 text-purple-800'
-                  : 'bg-red-100 text-red-800'
-              }`}
-            >
-              {order.status === 'nuevo' ? 'Nuevo' :
-               order.status === 'aprobado' ? 'Aprobado' :
-               order.status === 'aprobado_en_pausa' ? 'En Pausa · sin stock asignado' :
-               order.status === 'cancelado' ? 'Cancelado' :
-               order.status === 'en_corte' ? 'En Corte' :
-               order.status === 'finalizado' ? 'Finalizado' :
-               order.status === 'modificado' ? 'Modificado · pendiente de aprobar' :
-               order.status === 'parcialmente_entregado' ? 'Parcialmente Entregado' :
-               order.status === 'entregado' ? 'Entregado' :
-               order.status}
-            </span>
+          <div>
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-2xl font-bold text-foreground">{order.order_number}</h1>
+              <OrderStatusBadge status={order.status} size="md" />
+              {order.status === 'modificado' && <span className="text-xs font-medium text-warning">ampliación de EVO pendiente de aprobar</span>}
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {order.client?.business_name || 'Sin cliente'} · entró el {formatDate(order.created_at)}
+              {order.evo_order_id && order.evo_order_id !== order.order_number ? ` · EVO ${order.evo_order_id}` : ''}
+              {order.delivered_at ? ` · entregado el ${formatDate(order.delivered_at)}` : ''}
+            </p>
           </div>
         </div>
-        <div>
-          <OrderActions 
-            key={refreshKey} 
-            order={order} 
-            onUpdate={reloadOrder} 
-            isHeaderMode={true}
-          />
-        </div>
+        <OrderActions
+          key={refreshKey}
+          order={order}
+          onUpdate={reloadOrder}
+          isHeaderMode={true}
+        />
       </div>
 
-      {/* Grid: Info Cliente (50%) + Monto y Fecha (50%, 2 filas) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Información del Cliente - 50% */}
-        <div className="bg-card rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-foreground mb-4">
-            Información del Cliente
-          </h3>
-          <dl className="grid grid-cols-2 gap-4">
-            <div>
-              <dt className="text-sm font-medium text-muted-foreground">
-                Razón Social
-              </dt>
-              <dd className="mt-1 text-sm text-foreground">
-                {order.client?.business_name}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-sm font-medium text-muted-foreground">CUIT</dt>
-              <dd className="mt-1 text-sm text-foreground">
-                {order.client?.tax_id}
-              </dd>
-            </div>
-            {order.client?.contact_name && (
-              <div>
-                <dt className="text-sm font-medium text-muted-foreground">Contacto</dt>
-                <dd className="mt-1 text-sm text-foreground">
-                  {order.client.contact_name}
-                </dd>
+      {/* Resumen */}
+      {(() => {
+        const cuts = order.cut_orders || []
+        const preps = order.preparation_items || []
+        const units = (order.lines || []).reduce((s: number, l: any) => s + (l.units || Math.ceil(Number(l.quantity)) || 0), 0)
+        const pending = (order.lines || []).reduce((s: number, l: any) => s + (l.quantity_pending_approval || 0), 0)
+        const done = cuts.reduce((s: number, c: any) => s + Number(c.quantity_cut || 0), 0) + preps.reduce((s: number, p: any) => s + Number(p.quantity_prepared || 0), 0)
+        const total = cuts.reduce((s: number, c: any) => s + Number(c.quantity_requested || 0), 0) + preps.reduce((s: number, p: any) => s + Number(p.quantity_requested || 0), 0)
+        const delivered = cuts.reduce((s: number, c: any) => s + Number(c.quantity_delivered || 0), 0) + preps.reduce((s: number, p: any) => s + Number(p.quantity_delivered || 0), 0)
+        const withoutStock = cuts.filter((c: any) => !c.material_base_id).length + preps.filter((p: any) => !p.assigned_inventory_id).length
+        const tiles = [
+          { label: 'Cliente', value: order.client?.business_name || 'Sin cliente', detail: order.client?.tax_id ? `CUIT ${order.client.tax_id}` : order.client?.contact_name || '' },
+          { label: 'Unidades pedidas', value: `${units}${pending ? ` +${pending}` : ''}`, detail: pending ? `${pending} pendientes de aprobar` : `${(order.lines || []).length} línea${(order.lines || []).length === 1 ? '' : 's'}` },
+          { label: 'Planta', value: total ? `${done}/${total}` : '—', detail: total ? (withoutStock ? `${withoutStock} sin stock asignado` : done >= total ? 'todo cortado y preparado' : `${total - done} por hacer`) : 'sin órdenes todavía' },
+          { label: 'Entregado', value: delivered ? `${delivered}/${total}` : '—', detail: order.delivered_at ? formatDate(order.delivered_at) : delivered ? 'entrega parcial' : 'sin remito de EVO' },
+        ]
+        return (
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+            {tiles.map(t => (
+              <div key={t.label} className="rounded-xl border border-border bg-card p-4">
+                <div className="text-xs font-semibold text-muted-foreground">{t.label}</div>
+                <div className="mt-1 truncate text-xl font-bold text-foreground" title={String(t.value)}>{t.value}</div>
+                <div className="mt-1 truncate text-xs text-muted-foreground">{t.detail}</div>
               </div>
-            )}
-            {order.client?.contact_phone && (
-              <div>
-                <dt className="text-sm font-medium text-muted-foreground">Teléfono</dt>
-                <dd className="mt-1 text-sm text-foreground">
-                  {order.client.contact_phone}
-                </dd>
-              </div>
-            )}
-          </dl>
-        </div>
-
-        {/* Monto y Fecha - 50%, 2 filas */}
-        <div className="flex flex-col gap-6">
-          <div className="bg-card rounded-lg shadow p-6">
-            <div className="text-sm font-medium text-muted-foreground mb-1">
-              Monto Total
-            </div>
-            <div className="text-2xl font-bold text-foreground">
-              {formatCurrency(order.total_amount)}
-            </div>
+            ))}
           </div>
-          <div className="bg-card rounded-lg shadow p-6">
-            <div className="text-sm font-medium text-muted-foreground mb-1">
-              Fecha de Creación
-            </div>
-            <div className="text-2xl font-bold text-foreground">
-              {formatDate(order.created_at)}
-            </div>
-          </div>
-        </div>
-      </div>
+        )
+      })()}
 
       {/* Notas para Operario */}
       <div className="col-span-2">
@@ -262,37 +203,37 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
       </div>
 
       {/* Pedido (Líneas del Pedido) */}
-      <div className="bg-card rounded-lg shadow">
-        <div className="px-6 py-4 border-b border-border">
-          <h3 className="text-lg font-semibold text-foreground">
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
+        <div className="border-b border-border px-5 py-3">
+          <h2 className="text-base font-semibold text-foreground">
             Pedido
-          </h3>
+          </h2>
         </div>
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-200">
-            <thead className="bg-muted">
+          <table className="min-w-full text-sm">
+            <thead className="border-b border-border bg-muted/40">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
+                <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Producto
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
+                <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Cantidad
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
+                <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Precio Unit.
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
+                <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Subtotal
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-card divide-y divide-slate-200">
+            <tbody className="divide-y divide-border/60">
               {order.lines?.map((line: any) => (
                 <tr key={line.id}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">
+                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-foreground">
                     {line.product?.name}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
+                  <td className="px-4 py-3 whitespace-nowrap text-sm text-muted-foreground">
                     <span className="font-semibold">
                       {line.units || Math.ceil(line.quantity) || (line.quantity_pending_approval ? 0 : 1)} unidades
                     </span>
@@ -302,10 +243,10 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                       </span>
                     )}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
+                  <td className="px-4 py-3 whitespace-nowrap text-sm text-muted-foreground">
                     {formatCurrency(line.unit_price)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">
+                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-foreground">
                     {formatCurrency(line.subtotal)}
                   </td>
                 </tr>
@@ -317,12 +258,12 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
 
       {/* Órdenes de Corte */}
       {order.cut_orders && order.cut_orders.length > 0 && (
-        <div className="bg-card rounded-lg shadow">
-          <div className="px-6 py-4 border-b border-border">
+        <div className="overflow-hidden rounded-xl border border-border bg-card">
+          <div className="border-b border-border px-5 py-3">
             <div className="flex items-center gap-2">
-              <h3 className="text-lg font-semibold text-foreground">
+              <h2 className="text-base font-semibold text-foreground">
                 Órdenes de Corte
-              </h3>
+              </h2>
               <div className="relative">
                 <button
                   onMouseEnter={() => setShowCutOrdersInfo(true)}
@@ -366,45 +307,45 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
             </div>
           </div>
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200">
-              <thead className="bg-muted">
+            <table className="min-w-full text-sm">
+              <thead className="border-b border-border bg-muted/40">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
+                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Número
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
+                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Código Producto
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
+                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Producto
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
+                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Cantidad
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
+                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Stock Asignado
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
+                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Estado
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
+                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Acciones
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-card divide-y divide-slate-200">
+              <tbody className="divide-y divide-border/60">
                 {order.cut_orders.map((cutOrder: any) => (
                   <tr key={cutOrder.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">
+                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-foreground">
                       {cutOrder.cut_number}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground font-mono">
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-muted-foreground font-mono">
                       {cutOrder.product?.code}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-muted-foreground">
                       {cutOrder.product?.name}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">
                       <div className="flex flex-col gap-1">
                         <span className={(cutOrder.quantity_cut - (cutOrder.quantity_delivered || 0)) >= (cutOrder.quantity_requested - (cutOrder.quantity_delivered || 0)) ? 'text-green-600' : 'text-foreground'}>
                           Cortadas: {(cutOrder.quantity_cut || 0) - (cutOrder.quantity_delivered || 0)}/{cutOrder.quantity_requested - (cutOrder.quantity_delivered || 0)}
@@ -416,7 +357,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-muted-foreground">
                       <div className="flex items-center gap-2">
                         {cutOrder.material_base_id ? (
                           <>
@@ -454,7 +395,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-3 whitespace-nowrap">
                       {cutOrder.status === 'pendiente' ? (
                         <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
                           <Clock className="w-3 h-3 mr-1" />
@@ -477,7 +418,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    <td className="px-4 py-3 whitespace-nowrap text-sm">
                       {cutOrder.status === 'pendiente' && (
                         <button
                           onClick={() => openReassignModal(cutOrder)}
@@ -501,43 +442,43 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
 
       {/* Artículos a Preparar */}
       {order.preparation_items && order.preparation_items.length > 0 && (
-        <div className="bg-card rounded-lg shadow">
-          <div className="px-6 py-4 border-b border-border">
-            <h3 className="text-lg font-semibold text-foreground">
+        <div className="overflow-hidden rounded-xl border border-border bg-card">
+          <div className="border-b border-border px-5 py-3">
+            <h2 className="text-base font-semibold text-foreground">
               Artículos a Preparar
-            </h3>
+            </h2>
           </div>
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200">
-              <thead className="bg-muted">
+            <table className="min-w-full text-sm">
+              <thead className="border-b border-border bg-muted/40">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
+                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Código Producto
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
+                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Producto
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
+                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Cantidad
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
+                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Stock Asignado
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
+                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Estado
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-card divide-y divide-slate-200">
+              <tbody className="divide-y divide-border/60">
                 {order.preparation_items.map((item: any) => (
                   <tr key={item.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground font-mono">
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-muted-foreground font-mono">
                       {item.product?.code}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-muted-foreground">
                       {item.product?.name}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">
                       <div className="flex flex-col gap-1">
                         <span className={(item.quantity_prepared - (item.quantity_delivered || 0)) >= (item.quantity_requested - (item.quantity_delivered || 0)) ? 'text-green-600' : 'text-foreground'}>
                           Preparadas: {(item.quantity_prepared || 0) - (item.quantity_delivered || 0)}/{item.quantity_requested - (item.quantity_delivered || 0)}
@@ -549,7 +490,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-muted-foreground">
                       <div className="flex items-center gap-2">
                         {item.assigned_inventory ? (
                           <span className="text-green-600 font-medium">
@@ -573,7 +514,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-3 whitespace-nowrap">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                         item.status === 'entregado'
                           ? 'bg-blue-100 text-blue-800'
@@ -595,11 +536,11 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
       )}
 
       {/* Log de Actividades */}
-      <div className="bg-card rounded-lg shadow">
-        <div className="px-6 py-4 border-b border-border">
-          <h3 className="text-lg font-semibold text-foreground">
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
+        <div className="border-b border-border px-5 py-3">
+          <h2 className="text-base font-semibold text-foreground">
             Historial de Actividades
-          </h3>
+          </h2>
         </div>
         <div className="p-6">
           {loadingLog ? (

@@ -1,5 +1,6 @@
 'use client'
 
+import { SelectField } from '@/components/ui/select-field'
 import { useState } from 'react'
 import { generateTestOrder } from '@/app/actions/test-data'
 import { useRouter } from 'next/navigation'
@@ -77,17 +78,16 @@ export default function GenerateTestOrderButton() {
               <label className="block text-sm font-medium text-foreground mb-2">
                 Número de líneas (productos):
               </label>
-              <select
+              <SelectField
                 value={numLines}
                 onChange={(e) => setNumLines(parseInt(e.target.value))}
-                className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value={1}>1 línea</option>
                 <option value={2}>2 líneas</option>
                 <option value={3}>3 líneas</option>
                 <option value={4}>4 líneas</option>
                 <option value={5}>5 líneas</option>
-              </select>
+              </SelectField>
               <p className="text-xs text-muted-foreground mt-1">
                 Cada línea se convertirá en una orden de corte al aprobar el pedido
               </p>

@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { Download, Loader2 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
+import { SelectField } from '@/components/ui/select-field'
 import { cn } from '@/lib/utils'
 import { getHistorial, type HistorialData, type HistorialFilters } from '@/app/actions/historial'
 
@@ -27,7 +28,6 @@ function Delta({ pct }: { pct: number | null }) {
   return <span className={cn('font-semibold', pct > 0 ? 'text-emerald-700' : pct < 0 ? 'text-red-700' : 'text-muted-foreground')}>{pct > 0 ? '+' : ''}{pct} %</span>
 }
 
-const selectClass = 'h-10 rounded-lg border border-border bg-card px-3 text-sm text-foreground'
 
 export function HistorialClient({ initial }: { initial: HistorialData }) {
   const [data, setData] = useState(initial)
@@ -77,44 +77,44 @@ export function HistorialClient({ initial }: { initial: HistorialData }) {
 
       <Card className="flex flex-wrap items-end gap-3 p-4">
         <label className="flex flex-col gap-1 text-xs font-semibold text-muted-foreground">Año
-          <select className={selectClass} value={f.year} onChange={e => update({ year: Number(e.target.value), compare: Number(e.target.value) - 1 })}>
+          <SelectField className="min-w-[150px]" value={f.year} onChange={e => update({ year: Number(e.target.value), compare: Number(e.target.value) - 1 })}>
             {data.options.years.map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
+          </SelectField>
         </label>
         <label className="flex flex-col gap-1 text-xs font-semibold text-muted-foreground">Comparar con
-          <select className={selectClass} value={f.compare === null ? 'none' : String(f.compare)} onChange={e => update({ compare: e.target.value === 'none' ? null : e.target.value === 'avg3' ? 'avg3' : Number(e.target.value) })}>
+          <SelectField className="min-w-[150px]" value={f.compare === null ? 'none' : String(f.compare)} onChange={e => update({ compare: e.target.value === 'none' ? null : e.target.value === 'avg3' ? 'avg3' : Number(e.target.value) })}>
             <option value={f.year - 1}>{f.year - 1}</option>
             <option value="avg3">Media 3 años</option>
             <option value="none">Nada</option>
-          </select>
+          </SelectField>
         </label>
         <label className="flex flex-col gap-1 text-xs font-semibold text-muted-foreground">Familia
-          <select className={selectClass} value={f.family ?? ''} onChange={e => update({ family: e.target.value || null, productId: null })}>
+          <SelectField className="min-w-[150px]" value={f.family ?? ''} onChange={e => update({ family: e.target.value || null, productId: null })}>
             <option value="">Todas</option>
             {data.options.families.map(x => <option key={x} value={x}>{x}</option>)}
-          </select>
+          </SelectField>
         </label>
         <label className="flex flex-col gap-1 text-xs font-semibold text-muted-foreground">Producto
-          <select className={selectClass} value={f.productId ?? ''} onChange={e => update({ productId: e.target.value || null })}>
+          <SelectField className="min-w-[150px]" value={f.productId ?? ''} onChange={e => update({ productId: e.target.value || null })}>
             <option value="">Todos</option>
             {data.options.products.map(p => <option key={p.id} value={p.id}>{p.code}</option>)}
-          </select>
+          </SelectField>
         </label>
         <label className="flex flex-col gap-1 text-xs font-semibold text-muted-foreground">Cliente
-          <select className={selectClass} value={f.clientId ?? ''} onChange={e => update({ clientId: e.target.value || null })}>
+          <SelectField className="min-w-[150px]" value={f.clientId ?? ''} onChange={e => update({ clientId: e.target.value || null })}>
             <option value="">Todos</option>
             {data.options.clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          </SelectField>
         </label>
         <label className="flex flex-col gap-1 text-xs font-semibold text-muted-foreground">Unidad
-          <select className={selectClass} value={f.unit} onChange={e => update({ unit: e.target.value as HistorialFilters['unit'] })}>
+          <SelectField className="min-w-[150px]" value={f.unit} onChange={e => update({ unit: e.target.value as HistorialFilters['unit'] })}>
             <option value="units">Unidades</option><option value="meters">Metros</option><option value="kg">Kilos</option>
-          </select>
+          </SelectField>
         </label>
         <label className="flex flex-col gap-1 text-xs font-semibold text-muted-foreground">Movimiento
-          <select className={selectClass} value={f.movement} onChange={e => update({ movement: e.target.value as HistorialFilters['movement'] })}>
+          <SelectField className="min-w-[150px]" value={f.movement} onChange={e => update({ movement: e.target.value as HistorialFilters['movement'] })}>
             <option value="entrega">Entregas a cliente</option><option value="compra">Compras a proveedor</option><option value="corte">Cortes en planta</option><option value="remanente">Remanentes</option>
-          </select>
+          </SelectField>
         </label>
         {pending && <Loader2 className="mb-2 h-5 w-5 animate-spin text-muted-foreground" />}
       </Card>

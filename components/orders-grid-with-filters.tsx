@@ -1,16 +1,17 @@
 'use client'
 
-import { lineUnits } from '@/lib/order-modification'
 import { useState, useMemo, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { Package, Loader2, RefreshCw, Check, Search } from 'lucide-react'
 import { generateCutOrders } from '@/app/actions/orders'
-import { Package, Calendar, User, DollarSign, Loader2, Filter, LayoutGrid, List, RefreshCw, Check } from 'lucide-react'
+import { lineUnits } from '@/lib/order-modification'
 import { Card } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { SelectField } from '@/components/ui/select-field'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Pagination } from '@/components/ui/pagination'
+import { useTableSort, SortableTh } from '@/components/ui/sortable-table'
+import { OrderStatusBadge } from '@/components/order-status-badge'
 import { getOrderStatusConfig, type OrderStatus } from '@/lib/order-status'
 import { useError } from '@/components/error-modal'
 import { cn } from '@/lib/utils'
@@ -28,143 +29,111 @@ const DOT_CLASS: Record<string, string> = {
   destructive: 'bg-destructive',
 }
 
+// Formato fijo en hora de Argentina: igual en servidor y navegador (evita errores de hidratación)
+const TZ = 'America/Argentina/Buenos_Aires'
+const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('es-AR', { day: '2-digit', month: 'short', timeZone: TZ })
+const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: TZ })
+
+const TH = 'px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground'
+
+type SortKey = 'order' | 'client' | 'date' | 'units' | 'progress' | 'status'
+
+// Qué toca hacer con el pedido, para leerlo en la lista sin entrar en el detalle
+function nextStep(order: any): { text: string; tone: 'action' | 'wait' | 'done' } {
+  const cuts = order.cut_orders || []
+  const preps = order.preparation_items || []
+  const pendingApproval = (order.lines || []).reduce((s: number, l: any) => s + (l.quantity_pending_approval || 0), 0)
+  switch (order.status) {
+    case 'nuevo': return { text: 'Aprobar y asignar stock', tone: 'action' }
+    case 'modificado': return { text: `Aprobar ampliación (+${pendingApproval})`, tone: 'action' }
+    case 'aprobado_en_pausa': {
+      const missing = cuts.filter((c: any) => !c.material_base_id).length + preps.filter((p: any) => !p.assigned_inventory_id).length
+      return { text: `Asignar stock (${missing} sin material)`, tone: 'action' }
+    }
+    case 'aprobado': return { text: 'Esperando a planta', tone: 'wait' }
+    case 'en_corte': {
+      const confirm = cuts.some((c: any) => c.status === 'pendiente_confirmacion')
+      return { text: confirm ? 'Confirmar recogida en planta' : 'En planta', tone: 'wait' }
+    }
+    case 'finalizado': return { text: 'Esperando remito de EVO', tone: 'wait' }
+    case 'parcialmente_entregado': return { text: 'Esperando remito final', tone: 'wait' }
+    case 'entregado': return { text: 'Entregado', tone: 'done' }
+    case 'cancelado': return { text: 'Cancelado', tone: 'done' }
+    default: return { text: '', tone: 'wait' }
+  }
+}
+
+function progressOf(order: any): { done: number; total: number } {
+  const cuts = order.cut_orders || []
+  const preps = order.preparation_items || []
+  const done = cuts.reduce((s: number, c: any) => s + Number(c.quantity_cut || 0), 0) + preps.reduce((s: number, p: any) => s + Number(p.quantity_prepared || 0), 0)
+  const total = cuts.reduce((s: number, c: any) => s + Number(c.quantity_requested || 0), 0) + preps.reduce((s: number, p: any) => s + Number(p.quantity_requested || 0), 0)
+  return { done, total }
+}
+
 export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersProps) {
   const [loading, setLoading] = useState<string | null>(null)
   // ?status=xxx desde el dashboard abre la lista ya filtrada
   const searchParams = useSearchParams()
   const [statusFilter, setStatusFilter] = useState<string>(searchParams.get('status') || 'todos')
   const [searchQuery, setSearchQuery] = useState('')
-  const [viewMode, setViewMode] = useState<'cards' | 'rows'>('rows')
+  const [clientFilter, setClientFilter] = useState('')
   const [currentPage, setCurrentPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(25)
   const router = useRouter()
   const { showError, ErrorDialog } = useError()
 
-  // Auto-refresh al montar y cada 30s para asegurar datos frescos
+  // Refresco cada 30 s mientras la pestaña está visible
   useEffect(() => {
-    router.refresh()
+    const id = setInterval(() => { if (!document.hidden) router.refresh() }, 30000)
+    return () => clearInterval(id)
   }, [router])
 
-  useEffect(() => {
-    const refreshInterval = setInterval(() => {
-      router.refresh()
-    }, 30000)
+  const clients = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const o of orders) if (o.client?.id) m.set(o.client.id, o.client.business_name || o.client.name || 'Sin nombre')
+    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]))
+  }, [orders])
 
-    return () => clearInterval(refreshInterval)
-  }, [router])
-
-  // Cargar preferencia de vista desde localStorage solo en el cliente
-  useEffect(() => {
-    const savedMode = localStorage.getItem('pedidos-view-mode') as 'cards' | 'rows'
-    if (savedMode) {
-      setViewMode(savedMode)
-    }
-  }, [])
-
-  const handleViewModeChange = (mode: 'cards' | 'rows') => {
-    setViewMode(mode)
-    localStorage.setItem('pedidos-view-mode', mode)
-  }
-
-  // Filtrar pedidos por estado y búsqueda
   const filteredOrders = useMemo(() => {
     let filtered = orders
-
-    if (statusFilter !== 'todos') {
-      filtered = filtered.filter(o => o.status === statusFilter)
-    }
-
+    if (statusFilter !== 'todos') filtered = filtered.filter(o => o.status === statusFilter)
+    if (clientFilter) filtered = filtered.filter(o => o.client?.id === clientFilter)
     if (searchQuery) {
-      const searchLower = searchQuery.toLowerCase()
+      const q = searchQuery.toLowerCase()
       filtered = filtered.filter(o =>
-        o.order_number?.toLowerCase().includes(searchLower) ||
-        o.client?.business_name?.toLowerCase().includes(searchLower) ||
-        o.client?.name?.toLowerCase().includes(searchLower)
+        o.order_number?.toLowerCase().includes(q) ||
+        o.client?.business_name?.toLowerCase().includes(q) ||
+        o.lines?.some((l: any) => l.product?.code?.toLowerCase().includes(q) || l.product?.name?.toLowerCase().includes(q))
       )
     }
-
     return filtered
-  }, [orders, statusFilter, searchQuery])
+  }, [orders, statusFilter, clientFilter, searchQuery])
 
-  // Detectar automáticamente si se debe agrupar por cliente
-  const shouldGroupByClient = useMemo(() => {
-    if (!searchQuery) return false
+  const { sorted, sort } = useTableSort<any, SortKey>(filteredOrders, {
+    order: o => o.order_number,
+    client: o => o.client?.business_name,
+    date: o => o.created_at,
+    units: o => o.lines?.reduce((s: number, l: any) => s + lineUnits(l), 0) || 0,
+    progress: o => { const p = progressOf(o); return p.total ? p.done / p.total : -1 },
+    status: o => getOrderStatusConfig(o.status).label,
+  }, { key: 'date', dir: 'desc' })
 
-    const searchLower = searchQuery.toLowerCase()
-    const matchingClients = new Set(
-      filteredOrders
-        .filter(o =>
-          o.client?.business_name?.toLowerCase().includes(searchLower) ||
-          o.client?.name?.toLowerCase().includes(searchLower)
-        )
-        .map(o => o.client?.id)
-    )
+  const paginatedOrders = useMemo(() => sorted.slice(currentPage * rowsPerPage, (currentPage + 1) * rowsPerPage), [sorted, currentPage, rowsPerPage])
 
-    return matchingClients.size > 0
-  }, [searchQuery, filteredOrders])
+  const statusCounts: Record<string, number> = { todos: orders.length }
+  for (const o of orders) statusCounts[o.status] = (statusCounts[o.status] || 0) + 1
 
-  // Agrupar pedidos por cliente
-  const groupedOrders = useMemo(() => {
-    if (!shouldGroupByClient) return null
-
-    const groups = new Map<string, any[]>()
-
-    filteredOrders.forEach(order => {
-      const clientId = order.client?.id || 'sin-cliente'
-      if (!groups.has(clientId)) {
-        groups.set(clientId, [])
-      }
-      groups.get(clientId)!.push(order)
-    })
-
-    return Array.from(groups.entries())
-      .map(([clientId, orders]) => ({
-        clientId,
-        clientName: orders[0]?.client?.business_name || orders[0]?.client?.name || 'Sin cliente',
-        orders: orders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
-        totalOrders: orders.length,
-        totalAmount: orders.reduce((sum, o) => sum + (o.total_amount || 0), 0)
-      }))
-      .sort((a, b) => b.totalOrders - a.totalOrders)
-  }, [filteredOrders, shouldGroupByClient])
-
-  // Aplicar paginación para vista de filas
-  const paginatedOrders = useMemo(() => {
-    if (viewMode === 'cards') return filteredOrders
-    const startIndex = currentPage * rowsPerPage
-    return filteredOrders.slice(startIndex, startIndex + rowsPerPage)
-  }, [filteredOrders, currentPage, rowsPerPage, viewMode])
-
-  const handleFilterChange = (filter: string) => {
-    setStatusFilter(filter)
-    setCurrentPage(0)
-  }
-
-  const handleSearchChange = (value: string) => {
-    setSearchQuery(value)
-    setCurrentPage(0)
-  }
-
-  const statusCounts = {
-    todos: orders.length,
-    nuevo: orders.filter(o => o.status === 'nuevo').length,
-    aprobado: orders.filter(o => o.status === 'aprobado').length,
-    aprobado_en_pausa: orders.filter(o => o.status === 'aprobado_en_pausa').length,
-    en_corte: orders.filter(o => o.status === 'en_corte').length,
-    finalizado: orders.filter(o => o.status === 'finalizado').length,
-    modificado: orders.filter(o => o.status === 'modificado').length,
-    entregado: orders.filter(o => o.status === 'entregado').length
-  }
-
-  const filters: Array<{ id: 'todos' | OrderStatus; label: string; count: number }> = [
-    { id: 'todos', label: 'Todos', count: statusCounts.todos },
-    { id: 'nuevo', label: 'Nuevos', count: statusCounts.nuevo },
-    { id: 'aprobado', label: 'Aprobados', count: statusCounts.aprobado },
-    { id: 'aprobado_en_pausa', label: 'En Pausa', count: statusCounts.aprobado_en_pausa },
-    { id: 'en_corte', label: 'En Corte', count: statusCounts.en_corte },
-    { id: 'finalizado', label: 'Finalizados', count: statusCounts.finalizado },
-    { id: 'modificado', label: 'Modificados', count: statusCounts.modificado },
-    { id: 'entregado', label: 'Entregados', count: statusCounts.entregado },
+  const filters: Array<{ id: 'todos' | OrderStatus; label: string }> = [
+    { id: 'todos', label: 'Todos' },
+    { id: 'nuevo', label: 'Nuevos' },
+    { id: 'modificado', label: 'Modificados' },
+    { id: 'aprobado_en_pausa', label: 'En pausa' },
+    { id: 'aprobado', label: 'Aprobados' },
+    { id: 'en_corte', label: 'En corte' },
+    { id: 'finalizado', label: 'Finalizados' },
+    { id: 'parcialmente_entregado', label: 'Parciales' },
+    { id: 'entregado', label: 'Entregados' },
   ]
 
   async function handleGenerateCutOrders(e: React.MouseEvent, orderId: string) {
@@ -181,299 +150,142 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
     }
   }
 
-  function handleOrderClick(order: any) {
-    router.push(`/admin/pedidos/${order.id}`)
-  }
-
-  function OrderStatusBadge({ status }: { status: string }) {
-    const config = getOrderStatusConfig(status)
-    return <Badge variant={config.badgeVariant}>{config.label}</Badge>
-  }
-
-  function ApproveButton({ order, compact = false }: { order: any; compact?: boolean }) {
-    if (order.status !== 'nuevo') return null
-    return (
-      <button
-        onClick={(e) => handleGenerateCutOrders(e, order.id)}
-        disabled={loading === order.id}
-        className={cn(
-          'flex items-center justify-center gap-2 rounded-lg bg-success text-success-foreground font-semibold transition-colors hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-50',
-          compact ? 'px-3 py-1.5 text-xs' : 'w-full px-3 py-2 text-sm'
-        )}
-      >
-        {loading === order.id ? (
-          <>
-            <Loader2 size={14} className="animate-spin" />
-            Aprobando...
-          </>
-        ) : (
-          <>
-            <Check size={14} />
-            Aprobar Pedido
-          </>
-        )}
-      </button>
-    )
-  }
-
-  function OrderCard({ order }: { order: any }) {
-    return (
-      <Card
-        onClick={() => handleOrderClick(order)}
-        className="cursor-pointer p-4 transition-all hover:-translate-y-0.5 hover:shadow-md"
-      >
-        <div className="mb-3 flex items-start justify-between">
-          <div className="flex-1">
-            <h4 className="mb-1 text-lg font-bold text-foreground">
-              {order.order_number}
-            </h4>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Calendar size={14} />
-              {new Date(order.created_at).toLocaleDateString('es-ES', {
-                day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
-              })}
-            </div>
-          </div>
-          <OrderStatusBadge status={order.status} />
-        </div>
-
-        <div className="mb-4 space-y-2.5">
-          <div className="flex items-start gap-2">
-            <User size={16} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
-            <span className="line-clamp-1 text-sm font-medium text-foreground">
-              {order.client?.business_name}
-            </span>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <DollarSign size={16} className="text-muted-foreground" />
-              <span className="text-sm font-bold text-foreground">
-                {order.total_amount?.toLocaleString('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 })}
-              </span>
-            </div>
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              <Package size={14} />
-              {order.lines?.reduce((sum: number, line: any) => sum + lineUnits(line), 0) || 0} unidades
-            </div>
-          </div>
-
-          {order.cut_orders && order.cut_orders.length > 0 && (
-            <div className="flex items-center gap-2 border-t border-border pt-2 text-xs text-muted-foreground">
-              <Package size={14} />
-              <span>{order.cut_orders.length} órdenes de corte</span>
-            </div>
-          )}
-        </div>
-
-        <ApproveButton order={order} />
-      </Card>
-    )
-  }
-
   return (
     <>
       <ErrorDialog />
 
-      {/* Filtros */}
-      <Card className="mb-6 p-6">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Filter size={18} className="text-muted-foreground" />
-            <h3 className="text-base font-semibold text-foreground">Filtros de Pedidos</h3>
-          </div>
-          <button
-            onClick={() => router.refresh()}
-            className="flex items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80"
-            title="Refrescar pedidos"
-          >
-            <RefreshCw size={16} />
-            Refrescar
-          </button>
-        </div>
-
-        <div className="mb-6">
-          <label className="mb-3 block text-sm font-medium text-foreground">
-            Estado del pedido
-          </label>
-          <div className="flex flex-wrap gap-2">
-            {filters.map((filter) => {
-              const dotVariant = filter.id === 'todos' ? 'muted' : getOrderStatusConfig(filter.id).badgeVariant
-              const active = statusFilter === filter.id
-              return (
-                <button
-                  key={filter.id}
-                  onClick={() => handleFilterChange(filter.id)}
-                  className={cn(
-                    'inline-flex items-center gap-2.5 rounded-lg border px-3.5 py-2 text-sm font-medium transition-colors',
-                    active
-                      ? 'border-primary/30 bg-primary/10 text-primary'
-                      : 'border-border text-muted-foreground hover:border-primary/20 hover:text-foreground'
-                  )}
-                >
-                  <div className={cn('h-2 w-2 rounded-full', DOT_CLASS[dotVariant])} />
-                  <span>{filter.label}</span>
-                  <span className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs tabular-nums text-muted-foreground">
-                    {filter.count}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between gap-4">
-          <div className="relative max-w-md flex-1">
-            <User size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="text"
-              placeholder="Buscar por cliente (agrupa automáticamente) o pedido..."
-              value={searchQuery}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              className="h-10 pl-10"
-            />
-            {shouldGroupByClient && (
-              <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded-lg bg-info/10 px-2 py-1 text-xs font-medium text-info">
-                <Filter size={12} />
-                Agrupado
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center gap-1 rounded-xl bg-muted p-1">
+      <div className="flex flex-wrap gap-2">
+        {filters.map(filter => {
+          const count = statusCounts[filter.id] || 0
+          if (filter.id !== 'todos' && count === 0 && statusFilter !== filter.id) return null
+          const dotVariant = filter.id === 'todos' ? 'muted' : getOrderStatusConfig(filter.id).badgeVariant
+          const active = statusFilter === filter.id
+          return (
             <button
-              onClick={() => handleViewModeChange('cards')}
+              key={filter.id}
+              onClick={() => { setStatusFilter(filter.id); setCurrentPage(0) }}
               className={cn(
-                'rounded-lg px-3 py-2 text-xs font-medium transition-colors',
-                viewMode === 'cards' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                'inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-sm font-medium transition-colors',
+                active ? 'border-primary/30 bg-primary/10 text-primary' : 'border-border bg-card text-muted-foreground hover:border-primary/30 hover:text-foreground'
               )}
-              title="Vista de tarjetas"
             >
-              <LayoutGrid size={16} />
+              <span className={cn('h-2 w-2 rounded-full', DOT_CLASS[dotVariant])} />
+              {filter.label}
+              <span className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs tabular-nums text-muted-foreground">{count}</span>
             </button>
-            <button
-              onClick={() => handleViewModeChange('rows')}
-              className={cn(
-                'rounded-lg px-3 py-2 text-xs font-medium transition-colors',
-                viewMode === 'rows' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-              )}
-              title="Vista de lista"
-            >
-              <List size={16} />
-            </button>
-          </div>
+          )
+        })}
+      </div>
+
+      <Card className="flex flex-wrap items-center gap-3 p-3">
+        <div className="relative min-w-[260px] flex-1">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="text"
+            placeholder="Buscar por pedido, cliente o producto"
+            value={searchQuery}
+            onChange={e => { setSearchQuery(e.target.value); setCurrentPage(0) }}
+            className="h-10 pl-10"
+          />
+        </div>
+        <SelectField wrapperClassName="w-64" value={clientFilter} onChange={e => { setClientFilter(e.target.value); setCurrentPage(0) }} aria-label="Cliente">
+          <option value="">Todos los clientes</option>
+          {clients.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+        </SelectField>
+        <button
+          onClick={() => router.refresh()}
+          className="inline-flex h-10 items-center gap-2 rounded-lg border border-border bg-card px-3 text-sm font-medium text-foreground hover:bg-muted"
+          title="Refrescar pedidos"
+        >
+          <RefreshCw size={15} />
+          Refrescar
+        </button>
+        <span className="ml-auto text-sm text-muted-foreground">{filteredOrders.length} pedido{filteredOrders.length === 1 ? '' : 's'}</span>
+      </Card>
+
+      <Card className="overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="border-b border-border bg-muted/40">
+              <tr>
+                <SortableTh sort={sort} sortKey="order" className={TH}>Pedido</SortableTh>
+                <SortableTh sort={sort} sortKey="client" className={TH}>Cliente</SortableTh>
+                <SortableTh sort={sort} sortKey="date" className={TH}>Entrada</SortableTh>
+                <SortableTh sort={sort} sortKey="units" className={cn(TH, 'text-right')}>Unidades</SortableTh>
+                <SortableTh sort={sort} sortKey="progress" className={TH}>Planta</SortableTh>
+                <SortableTh sort={sort} sortKey="status" className={TH}>Estado</SortableTh>
+                <th className={TH}>Próximo paso</th>
+                <th className={cn(TH, 'text-right')}>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginatedOrders.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="py-12">
+                    <EmptyState icon={Package} title="No hay pedidos con estos filtros" description="Prueba a cambiar el estado, el cliente o la búsqueda." />
+                  </td>
+                </tr>
+              ) : paginatedOrders.map(order => {
+                const units = order.lines?.reduce((s: number, l: any) => s + lineUnits(l), 0) || 0
+                const pending = order.lines?.reduce((s: number, l: any) => s + (l.quantity_pending_approval || 0), 0) || 0
+                const progress = progressOf(order)
+                const step = nextStep(order)
+                return (
+                  <tr
+                    key={order.id}
+                    onClick={() => router.push(`/admin/pedidos/${order.id}`)}
+                    className="cursor-pointer border-b border-border/60 transition-colors last:border-0 hover:bg-muted/40"
+                  >
+                    <td className="px-4 py-3">
+                      <div className="font-semibold text-foreground">{order.order_number}</div>
+                      {order.evo_order_id && order.evo_order_id !== order.order_number && <div className="text-xs text-muted-foreground">EVO {order.evo_order_id}</div>}
+                    </td>
+                    <td className="px-4 py-3 text-foreground">{order.client?.business_name || <span className="text-muted-foreground">Sin cliente</span>}</td>
+                    <td className="px-4 py-3 text-muted-foreground" suppressHydrationWarning>
+                      {fmtDate(order.created_at)}
+                      <span className="ml-1.5 text-xs">· {fmtTime(order.created_at)}</span>
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums text-foreground">
+                      {units}{pending > 0 && <span className="ml-1 text-xs font-medium text-warning">+{pending}</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      {progress.total > 0 ? (
+                        <div className="flex items-center gap-2">
+                          <div className="h-2 w-16 overflow-hidden rounded-full bg-muted"><div className={cn('h-full', progress.done >= progress.total ? 'bg-success' : 'bg-primary')} style={{ width: `${Math.min(100, (progress.done / progress.total) * 100)}%` }} /></div>
+                          <span className="text-xs tabular-nums text-muted-foreground">{progress.done}/{progress.total}</span>
+                        </div>
+                      ) : <span className="text-xs text-muted-foreground">—</span>}
+                    </td>
+                    <td className="px-4 py-3"><OrderStatusBadge status={order.status} /></td>
+                    <td className={cn('px-4 py-3 text-sm', step.tone === 'action' ? 'font-medium text-foreground' : 'text-muted-foreground')}>{step.text}</td>
+                    <td className="px-4 py-3 text-right">
+                      {order.status === 'nuevo' && (
+                        <button
+                          onClick={e => handleGenerateCutOrders(e, order.id)}
+                          disabled={loading === order.id}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-success px-3 py-1.5 text-xs font-semibold text-success-foreground transition-colors hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {loading === order.id ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                          Aprobar
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       </Card>
 
-      {/* Vista de Tarjetas */}
-      {viewMode === 'cards' && (
-        <>
-          {filteredOrders.length === 0 ? (
-            <Card className="p-12">
-              <EmptyState icon={Package} title="No hay pedidos con este filtro" />
-            </Card>
-          ) : shouldGroupByClient && groupedOrders ? (
-            <div className="space-y-6">
-              {groupedOrders.map((group) => (
-                <div key={group.clientId} className="rounded-xl border border-border bg-muted/40 p-6">
-                  <div className="mb-4 flex items-center justify-between border-b border-border pb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary">
-                        <User size={22} className="text-primary-foreground" />
-                      </div>
-                      <div>
-                        <h3 className="text-xl font-bold text-foreground">{group.clientName}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          {group.totalOrders} pedido{group.totalOrders !== 1 ? 's' : ''} • Total: {group.totalAmount.toLocaleString('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 })}
-                        </p>
-                      </div>
-                    </div>
-                    <Badge variant="info" className="px-4 py-2 text-sm">
-                      <Package size={14} />
-                      {group.orders.reduce((sum: number, o: any) => sum + (o.lines?.reduce((s: number, l: any) => s + lineUnits(l), 0) || 0), 0)} unidades
-                    </Badge>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {group.orders.map((order: any) => (
-                      <OrderCard key={order.id} order={order} />
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {filteredOrders.map((order) => (
-                <OrderCard key={order.id} order={order} />
-              ))}
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Vista de Filas */}
-      {viewMode === 'rows' && (
-        <>
-          <Card className="overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Pedido</TableHead>
-                  <TableHead>Cliente</TableHead>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Monto</TableHead>
-                  <TableHead>Unidades</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead>Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {paginatedOrders.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7}>
-                      <EmptyState icon={Package} title="No se encontraron pedidos" description="Prueba a cambiar los filtros o la búsqueda." />
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  paginatedOrders.map((order) => (
-                    <TableRow
-                      key={order.id}
-                      onClick={() => handleOrderClick(order)}
-                      className="cursor-pointer"
-                    >
-                      <TableCell className="font-medium text-foreground">{order.order_number}</TableCell>
-                      <TableCell className="text-foreground">{order.client?.business_name}</TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {new Date(order.created_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}
-                      </TableCell>
-                      <TableCell className="font-semibold text-foreground">
-                        {order.total_amount?.toLocaleString('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 })}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {order.lines?.reduce((sum: number, line: any) => sum + lineUnits(line), 0) || 0}
-                      </TableCell>
-                      <TableCell><OrderStatusBadge status={order.status} /></TableCell>
-                      <TableCell>
-                        <ApproveButton order={order} compact />
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </Card>
-
-          <Pagination
-            currentPage={currentPage}
-            totalItems={filteredOrders.length}
-            itemsPerPage={rowsPerPage}
-            itemLabel="pedidos"
-            onPageChange={setCurrentPage}
-            onItemsPerPageChange={setRowsPerPage}
-          />
-        </>
-      )}
+      <Pagination
+        currentPage={currentPage}
+        totalItems={filteredOrders.length}
+        itemsPerPage={rowsPerPage}
+        itemLabel="pedidos"
+        onPageChange={setCurrentPage}
+        onItemsPerPageChange={setRowsPerPage}
+      />
     </>
   )
 }
