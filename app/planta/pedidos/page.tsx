@@ -1,34 +1,33 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Package, LogOut, Search, X, Clock, MessageSquare, ChevronRight, Scissors, Calendar } from 'lucide-react'
-import { Card } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
-import { EmptyState } from '@/components/ui/empty-state'
-import { PageLoader } from '@/components/ui/spinner'
+import { MessageSquare, Package, X } from 'lucide-react'
+import { PlantaHeader, P, Label } from '@/components/planta/planta-ui'
+import { cutCardState, mainTask, orderProgress, orderTasks, TASK_ACTION, TASK_LABEL, type PlantaTask } from '@/lib/planta-tasks'
 import { getOrderStatusConfig } from '@/lib/order-status'
 import { cn } from '@/lib/utils'
 
-const STATUS_FILTERS = [
-  { id: 'todos', label: 'Todos' },
-  { id: 'aprobado', label: 'Aprobado' },
-  { id: 'aprobado_en_pausa', label: 'En Pausa' },
-  { id: 'en_corte', label: 'En Corte' },
-  { id: 'finalizado', label: 'Finalizado' },
-  { id: 'modificado', label: 'Modificado' },
-]
+// Filtros por tarea, no por estado del pedido: el operario piensa en "qué me
+// toca hacer", no en el estado administrativo.
+const FILTERS: PlantaTask[] = ['cortar', 'preparar', 'confirmar', 'sin_stock', 'terminado']
+
+const TASK_TONE: Record<PlantaTask, 'amber' | 'blue' | 'green' | 'muted'> = {
+  cortar: 'amber',
+  preparar: 'blue',
+  confirmar: 'amber',
+  sin_stock: 'muted',
+  terminado: 'green',
+}
 
 export default function PlantaPedidosPage() {
   const router = useRouter()
   const [operator, setOperator] = useState<any>(null)
   const [pedidos, setPedidos] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [showSearchModal, setShowSearchModal] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('todos')
-  const [currentTime, setCurrentTime] = useState('')
+  const [filter, setFilter] = useState<PlantaTask | 'todos'>('todos')
+  const [search, setSearch] = useState('')
+  const [showSearch, setShowSearch] = useState(false)
   const [unreadNotes, setUnreadNotes] = useState<Record<string, number>>({})
 
   useEffect(() => {
@@ -41,26 +40,6 @@ export default function PlantaPedidosPage() {
     loadPedidos()
   }, [router])
 
-  // Actualizar hora cada segundo
-  useEffect(() => {
-    const updateTime = () => {
-      const now = new Date()
-      const argentinaTime = now.toLocaleTimeString('es-AR', {
-        timeZone: 'America/Argentina/Buenos_Aires',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false
-      })
-      setCurrentTime(argentinaTime)
-    }
-
-    updateTime()
-    const interval = setInterval(updateTime, 1000)
-
-    return () => clearInterval(interval)
-  }, [])
-
   async function loadPedidos() {
     try {
       const { getOrdersForPlanta } = await import('@/app/actions/client-queries')
@@ -68,241 +47,169 @@ export default function PlantaPedidosPage() {
       setPedidos(data || [])
       if (data && data.length > 0) {
         const { getUnreadNotesCountByOrders } = await import('@/app/actions/order-notes')
-        const counts = await getUnreadNotesCountByOrders(data.map((p: any) => p.id))
-        setUnreadNotes(counts)
+        setUnreadNotes(await getUnreadNotesCountByOrders(data.map((p: any) => p.id)))
       }
     } catch (error) {
-      console.error('Error loading pedidos:', error)
+      console.error('Error cargando pedidos:', error)
     } finally {
       setLoading(false)
     }
   }
 
-  async function refreshUnreadNotes(orderIds: string[]) {
-    if (!orderIds.length) return
-    try {
-      const { getUnreadNotesCountByOrders } = await import('@/app/actions/order-notes')
-      const counts = await getUnreadNotesCountByOrders(orderIds)
-      setUnreadNotes(counts)
-    } catch (e) {}
-  }
-
-  // Notas sin leer: consulta periódica por server action. (Realtime iba con la
-  // clave anónima sobre order_notes, que ya no es legible sin sesión.)
+  // Refresco periódico de la lista completa (cambios desde admin, notas nuevas)
   useEffect(() => {
-    if (!pedidos.length) return
-    const ids = pedidos.map(p => p.id)
     const interval = setInterval(() => {
-      if (!document.hidden) refreshUnreadNotes(ids)
+      if (!document.hidden) loadPedidos()
     }, 15000)
     return () => clearInterval(interval)
+  }, [])
+
+  const counts = useMemo(() => {
+    const c: Record<PlantaTask, number> = { cortar: 0, preparar: 0, confirmar: 0, sin_stock: 0, terminado: 0 }
+    for (const p of pedidos) for (const t of orderTasks(p)) c[t]++
+    return c
   }, [pedidos])
 
-  async function handleLogout() {
-    localStorage.removeItem('operator')
-    try {
-      const { logoutPlanta } = await import('@/app/actions/auth')
-      await logoutPlanta()
-    } catch (e) {
-      console.error('Error cerrando sesión de planta:', e)
+  const filtered = useMemo(() => {
+    let list = pedidos
+    if (filter !== 'todos') list = list.filter(p => orderTasks(p).includes(filter))
+    if (search) {
+      const q = search.toLowerCase()
+      list = list.filter(p => p.order_number?.toLowerCase().includes(q) || p.client?.business_name?.toLowerCase().includes(q))
     }
-    router.push('/')
-  }
-
-  // Filtrar pedidos por búsqueda y estado
-  const filteredPedidos = useMemo(() => {
-    let filtered = pedidos
-
-    if (statusFilter !== 'todos') {
-      filtered = filtered.filter(p => p.status === statusFilter)
-    }
-
-    if (searchQuery) {
-      const searchLower = searchQuery.toLowerCase()
-      filtered = filtered.filter(p =>
-        p.order_number?.toLowerCase().includes(searchLower) ||
-        p.client?.business_name?.toLowerCase().includes(searchLower) ||
-        p.client?.name?.toLowerCase().includes(searchLower)
-      )
-    }
-
-    return filtered
-  }, [pedidos, statusFilter, searchQuery])
+    // Primero lo urgente (confirmar), luego cortar, preparar, sin stock, terminados
+    const rank: Record<PlantaTask, number> = { confirmar: 0, cortar: 1, preparar: 2, sin_stock: 3, terminado: 4 }
+    return [...list].sort((a, b) => rank[mainTask(a)] - rank[mainTask(b)])
+  }, [pedidos, filter, search])
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <PageLoader label="Cargando pedidos..." />
-      </div>
-    )
+    return <div className={cn('flex min-h-screen items-center justify-center text-xl', P.bg, P.muted)}>Cargando pedidos...</div>
   }
 
+  const pendientes = counts.cortar + counts.preparar + counts.confirmar
+
   return (
-    <div className="min-h-screen p-6">
-      <div className="max-w-6xl mx-auto space-y-6">
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Pedidos</h1>
-            <p className="text-foreground/90 mt-1">
-              Operario: {operator?.full_name}
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            {/* Reloj */}
-            <div className="flex items-center gap-2 px-4 py-2 bg-card/50 rounded-lg border border-border">
-              <Clock className="w-5 h-5 text-muted-foreground" />
-              <span className="text-lg font-mono font-semibold text-foreground">
-                {currentTime}
-              </span>
-            </div>
-            <button
-              onClick={() => setShowSearchModal(true)}
-              className="p-3 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-foreground rounded-lg transition-colors"
-              title="Buscar Pedido"
-            >
-              <Search className="w-6 h-6" />
-            </button>
-            <button
-              onClick={handleLogout}
-              className="p-3 bg-destructive hover:bg-destructive/90 active:bg-destructive/80 text-destructive-foreground rounded-lg transition-colors"
-              title="Cerrar Sesión"
-            >
-              <LogOut className="w-6 h-6" />
+    <div className={cn('min-h-screen', P.bg)}>
+      <PlantaHeader
+        operator={operator}
+        title="Pedidos"
+        subtitle={pendientes === 0 ? 'Nada pendiente ahora mismo' : `${counts.cortar} para cortar · ${counts.preparar} para preparar${counts.confirmar ? ` · ${counts.confirmar} por confirmar` : ''}`}
+        onSearch={() => setShowSearch(v => !v)}
+      />
+
+      <main className="mx-auto max-w-[1180px] px-6 py-5">
+        {showSearch && (
+          <div className="mb-4 flex items-center gap-3">
+            <input
+              autoFocus
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Número de pedido o cliente"
+              className={cn('h-14 flex-1 rounded-2xl border px-5 text-lg outline-none placeholder:text-[#64748b] focus:border-[#f59e0b]', P.border, P.card, P.text)}
+            />
+            <button type="button" onClick={() => { setShowSearch(false); setSearch('') }} aria-label="Cerrar búsqueda" className={cn('inline-flex h-14 w-14 items-center justify-center rounded-2xl border', P.border, P.card, P.muted)}>
+              <X className="h-6 w-6" />
             </button>
           </div>
+        )}
+
+        <div className="mb-5 flex flex-wrap gap-2.5">
+          <Chip active={filter === 'todos'} onClick={() => setFilter('todos')}>Todos <span className="opacity-70">{pedidos.length}</span></Chip>
+          {FILTERS.map(t => (
+            <Chip key={t} active={filter === t} onClick={() => setFilter(t)}>
+              {TASK_LABEL[t]} <span className="opacity-70">{counts[t]}</span>
+            </Chip>
+          ))}
         </div>
 
-        {/* Sección de Búsqueda Desplegable */}
-        {showSearchModal && (
-          <Card className="p-6 space-y-4 animate-in slide-in-from-top duration-300">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-bold text-foreground">Buscar Pedido</h3>
-              <button
-                onClick={() => {
-                  setShowSearchModal(false)
-                  setSearchQuery('')
-                  setStatusFilter('todos')
-                }}
-                className="p-2 hover:bg-muted rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5 text-muted-foreground" />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-foreground/90 mb-2">
-                  Buscar por Cliente o Número de Pedido
-                </label>
-                <Input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Ej: ACME Corp, PED-TEST-1234..."
-                  className="h-12 text-base"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-foreground/90 mb-2">
-                  Estado del Pedido
-                </label>
-                <div className="grid grid-cols-5 gap-2">
-                  {STATUS_FILTERS.map((filter) => (
-                    <button
-                      key={filter.id}
-                      onClick={() => setStatusFilter(filter.id)}
-                      className={cn(
-                        'px-4 py-3 rounded-lg font-semibold text-sm transition-colors',
-                        statusFilter === filter.id
-                          ? 'bg-primary text-primary-foreground'
-                          : 'bg-muted text-foreground/90 hover:bg-secondary active:bg-secondary/80'
-                      )}
-                    >
-                      {filter.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between pt-2 border-t border-border">
-              <p className="text-sm text-muted-foreground">
-                {filteredPedidos.length} pedido{filteredPedidos.length !== 1 ? 's' : ''} encontrado{filteredPedidos.length !== 1 ? 's' : ''}
-              </p>
-              {(searchQuery || statusFilter !== 'todos') && (
-                <button
-                  onClick={() => {
-                    setSearchQuery('')
-                    setStatusFilter('todos')
-                  }}
-                  className="text-sm text-blue-400 hover:text-blue-300 font-medium"
-                >
-                  Limpiar filtros
-                </button>
-              )}
-            </div>
-          </Card>
-        )}
-
-        {filteredPedidos.length === 0 ? (
-          <Card className="p-12">
-            <EmptyState
-              icon={Package}
-              title="No hay pedidos disponibles"
-              description={pedidos.length === 0 ? 'No hay pedidos aprobados en este momento' : 'Prueba a cambiar los filtros de búsqueda'}
-            />
-          </Card>
+        {filtered.length === 0 ? (
+          <div className={cn('flex flex-col items-center gap-3 rounded-2xl border p-14 text-center', P.card, P.border)}>
+            <Package className={cn('h-12 w-12', P.muted)} />
+            <div className={cn('text-2xl font-bold', P.text)}>{pedidos.length === 0 ? 'No hay pedidos aprobados' : 'Nada en este filtro'}</div>
+            <div className={cn('text-lg', P.muted)}>{pedidos.length === 0 ? 'Cuando el admin apruebe un pedido aparecerá aquí.' : 'Prueba con otro filtro o quita la búsqueda.'}</div>
+          </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {filteredPedidos.map((pedido) => {
-              const cutOrdersCount = pedido.cut_orders?.length || 0
-              const statusConfig = getOrderStatusConfig(pedido.status)
-              const notesCount = unreadNotes[pedido.id] || 0
-
-              return (
-                <Card
-                  key={pedido.id}
-                  onClick={() => router.push(`/planta/pedidos/${pedido.id}`)}
-                  className="p-5 cursor-pointer transition-colors hover:border-primary/40 active:bg-muted/50"
-                >
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <div>
-                      <div className="text-xl font-bold text-foreground">{pedido.order_number}</div>
-                      <div className="text-base text-foreground/90 font-medium mt-0.5">
-                        {pedido.client?.business_name || pedido.client?.name || 'Sin cliente'}
-                      </div>
-                    </div>
-                    <Badge variant={statusConfig.badgeVariant} className="text-sm px-3 py-1 flex-shrink-0">
-                      {statusConfig.label}
-                    </Badge>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-3 border-t border-border">
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      <span className="flex items-center gap-1.5">
-                        <Calendar className="w-4 h-4" />
-                        {new Date(pedido.created_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        <Scissors className="w-4 h-4" />
-                        {cutOrdersCount} {cutOrdersCount === 1 ? 'orden' : 'órdenes'}
-                      </span>
-                      {notesCount > 0 && (
-                        <span className="flex items-center gap-1.5 px-2 py-0.5 bg-amber-500/20 border border-amber-500/50 rounded-full">
-                          <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
-                          <span className="font-bold text-amber-300">{notesCount}</span>
-                        </span>
-                      )}
-                    </div>
-                    <ChevronRight className="w-5 h-5 text-muted-foreground" />
-                  </div>
-                </Card>
-              )
-            })}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {filtered.map(pedido => (
+              <OrderCard key={pedido.id} pedido={pedido} unread={unreadNotes[pedido.id] || 0} onOpen={() => router.push(`/planta/pedidos/${pedido.id}`)} />
+            ))}
           </div>
         )}
-      </div>
+      </main>
     </div>
+  )
+}
+
+function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn('inline-flex h-12 items-center gap-2 rounded-full border px-5 text-base font-semibold transition-colors', active ? 'border-[#f59e0b] bg-[#f59e0b] text-[#0b1220]' : cn(P.border, P.card, P.soft))}
+    >
+      {children}
+    </button>
+  )
+}
+
+function OrderCard({ pedido, unread, onOpen }: { pedido: any; unread: number; onOpen: () => void }) {
+  const task = mainTask(pedido)
+  const progress = orderProgress(pedido)
+  const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0
+  const status = getOrderStatusConfig(pedido.status)
+  const cuts: any[] = pedido.cut_orders || []
+  const preps: any[] = pedido.preparation_items || []
+  const lines = [
+    ...cuts.map(c => ({ key: `c-${c.id}`, code: c.product?.code, qty: Number(c.quantity_requested), done: Number(c.quantity_cut) || 0, state: cutCardState(c) })),
+    ...preps.map(p => ({ key: `p-${p.id}`, code: p.product?.code, qty: Number(p.quantity_requested), done: Number(p.quantity_prepared) || 0, state: Number(p.quantity_prepared) >= Number(p.quantity_requested) ? 'terminada' : 'preparar' })),
+  ]
+  const visible = lines.slice(0, 4)
+  const barColor = task === 'terminado' ? 'bg-[#16a34a]' : task === 'preparar' ? 'bg-[#3b82f6]' : 'bg-[#f59e0b]'
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cn('flex flex-col gap-4 rounded-2xl border p-5 text-left transition-colors hover:border-[#f59e0b]/60 active:bg-[#162138]', P.card, task === 'confirmar' ? 'border-[#f59e0b]' : P.border)}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className={cn('text-[26px] font-extrabold leading-tight', P.text)}>{pedido.order_number}</div>
+          <div className={cn('truncate text-lg', P.soft)}>{pedido.client?.business_name || 'Sin cliente'}</div>
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <Label tone={TASK_TONE[task]}>{TASK_LABEL[task]}</Label>
+          {pedido.status === 'modificado' && <Label tone="muted">Ampliación pendiente</Label>}
+          {pedido.status === 'aprobado_en_pausa' && <Label tone="muted">{status.label}</Label>}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {visible.map(l => (
+          <span key={l.key} className={cn('inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[15px] font-semibold', P.border, l.state === 'terminada' ? 'text-[#4ade80]' : l.state === 'sin_chapa' ? 'text-[#94a3b8] line-through decoration-[#64748b]' : P.text)}>
+            {l.code || '—'} <span className="opacity-70">×{l.qty}</span>
+          </span>
+        ))}
+        {lines.length > visible.length && <span className={cn('px-1 py-1 text-[15px]', P.muted)}>+{lines.length - visible.length} más</span>}
+      </div>
+
+      <div className="flex items-center gap-4">
+        <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-[#1e293b]">
+          <div className={cn('h-full rounded-full transition-all', barColor)} style={{ width: `${pct}%` }} />
+        </div>
+        <span className={cn('w-[64px] text-right text-base font-bold tabular-nums', P.soft)}>{progress.done}/{progress.total}</span>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          {unread > 0 && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#f59e0b]/60 bg-[#f59e0b]/15 px-3 py-1 text-[15px] font-bold text-[#fbbf24]">
+              <MessageSquare className="h-4 w-4" /> {unread} {unread === 1 ? 'nota' : 'notas'}
+            </span>
+          )}
+        </div>
+        <span className={cn('text-lg font-bold', task === 'terminado' ? 'text-[#4ade80]' : task === 'preparar' ? 'text-[#93c5fd]' : task === 'sin_stock' ? P.muted : 'text-[#fbbf24]')}>{TASK_ACTION[task]}</span>
+      </div>
+    </button>
   )
 }

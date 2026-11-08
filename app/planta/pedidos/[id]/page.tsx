@@ -1,25 +1,34 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { useRouter, useParams } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
-import { CheckCircle2, ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, Package, Clock, Truck, MessageSquare, RefreshCw } from 'lucide-react'
-import { extractSizeFromName, extractSizeFromCode } from '@/lib/product-utils'
+import { ArrowLeft, Check, ChevronRight, MessageSquare, X } from 'lucide-react'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
-import { QuantityStepper } from '@/components/planta/quantity-stepper'
-import { Badge } from '@/components/ui/badge'
-import { getCutOrderStatusConfig } from '@/lib/cut-order-status'
+import { BigButton, Label, P, PlantaHeader, PlantaStepper } from '@/components/planta/planta-ui'
+import { cutCardState, cutPlan, formatMeters, productLength, sortByRemnant, type CutCardState } from '@/lib/planta-tasks'
+import { extractSizeFromCode } from '@/lib/product-utils'
+import { getOrderStatusConfig } from '@/lib/order-status'
+import { cn } from '@/lib/utils'
 
-// Tipo para sugerencias (mock)
-interface MaterialSuggestion {
-  type: 'remnant' | 'virgin'
-  id: string
-  name: string
-  length: number
-  waste: number
-  location: string
-  priority: number
+const QUICK_REPLIES = ['Llegamos a tiempo', 'Falta material', 'Chapa dañada', 'Tengo una pregunta']
+
+const STATE_RANK: Record<CutCardState, number> = { confirmar_recogida: 0, cortando: 1, por_empezar: 2, sin_chapa: 3, terminada: 4 }
+
+const STATE_LABEL: Record<CutCardState, { text: string; tone: 'amber' | 'green' | 'blue' | 'muted' }> = {
+  cortando: { text: 'Cortando', tone: 'amber' },
+  por_empezar: { text: 'Por empezar', tone: 'amber' },
+  sin_chapa: { text: 'Sin chapa asignada', tone: 'muted' },
+  confirmar_recogida: { text: 'Confirmar recogida', tone: 'amber' },
+  terminada: { text: 'Terminada', tone: 'green' },
+}
+
+type Done = { title: string; lines: string[] }
+
+const n = (v: unknown) => Number(v) || 0
+
+function hora(iso: string) {
+  return new Date(iso).toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
 export default function PlantaPedidoDetallePage() {
@@ -30,25 +39,42 @@ export default function PlantaPedidoDetallePage() {
   const [operator, setOperator] = useState<any>(null)
   const [pedido, setPedido] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const [expandedCutId, setExpandedCutId] = useState<string | null>(null)
-  const [suggestions, setSuggestions] = useState<Record<string, any>>({})
-  const [selectedMaterials, setSelectedMaterials] = useState<Record<string, MaterialSuggestion>>({})
-  const [remnantInputs, setRemnantInputs] = useState<Record<string, string>>({})
-  const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({}) // Nueva: cantidad a cortar
-  const [processing, setProcessing] = useState<Record<string, boolean>>({})
-  const [currentTime, setCurrentTime] = useState('')
-  const [showManualSelector, setShowManualSelector] = useState<Record<string, boolean>>({})
-  const [showOtherOptions, setShowOtherOptions] = useState<Record<string, boolean>>({})
-  const [showRemnantAdjust, setShowRemnantAdjust] = useState<Record<string, boolean>>({})
-  const [showChangeStockModal, setShowChangeStockModal] = useState<Record<string, boolean>>({})
-  const [availableStock, setAvailableStock] = useState<Record<string, any[]>>({})
-  const [selectedStock, setSelectedStock] = useState<Record<string, any>>({})
-  const [quantityToChange, setQuantityToChange] = useState<Record<string, number>>({})
-  const [loadingStock, setLoadingStock] = useState<Record<string, boolean>>({})
-  const [loadingSuggestions, setLoadingSuggestions] = useState<Record<string, boolean>>({}) 
+  const [activeCutId, setActiveCutId] = useState<string | null>(null)
+  const [qty, setQty] = useState<Record<string, number>>({})
+  const [busy, setBusy] = useState<string | null>(null)
+  const [stockByCut, setStockByCut] = useState<Record<string, any[]>>({})
+  const [changeFor, setChangeFor] = useState<any | null>(null)
+  const [changeRow, setChangeRow] = useState<any | null>(null)
+  const [changeQty, setChangeQty] = useState(1)
+  const [done, setDone] = useState<Done | null>(null)
   const [notes, setNotes] = useState<any[]>([])
   const [showNotes, setShowNotes] = useState(false)
-  const [markingRead, setMarkingRead] = useState<Record<string, boolean>>({})
+  const [activity, setActivity] = useState<{ activity: any[]; evo: { pending: number; failed: number } }>({ activity: [], evo: { pending: 0, failed: 0 } })
+
+  const loadPedido = useCallback(async () => {
+    const { getOrderById } = await import('@/app/actions/client-queries')
+    const data = await getOrderById(pedidoId)
+    setPedido(data)
+    return data
+  }, [pedidoId])
+
+  const loadNotes = useCallback(async () => {
+    try {
+      const { getOrderNotes } = await import('@/app/actions/order-notes')
+      setNotes(await getOrderNotes(pedidoId))
+    } catch (e) {
+      console.error('Error cargando notas:', e)
+    }
+  }, [pedidoId])
+
+  const loadActivity = useCallback(async () => {
+    try {
+      const { getPlantaOrderActivity } = await import('@/app/actions/client-queries')
+      setActivity(await getPlantaOrderActivity(pedidoId))
+    } catch (e) {
+      console.error('Error cargando actividad:', e)
+    }
+  }, [pedidoId])
 
   useEffect(() => {
     const operatorData = localStorage.getItem('operator')
@@ -57,1211 +83,543 @@ export default function PlantaPedidoDetallePage() {
       return
     }
     setOperator(JSON.parse(operatorData))
-    loadPedido()
-    loadNotes(pedidoId)
-  }, [router, pedidoId])
+    loadPedido().catch(e => console.error('Error cargando pedido:', e)).finally(() => setLoading(false))
+    loadNotes()
+    loadActivity()
+  }, [router, loadPedido, loadNotes, loadActivity])
 
-  // Actualizar hora cada segundo
-  useEffect(() => {
-    const updateTime = () => {
-      const now = new Date()
-      const argentinaTime = now.toLocaleTimeString('es-AR', {
-        timeZone: 'America/Argentina/Buenos_Aires',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false
-      })
-      setCurrentTime(argentinaTime)
-    }
-    
-    updateTime() // Actualizar inmediatamente
-    const interval = setInterval(updateTime, 1000) // Actualizar cada segundo
-    
-    return () => clearInterval(interval)
-  }, [])
-
-  async function loadPedido() {
-    try {
-      const { getOrderById } = await import('@/app/actions/client-queries')
-      const data = await getOrderById(params.id as string)
-      setPedido(data)
-    } catch (error) {
-      console.error('Error loading pedido:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // Auto-refresh para detectar cambios desde admin
-  useAutoRefresh(pedidoId, async () => {
-    const { getOrderById } = await import('@/app/actions/client-queries')
-    return await getOrderById(pedidoId)
-  }, {
-    enabled: true,
-    interval: 10, // Verificar cada 10 segundos
-    onChange: setPedido, // aplicar los cambios sin recargar la página
-  })
-
-  async function loadNotes(orderId: string) {
-    try {
-      const { getOrderNotes } = await import('@/app/actions/order-notes')
-      const data = await getOrderNotes(orderId)
-      setNotes(data)
-    } catch (e) {
-      console.error('Error loading notes:', e)
-    }
-  }
-
-  // Notas nuevas: consulta periódica por server action. (Realtime iba con la
-  // clave anónima sobre order_notes, que ya no es legible sin sesión.)
+  // Cambios desde admin (asignaciones, notas, reasignaciones) sin recargar la página
+  useAutoRefresh(pedidoId, loadPedido, { enabled: true, interval: 10, onChange: setPedido })
   useEffect(() => {
     const interval = setInterval(() => {
-      if (!document.hidden) loadNotes(pedidoId)
+      if (!document.hidden) { loadNotes(); loadActivity() }
     }, 15000)
     return () => clearInterval(interval)
-  }, [pedidoId])
+  }, [loadNotes, loadActivity])
 
-  async function handleMarkNoteRead(noteId: string) {
+  const cuts: any[] = useMemo(() => [...(pedido?.cut_orders || [])].sort((a, b) => STATE_RANK[cutCardState(a)] - STATE_RANK[cutCardState(b)]), [pedido])
+  const preps: any[] = pedido?.preparation_items || []
+
+  // La tarjeta activa es la primera que se puede cortar, salvo que el operario toque otra
+  const activeCut = useMemo(() => {
+    const cuttable = cuts.filter(c => ['cortando', 'por_empezar'].includes(cutCardState(c)))
+    return cuttable.find(c => c.id === activeCutId) || cuttable[0] || null
+  }, [cuts, activeCutId])
+
+  // Stock disponible de la familia del producto: para saber cuántas chapas quedan
+  // de la asignada y para el modal "Usar otra chapa"
+  useEffect(() => {
+    if (!activeCut || stockByCut[activeCut.id]) return
+    const code = activeCut.product?.code || ''
+    import('@/app/actions/get-available-stock')
+      .then(({ getAvailableStock }) => getAvailableStock(code))
+      .then(rows => setStockByCut(prev => ({ ...prev, [activeCut.id]: rows })))
+      .catch(e => console.error('Error cargando stock:', e))
+  }, [activeCut, stockByCut])
+
+  async function refreshAll() {
+    await Promise.all([loadPedido(), loadActivity()])
+    setStockByCut({})
+  }
+
+  async function handleCut(cut: any) {
     if (!operator) return
-    setMarkingRead(prev => ({ ...prev, [noteId]: true }))
+    const remaining = n(cut.quantity_requested) - n(cut.quantity_cut)
+    const quantity = Math.min(qty[cut.id] ?? remaining, remaining)
+    if (quantity <= 0) return
+    const materialLength = productLength(cut.material_product)
+    const assigned = (stockByCut[cut.id] || []).find(r => r.product_id === cut.material_base_id)
+    setBusy(cut.id)
+    try {
+      const { processCutOrder } = await import('@/app/actions/cut-operations')
+      await processCutOrder({
+        cutOrderId: cut.id,
+        selectedMaterialId: assigned?.id || cut.material_base_id,
+        materialLength,
+        quantityToCut: quantity,
+        operatorId: operator.id,
+      })
+      const plan = cutPlan(materialLength, productLength(cut.product))
+      await refreshAll()
+      setDone({
+        title: 'Corte registrado',
+        lines: [
+          `${quantity} × ${cut.product?.code || cut.product?.name}`,
+          `De ${cut.material_product?.code || 'chapa asignada'} (${formatMeters(materialLength)})`,
+          plan.exact ? 'Chapa exacta, sin sobrante' : `Sobrante: ${quantity} × ${formatMeters(plan.remnant)} al estante de remanentes`,
+        ],
+      })
+    } catch (e: any) {
+      toast.error(e?.message || 'No se pudo registrar el corte')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function handlePrepare(item: any) {
+    if (!operator) return
+    const remaining = n(item.quantity_requested) - n(item.quantity_prepared)
+    const quantity = Math.min(qty[item.id] ?? remaining, remaining)
+    if (quantity <= 0) return
+    setBusy(item.id)
+    try {
+      const { prepareItem } = await import('@/app/actions/preparation')
+      await prepareItem(item.id, quantity, operator.id)
+      await refreshAll()
+      setDone({ title: 'Preparación registrada', lines: [`${quantity} × ${item.product?.code || item.product?.name}`, `${Math.min(n(item.quantity_prepared) + quantity, n(item.quantity_requested))} de ${n(item.quantity_requested)} preparadas`] })
+    } catch (e: any) {
+      toast.error(e?.message || 'No se pudo registrar la preparación')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function handleConfirmPickup(cut: any) {
+    setBusy(cut.id)
+    try {
+      const { confirmReassignmentPickup } = await import('@/app/actions/confirm-reassignment')
+      await confirmReassignmentPickup(cut.id)
+      await refreshAll()
+      setDone({ title: 'Recogida confirmada', lines: [`${cut.quantity_requested} × ${cut.product?.code || cut.product?.name}`, `Venía del pedido ${cut.reassigned_from_order?.order_number || '—'}`] })
+    } catch (e: any) {
+      toast.error(e?.message || 'No se pudo confirmar la recogida')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  function openChange(cut: any) {
+    const rows = stockByCut[cut.id] || []
+    const remaining = n(cut.quantity_requested) - n(cut.quantity_cut)
+    setChangeFor(cut)
+    setChangeRow(rows.find(r => r.product_id !== cut.material_base_id) || null)
+    setChangeQty(remaining)
+  }
+
+  async function handleChange() {
+    if (!changeFor || !changeRow) return
+    setBusy(changeFor.id)
+    try {
+      const { reassignStock } = await import('@/app/actions/reassign-stock')
+      const result = await reassignStock(changeFor.id, changeRow.id, changeRow.product.id, extractSizeFromCode(changeRow.product.code || ''), changeQty)
+      if (!result?.success) throw new Error('No se pudo cambiar la chapa')
+      setChangeFor(null)
+      await refreshAll()
+      toast.success(`Ahora se corta de ${changeRow.product.code}`)
+    } catch (e: any) {
+      toast.error(e?.message || 'No se pudo cambiar la chapa')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function handleMarkRead(noteId: string) {
+    if (!operator) return
     try {
       const { markNoteAsRead } = await import('@/app/actions/order-notes')
       await markNoteAsRead(noteId, operator.full_name)
-      setNotes(prev => prev.map(n =>
-        n.id === noteId ? { ...n, read_at: new Date().toISOString(), read_by_operator_name: operator.full_name } : n
-      ))
-    } catch (e) {
-      console.error('Error marking note as read:', e)
-    } finally {
-      setMarkingRead(prev => ({ ...prev, [noteId]: false }))
+      setNotes(prev => prev.map(x => (x.id === noteId ? { ...x, read_at: new Date().toISOString(), read_by_operator_name: operator.full_name } : x)))
+    } catch (e: any) {
+      toast.error(e?.message || 'No se pudo marcar la nota')
     }
   }
 
-  async function loadAvailableStockForCutOrder(cutOrderId: string, cutOrder: any) {
+  async function sendNote(content: string, okMessage: string) {
+    setBusy('note')
     try {
-      setLoadingStock(prev => ({ ...prev, [cutOrderId]: true }))
-
-      const { getAvailableStock } = await import('@/app/actions/get-available-stock')
-      const productCode = cutOrder.product?.code || ''
-
-      const filtered = await getAvailableStock(productCode)
-
-      // Ordenar: primero el stock actualmente asignado, luego por tamaño
-      const sorted = filtered.sort((a, b) => {
-        const aIsCurrent = a.product_id === cutOrder.material_base_id
-        const bIsCurrent = b.product_id === cutOrder.material_base_id
-
-        if (aIsCurrent && !bIsCurrent) return -1
-        if (!aIsCurrent && bIsCurrent) return 1
-
-        const aSize = extractSizeFromCode(a.product?.code || '')
-        const bSize = extractSizeFromCode(b.product?.code || '')
-        return aSize - bSize
-      })
-
-      setAvailableStock(prev => ({ ...prev, [cutOrderId]: sorted }))
-
-      // Pre-seleccionar el stock actual
-      const currentStock = sorted.find(s => s.product_id === cutOrder.material_base_id)
-      setSelectedStock(prev => ({ ...prev, [cutOrderId]: currentStock || sorted[0] || null }))
-
-      // Establecer cantidad por defecto (todas las unidades solicitadas)
-      setQuantityToChange(prev => ({ ...prev, [cutOrderId]: cutOrder.quantity_requested }))
-    } catch (error) {
-      console.error('Error loading stock:', error)
-      toast.error('Error al cargar stock disponible')
+      const { createPlantaNote } = await import('@/app/actions/order-notes')
+      await createPlantaNote(pedidoId, content)
+      await loadNotes()
+      toast.success(okMessage)
+    } catch (e: any) {
+      toast.error(e?.message || 'No se pudo enviar el aviso')
     } finally {
-      setLoadingStock(prev => ({ ...prev, [cutOrderId]: false }))
-    }
-  }
-
-  async function handleStockChange(cutOrderId: string, cutOrder: any) {
-    const stock = selectedStock[cutOrderId]
-    const quantity = quantityToChange[cutOrderId] || cutOrder.quantity_requested
-
-    if (!stock) {
-      toast.error('Por favor selecciona un material')
-      return
-    }
-
-    if (quantity < 1 || quantity > cutOrder.quantity_requested) {
-      toast.error(`La cantidad debe estar entre 1 y ${cutOrder.quantity_requested}`)
-      return
-    }
-
-    try {
-      setProcessing(prev => ({ ...prev, [cutOrderId]: true }))
-
-      const { reassignStock } = await import('@/app/actions/reassign-stock')
-      const product = Array.isArray(stock.product) ? stock.product[0] : stock.product
-
-      const result = await reassignStock(
-        cutOrder.id,
-        stock.id,
-        product.id,
-        extractSizeFromCode(product.code || ''),
-        quantity
-      )
-
-      if (result.success) {
-        toast.success(result.message)
-        setShowChangeStockModal(prev => ({ ...prev, [cutOrderId]: false }))
-
-        // Si es reasignación parcial (crea nueva orden), recargar el pedido
-        if (quantity < cutOrder.quantity_requested) {
-          await loadPedido()
-        } else {
-          // Si es reasignación completa, actualizar localmente
-          setPedido((prev: any) => {
-            const updatedCutOrders = prev.cut_orders.map((co: any) =>
-              co.id === cutOrderId
-                ? {
-                    ...co,
-                    material_base_id: product.id,
-                    material_base_quantity: extractSizeFromCode(product.code || ''),
-                    material_quantity: quantity
-                  }
-                : co
-            )
-            return { ...prev, cut_orders: updatedCutOrders }
-          })
-
-          // Recargar sugerencias para reflejar el cambio
-          const lengthNeeded = extractSizeFromCode(cutOrder.product?.code || '')
-          await toggleCutOrder(cutOrderId, cutOrder.product_id, lengthNeeded)
-        }
-      } else {
-        toast.error('Error al cambiar stock')
-      }
-    } catch (error: any) {
-      console.error('Error changing stock:', error)
-      toast.error(error?.message || 'Error al cambiar stock')
-    } finally {
-      setProcessing(prev => ({ ...prev, [cutOrderId]: false }))
-    }
-  }
-
-  async function toggleCutOrder(cutOrderId: string, productId: string, lengthNeeded: number) {
-    if (expandedCutId === cutOrderId) {
-      setExpandedCutId(null)
-      return
-    }
-
-    setExpandedCutId(cutOrderId)
-    
-    // Establecer cantidad máxima por defecto
-    const cutOrder = pedido?.cut_orders?.find((co: any) => co.id === cutOrderId)
-    if (cutOrder) {
-      const maxQuantity = cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)
-      setQuantityInputs(prev => ({ ...prev, [cutOrderId]: maxQuantity.toString() }))
-    }
-
-    // Cargar sugerencias reales de stock
-    if (!suggestions[cutOrderId]) {
-      setLoadingSuggestions(prev => ({ ...prev, [cutOrderId]: true }))
-      try {
-        const { getCutOrderWithAssignment } = await import('@/app/actions/get-cut-order-with-assignment')
-        const supabase = createClient()
-
-        // Obtener la orden de corte con el stock asignado
-        const cutOrder = await getCutOrderWithAssignment(cutOrderId)
-
-        let bestSuggestion: MaterialSuggestion | null = null
-        let alternatives: MaterialSuggestion[] = []
-
-        // Si hay stock asignado, usarlo como sugerencia principal
-        if (cutOrder?.material_base_id && cutOrder?.material_base_quantity && cutOrder?.assigned_inventory) {
-          const assignedInventory = cutOrder.assigned_inventory
-          const waste = Math.max(0, cutOrder.material_base_quantity - lengthNeeded)
-
-          bestSuggestion = {
-            type: 'virgin' as const,
-            id: assignedInventory.id,
-            name: `${cutOrder.assigned_product?.code || assignedInventory.product?.code} (${cutOrder.material_base_quantity}m)`,
-            length: cutOrder.material_base_quantity,
-            waste: waste,
-            location: 'Asignado automáticamente',
-            priority: 1,
-          }
-        }
-
-        // Buscar alternativas disponibles del mismo tipo de producto (código base)
-        // Primero obtener el código base del producto solicitado
-        const baseCode = cutOrder?.product?.code?.match(/^([A-Z0-9]+)\./i)?.[1]
-        
-        if (baseCode) {
-          // Buscar todos los productos con el mismo código base
-          const { data: relatedProducts } = await supabase
-            .from('products')
-            .select('id, code, name')
-            .ilike('code', `${baseCode}.%`)
-
-          if (relatedProducts && relatedProducts.length > 0) {
-            const productIds = relatedProducts.map(p => p.id)
-            
-            // Buscar stock disponible de estos productos
-            const { data: availableStock } = await supabase
-              .from('inventory')
-              .select('*, product:products(*)')
-              .in('product_id', productIds)
-              .gt('stock_disponible', 0)
-              .limit(10)
-
-            if (availableStock) {
-              // Extraer tamaño del código para cada pieza
-              alternatives = availableStock
-                .map(item => {
-                  const sizeMatch = item.product?.code?.match(/\.(\d+),(\d+)$/)
-                  const size = sizeMatch ? parseFloat(`${sizeMatch[1]}.${sizeMatch[2]}`) : item.stock_total
-                  return {
-                    type: 'virgin' as const,
-                    id: item.id,
-                    name: `${item.product?.code} (${size}m)`,
-                    length: size,
-                    waste: Math.max(0, size - lengthNeeded),
-                    location: `${item.stock_disponible} disponibles`,
-                    priority: 2,
-                  }
-                })
-                .filter(item => item.length >= lengthNeeded) // Solo mostrar piezas suficientemente grandes
-                .sort((a, b) => a.waste - b.waste) // Ordenar por menor desperdicio
-            }
-          }
-        }
-
-        // Combinar sugerencia principal y alternativas para el dropdown
-        // Evitar duplicados: si bestSuggestion ya está en alternatives, no agregarlo de nuevo
-        const allOptions = bestSuggestion 
-          ? [bestSuggestion, ...alternatives.filter(alt => alt.id !== bestSuggestion.id)]
-          : alternatives
-
-        const suggestion = {
-          best: bestSuggestion,
-          alternatives,
-          all: allOptions
-        }
-        setSuggestions(prev => ({ ...prev, [cutOrderId]: suggestion }))
-        
-        // Solo establecer material seleccionado si hay una sugerencia válida
-        if (suggestion.best) {
-          setSelectedMaterials(prev => ({ ...prev, [cutOrderId]: suggestion.best! }))
-        }
-      } catch (error) {
-        console.error('Error loading stock suggestions:', error)
-      } finally {
-        setLoadingSuggestions(prev => ({ ...prev, [cutOrderId]: false }))
-      }
-    }
-  }
-
-  async function handleConfirmCut(cutOrder: any) {
-    const cutId = cutOrder.id
-    const selectedMaterial = selectedMaterials[cutId]
-
-    if (!selectedMaterial) {
-      toast.error('Por favor selecciona un material')
-      return
-    }
-
-    // Verificar si hay stock físico disponible
-    const supabase = createClient()
-    const { data: stockCheck } = await supabase
-      .from('inventory')
-      .select('stock_disponible, stock_total')
-      .eq('id', selectedMaterial.id)
-      .maybeSingle()
-
-    if (stockCheck && stockCheck.stock_disponible < 0) {
-      toast.error(
-        `No hay stock físico disponible para esta chapa (disponible: ${stockCheck.stock_disponible} unidades). Contacta con el administrador.`,
-        { description: 'Stock no disponible' }
-      )
-      return
-    }
-    
-    // Calcular si es un corte real o solo consumo de stock exacto
-    const materialLength = selectedMaterial.length // Tamaño del material usado (ej: 6.5m)
-    const quantityToCut = parseInt(quantityInputs[cutId] || '0') // Cantidad de unidades a cortar (ej: 3)
-    const productSize = cutOrder.product?.length_meters || 
-                       parseFloat(cutOrder.product?.code?.match(/\.(\d+),(\d+)$/)?.[0]?.replace('.', '')?.replace(',', '.') || '0') ||
-                       cutOrder.quantity_requested // Tamaño de cada pieza (ej: 4.5m)
-    
-    // Determinar si es un MATCH EXACTO o un CORTE REAL
-    const isExactMatch = Math.abs(materialLength - productSize) < 0.01 // Tolerancia de 1cm
-    const remnantPerSheet = Math.max(0, materialLength - productSize)
-    const sheetsUsed = quantityToCut // 1 chapa por pieza
-    
-    if (!quantityToCut || quantityToCut <= 0) {
-      toast.error('Por favor ingresa una cantidad válida')
-      return
-    }
-
-    if (!operator) {
-      toast.error('No se ha identificado el operario')
-      return
-    }
-
-    setProcessing(prev => ({ ...prev, [cutId]: true }))
-    
-    try {
-      const { processCutOrder } = await import('@/app/actions/cut-operations')
-
-      await processCutOrder({
-        cutOrderId: cutId,
-        selectedMaterialId: selectedMaterial.id,
-        materialLength: selectedMaterial.length,
-        quantityToCut,
-        operatorId: operator.id
-      })
-
-      await loadPedido()
-
-      setExpandedCutId(null)
-      setQuantityInputs(prev => ({ ...prev, [cutId]: '' }))
-      setSelectedMaterials(prev => {
-        const newState = { ...prev }
-        delete newState[cutId]
-        return newState
-      })
-
-      toast.success(`Corte completado: ${quantityToCut} unidades de ${selectedMaterial.name}`)
-
-    } catch (error: any) {
-      console.error('Error finishing cut:', error)
-      toast.error(error.message || 'Error desconocido al finalizar corte')
-    } finally {
-      setProcessing(prev => ({ ...prev, [cutId]: false }))
+      setBusy(null)
     }
   }
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-foreground text-xl">Cargando...</div>
-      </div>
-    )
+    return <div className={cn('flex min-h-screen items-center justify-center text-xl', P.bg, P.muted)}>Cargando pedido...</div>
   }
 
   if (!pedido) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-foreground mb-4">Pedido no encontrado</h2>
-          <button
-            onClick={() => router.push('/planta/pedidos')}
-            className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-foreground rounded-lg font-semibold"
-          >
-            Volver a pedidos
-          </button>
-        </div>
+      <div className={cn('flex min-h-screen flex-col items-center justify-center gap-5', P.bg)}>
+        <div className={cn('text-2xl font-bold', P.text)}>Pedido no encontrado</div>
+        <BigButton tone="ghost" onClick={() => router.push('/planta/pedidos')}>Volver a pedidos</BigButton>
       </div>
     )
   }
 
+  const unread = notes.filter(x => !x.read_at).length
+  const status = getOrderStatusConfig(pedido.status)
+  const adminNotes = notes.filter(x => !String(x.created_by_name || '').endsWith('(planta)'))
+  const evo = activity.evo
+
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header Sticky */}
-      <div className="sticky top-0 z-10 bg-card border-b border-border shadow-lg">
-        <div className="max-w-4xl mx-auto px-4 py-4">
-          <button
-            onClick={() => router.push('/planta/pedidos')}
-            className="flex items-center gap-2 text-foreground/90 hover:text-foreground mb-3 transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5" />
-            <span className="font-semibold">Volver</span>
+    <div className={cn('min-h-screen', P.bg)}>
+      <PlantaHeader
+        operator={operator}
+        title={pedido.order_number}
+        subtitle={<>{pedido.client?.business_name || 'Sin cliente'} · {status.label}{pedido.status === 'modificado' && ' (ampliación pendiente de aprobar)'}</>}
+        left={
+          <button type="button" onClick={() => router.push('/planta/pedidos')} aria-label="Volver a pedidos" className={cn('inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border', P.border, P.card, P.text)}>
+            <ArrowLeft className="h-7 w-7" />
           </button>
-          
-          <div className="flex items-center justify-between mb-1">
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">{pedido.order_number}</h1>
-              {pedido.client ? (
-                <p className="text-muted-foreground text-sm mt-1">
-                  Cliente: <span className="text-foreground font-semibold">{pedido.client.business_name || 'Sin nombre'}</span>
-                </p>
-              ) : (
-                <p className="text-muted-foreground text-sm mt-1">
-                  Cliente: <span className="text-foreground font-semibold">No disponible</span>
-                </p>
-              )}
-            </div>
-            
-            <div className="flex items-center gap-3">
-              {/* Notas del Admin */}
-              {notes.length > 0 && (
-                <button
-                  onClick={() => setShowNotes(v => !v)}
-                  className="relative flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 rounded-lg transition-colors"
-                >
-                  <MessageSquare className="w-4 h-4 text-amber-400" />
-                  {notes.filter(n => !n.read_at).length > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 bg-amber-500 text-foreground text-xs font-bold w-4 h-4 rounded-full flex items-center justify-center">
-                      {notes.filter(n => !n.read_at).length}
-                    </span>
-                  )}
-                </button>
-              )}
-              {/* Reloj */}
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-background/50 rounded-lg border border-border">
-                <Clock className="w-4 h-4 text-muted-foreground" />
-                <span className="text-base font-mono font-semibold text-foreground">
-                  {currentTime}
-                </span>
-              </div>
-            </div>
+        }
+        right={
+          <button type="button" onClick={() => setShowNotes(true)} className={cn('relative inline-flex h-14 items-center gap-2 rounded-2xl border px-4 text-base font-semibold', unread ? 'border-[#f59e0b] bg-[#f59e0b]/15 text-[#fbbf24]' : cn(P.border, P.card, P.muted))}>
+            <MessageSquare className="h-5 w-5" /> Notas{unread ? ` · ${unread}` : ''}
+          </button>
+        }
+      />
+
+      <main className="mx-auto grid max-w-[1180px] grid-cols-1 gap-5 px-6 py-5 lg:grid-cols-[1fr_380px]">
+        <section className="flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <Label>Chapas a cortar · {cuts.length}</Label>
+            {activeCut && <Label tone="amber">Siguiente: {activeCut.product?.code}</Label>}
           </div>
-          
-          {operator && (
-            <p className="text-muted-foreground">Operario: <span className="text-foreground font-semibold">{operator.full_name}</span></p>
-          )}
-
-          {/* Panel de notas expandible */}
-          {showNotes && notes.length > 0 && (
-            <div className="mt-3 space-y-2">
-              {notes.map(note => (
-                <div
-                  key={note.id}
-                  className={`rounded-lg p-3 flex items-start gap-3 ${
-                    note.read_at ? 'bg-muted/50 border border-border' : 'bg-amber-500/10 border border-amber-500/40'
-                  }`}
-                >
-                  <MessageSquare className={`w-4 h-4 mt-0.5 flex-shrink-0 ${note.read_at ? 'text-muted-foreground' : 'text-amber-400'}`} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-foreground">{note.content}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{note.created_by_name}</p>
-                  </div>
-                  {!note.read_at && (
-                    <button
-                      onClick={() => handleMarkNoteRead(note.id)}
-                      disabled={markingRead[note.id]}
-                      className="flex-shrink-0 text-sm bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-foreground px-3 py-2 rounded-lg font-medium transition-colors"
-                    >
-                      {markingRead[note.id] ? '...' : 'Leída'}
-                    </button>
-                  )}
-                  {note.read_at && (
-                    <CheckCircle2 className="flex-shrink-0 w-4 h-4 text-green-400" />
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Lista de Órdenes de Corte */}
-      <div className="max-w-4xl mx-auto px-4 py-6 space-y-4">
-        {pedido.cut_orders && pedido.cut_orders.filter((co: any) => co.material_base_id || co.assigned_inventory_id).length > 0 ? (
-          // Mostrar solo órdenes de corte con stock asignado
-          pedido.cut_orders
-            .filter((co: any) => co.material_base_id || co.assigned_inventory_id)
-            .sort((a: any, b: any) => {
-              // Primero las pendientes (no completadas), luego las completadas
-              const aIsCompleted = a.status === 'completada'
-              const bIsCompleted = b.status === 'completada'
-              
-              if (aIsCompleted && !bIsCompleted) return 1
-              if (!aIsCompleted && bIsCompleted) return -1
-              
-              // Dentro del mismo grupo, mantener orden original por ID
-              return 0
-            })
-            .map((cutOrder: any) => {
-            const isExpanded = expandedCutId === cutOrder.id
-            const isPending = cutOrder.status === 'pendiente'
-            const isCompleted = cutOrder.status === 'completada'
-            const isPendingConfirmation = cutOrder.status === 'pendiente_confirmacion'
-            const cutSuggestions = suggestions[cutOrder.id]
-            const selectedMaterial = selectedMaterials[cutOrder.id]
-            const isProcessing = processing[cutOrder.id]
-
-            return (
-              <div
-                key={cutOrder.id}
-                className={`rounded-lg border-2 transition-all ${
-                  isCompleted
-                    ? 'bg-card/50 border-green-500'
-                    : isPendingConfirmation
-                    ? 'bg-orange-900/30 border-orange-500'
-                    : isExpanded
-                    ? 'bg-card border-blue-500 shadow-lg shadow-blue-500/20'
-                    : 'bg-card/70 border-border'
-                }`}
-              >
-                {/* Header de la tarjeta */}
-                <button
-                  onClick={() => isPending && toggleCutOrder(cutOrder.id, cutOrder.product_id, extractSizeFromName(cutOrder.product?.name || '') || extractSizeFromCode(cutOrder.product?.code || '') || 0)}
-                  disabled={isCompleted}
-                  className={`w-full p-6 ${
-                    isPending ? 'cursor-pointer hover:bg-muted/50' : 'cursor-default'
-                  } transition-colors`}
-                >
-                  <div className="space-y-4">
-                    {/* Fila 1: Título y Estado */}
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex items-center gap-3 flex-1">
-                        <h3 className="text-3xl font-bold text-foreground leading-tight">
-                          {cutOrder.product?.name || 'Producto'}
-                        </h3>
-                        {isPending && (
-                          isExpanded ? <ChevronUp className="w-6 h-6 text-blue-400 flex-shrink-0" /> : <ChevronDown className="w-6 h-6 text-muted-foreground flex-shrink-0" />
-                        )}
-                      </div>
-                      
-                      {/* Badge de Estado */}
-                      {(() => {
-                        const statusConfig = getCutOrderStatusConfig(cutOrder.status)
-                        const StatusIcon = statusConfig.icon
-                        return (
-                          <Badge variant={statusConfig.badgeVariant} className="flex-shrink-0 rounded-full px-4 py-2 text-base">
-                            <StatusIcon className="w-5 h-5" />
-                            {statusConfig.label}
-                          </Badge>
-                        )
-                      })()}
-                    </div>
-
-                    {/* Fila 2: Código de corte */}
-                    <p className="text-base text-muted-foreground font-medium text-left">{cutOrder.cut_number}</p>
-
-                    {/* Material asignado (visible siempre) */}
-                    {cutOrder.material_product && (
-                      <div className="flex items-center gap-2 text-sm">
-                        <Package className="w-4 h-4 text-muted-foreground" />
-                        <span className="text-muted-foreground">Material:</span>
-                        <span className="text-foreground font-bold">{cutOrder.material_product.name}</span>
-                      </div>
-                    )}
-                    
-                    {/* Fila 3: Barra de Progreso */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground font-medium">Progreso</span>
-                        <span className="text-foreground font-bold text-lg">
-                          {(cutOrder.quantity_cut || 0) - (cutOrder.quantity_delivered || 0)}/{cutOrder.quantity_requested - (cutOrder.quantity_delivered || 0)}
-                        </span>
-                      </div>
-
-                      {/* Barra de progreso visual */}
-                      <div className="w-full bg-muted rounded-full h-3 overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all duration-500 ${
-                            (cutOrder.quantity_cut || 0) - (cutOrder.quantity_delivered || 0) >= cutOrder.quantity_requested - (cutOrder.quantity_delivered || 0)
-                              ? 'bg-green-500'
-                              : (cutOrder.quantity_cut || 0) - (cutOrder.quantity_delivered || 0) > 0
-                              ? 'bg-yellow-500'
-                              : 'bg-secondary'
-                          }`}
-                          style={{
-                            width: `${Math.min((((cutOrder.quantity_cut || 0) - (cutOrder.quantity_delivered || 0)) / (cutOrder.quantity_requested - (cutOrder.quantity_delivered || 0))) * 100, 100)}%`
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </button>
-
-                {/* Contenido expandido */}
-                {isExpanded && isPending && (
-                  <div className="px-6 pb-6 space-y-6 border-t border-border pt-6">
-                    {/* Estado de carga de sugerencias */}
-                    {loadingSuggestions[cutOrder.id] ? (
-                      <div className="bg-card/50 border-2 border-border rounded-2xl p-6">
-                        <div className="flex items-center justify-center gap-3">
-                          <div className="w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
-                          <p className="text-foreground text-lg">Cargando stock disponible...</p>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        {/* Mensaje cuando no hay stock asignado */}
-                        {!cutSuggestions?.best && (!cutSuggestions?.alternatives || cutSuggestions.alternatives.length === 0) && (
-                          <div className="bg-red-900/30 border-2 border-red-500 rounded-2xl p-6">
-                            <div className="flex items-center gap-3 mb-3">
-                              <AlertTriangle className="w-6 h-6 text-red-400" />
-                              <h4 className="text-lg font-bold text-red-400 uppercase">Sin Stock Disponible</h4>
-                            </div>
-                            <p className="text-foreground">
-                              No hay stock asignado ni disponible para este producto. Por favor, contacta con el administrador.
-                            </p>
-                          </div>
-                        )}
-                      </>
-                    )}
-
-                    {/* BLOQUE A: Stock Asignado (Happy Path) */}
-                    {cutSuggestions?.best && (
-                      <div className={`rounded-2xl p-6 shadow-lg transition-all ${
-                        selectedMaterial?.id === cutSuggestions.best.id
-                          ? 'bg-green-600/20 border-2 border-green-500 shadow-green-500/30'
-                          : 'bg-card/50 border-2 border-blue-500 shadow-blue-500/20'
-                      }`}>
-                        <div className="flex items-center justify-center gap-3 mb-4">
-                          <h4 className="text-xl font-bold text-foreground uppercase">Stock Asignado</h4>
-                        </div>
-                        
-                        <div className="bg-background/70 rounded-xl p-5 space-y-3 mb-6">
-                          <div className="flex items-center gap-3">
-                            <span className="text-2xl font-bold text-foreground">{cutSuggestions.best.name}</span>
-                          </div>
-                          
-                          <div className="grid grid-cols-2 gap-4 text-base">
-                            <div>
-                              <span className="text-muted-foreground">Longitud:</span>
-                              <span className="font-bold ml-2 text-foreground text-xl">{cutSuggestions.best.length}m</span>
-                            </div>
-                            <div>
-                              <span className="text-muted-foreground">Chapa Restante:</span>
-                              <span className={`font-bold ml-2 text-xl ${
-                                cutSuggestions.best.waste > 0 ? 'text-orange-400' : 'text-green-400'
-                              }`}>
-                                {cutSuggestions.best.waste.toFixed(2)}m
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                      </div>
-                    )}
-
-                    {/* BLOQUE B: Alternativas y Selector Manual (Botón directo a cambiar stock) */}
-                    {((cutSuggestions?.alternatives && cutSuggestions.alternatives.length > 0) || (cutSuggestions?.all && cutSuggestions.all.length > 0)) && (
-                      <button
-                        onClick={async () => {
-                          // Cargar stock antes de abrir el modal
-                          await loadAvailableStockForCutOrder(cutOrder.id, cutOrder)
-                          setShowChangeStockModal(prev => ({ ...prev, [cutOrder.id]: true }))
-                        }}
-                        className="w-full h-14 bg-card/50 hover:bg-card/70 border-2 border-border rounded-2xl text-lg font-bold text-foreground transition-all flex items-center justify-center gap-3"
-                      >
-                        <h5 className="text-xl font-bold text-foreground uppercase">Asignar otro tamaño de corte</h5>
-                        <RefreshCw className="w-5 h-5 text-foreground" />
-                      </button>
-                    )}
-
-                    {/* BLOQUE C: Cantidad a Cortar (Stepper Industrial) */}
-                    <div>
-                      <label className="block text-lg font-bold text-foreground mb-3 uppercase">
-                        {(() => {
-                          const materialSize = selectedMaterial?.length || 0
-                          const productSize = cutOrder.product?.length_meters || 
-                                           parseFloat(cutOrder.product?.code?.match(/\.(\d+),(\d+)$/)?.[0]?.replace('.', '')?.replace(',', '.') || '0') ||
-                                           0
-                          const isCut = materialSize > productSize
-                          return isCut ? 'Cantidad a Cortar:' : 'Cantidad a Recoger:'
-                        })()}
-                      </label>
-                      <div className="mb-4 text-base text-foreground/90 bg-card/50 p-3 rounded-lg">
-                        Pendientes: <span className="font-bold text-foreground text-xl">{cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)}</span> unidades
-                      </div>
-                      
-                      <QuantityStepper
-                        value={parseInt(quantityInputs[cutOrder.id] || '0')}
-                        onChange={(v) => setQuantityInputs(prev => ({ ...prev, [cutOrder.id]: v.toString() }))}
-                        max={cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)}
-                      />
-                      
-                      <p className="text-sm text-muted-foreground mt-3 text-center">
-                        Usa los botones + y − para ajustar la cantidad
-                      </p>
-                    </div>
-
-
-                    {/* Botón Confirmar - GIGANTE */}
-                    <button
-                      onClick={() => handleConfirmCut(cutOrder)}
-                      disabled={!selectedMaterial || isProcessing || !quantityInputs[cutOrder.id] || parseInt(quantityInputs[cutOrder.id]) <= 0}
-                      className="w-full h-20 bg-green-600 hover:bg-green-500 disabled:bg-secondary disabled:cursor-not-allowed text-foreground rounded-2xl font-bold text-2xl uppercase transition-all transform active:scale-95 shadow-lg shadow-green-500/30 disabled:shadow-none"
-                    >
-                      {isProcessing ? 'Procesando...' : (() => {
-                        const materialSize = selectedMaterial?.length || 0
-                        const productSize = cutOrder.product?.length_meters || 
-                                         parseFloat(cutOrder.product?.code?.match(/\.(\d+),(\d+)$/)?.[0]?.replace('.', '')?.replace(',', '.') || '0') ||
-                                         0
-                        const isCut = materialSize > productSize
-                        const actionText = isCut ? 'Confirmar Corte' : 'Confirmar Recogida'
-                        return `${actionText} (${quantityInputs[cutOrder.id] || 0} unidades)`
-                      })()}
-                    </button>
-                  </div>
-                )}
-
-                {/* Contenido para pendiente de confirmación */}
-                {isPendingConfirmation && (
-                  <div className="px-4 pb-4 space-y-4 border-t border-orange-700 pt-4">
-                    <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg p-4">
-                      <div className="flex items-center gap-2 mb-3">
-                        <Package className="w-6 h-6 text-orange-400" />
-                        <h4 className="font-bold text-foreground">RECOGER PIEZA REASIGNADA</h4>
-                      </div>
-                      
-                      <div className="bg-background/50 rounded-lg p-4 space-y-3 mb-4">
-                        <p className="text-foreground">
-                          Esta pieza ha sido reasignada desde otro pedido. Debes recogerla de:
-                        </p>
-                        <div className="bg-orange-900/30 border border-orange-500/50 rounded-lg p-3">
-                          <p className="text-sm text-muted-foreground">Pedido Origen:</p>
-                          <p className="text-lg font-bold text-orange-400">
-                            {cutOrder.reassigned_from_order?.order_number || 'Cargando...'}
-                          </p>
-                        </div>
-                        <div className="text-sm text-foreground/90">
-                          <p>Material: <strong>{cutOrder.product?.code}</strong></p>
-                          <p>Cantidad: <strong>{cutOrder.quantity_requested}m</strong></p>
-                        </div>
-                      </div>
-
-                      <button
-                        onClick={async () => {
-                          try {
-                            const { confirmReassignmentPickup } = await import('@/app/actions/confirm-reassignment')
-                            await confirmReassignmentPickup(cutOrder.id)
-                            toast.success('Recogida confirmada correctamente')
-                            await loadPedido()
-                          } catch (error: any) {
-                            toast.error(error.message || 'Error al confirmar recogida')
-                          }
-                        }}
-                        className="w-full px-6 py-4 bg-orange-600 hover:bg-orange-500 text-foreground rounded-lg font-bold text-lg transition-colors"
-                      >
-                        Confirmar que Recogí la Pieza
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Subórdenes (si existen) - Mostradas al final del contenido expandido */}
-                {cutOrder.sub_orders && cutOrder.sub_orders.length > 0 && (
-                  <div className="border-t-4 border-border bg-background/50 mt-4">
-                    <div className="px-6 py-3 bg-card/50">
-                      <h4 className="text-sm font-bold text-muted-foreground uppercase">↳ Subórdenes de corte ({cutOrder.sub_orders.length})</h4>
-                    </div>
-                    <div className="p-4 space-y-3">
-                      {cutOrder.sub_orders.map((subOrder: any) => {
-                        const isSubExpanded = expandedCutId === subOrder.id
-                        const isSubPending = subOrder.status === 'pendiente'
-                        const isSubCompleted = subOrder.status === 'completada'
-                        const isSubProcessing = processing[subOrder.id]
-
-                        // Calcular remanente si tiene material asignado
-                        // Remanente = Material asignado - Tamaño de la pieza a cortar
-                        const subMaterialLength = subOrder.material_product?.length_meters || 0
-                        const subProductSize = subOrder.product?.length_meters || 0
-                        const subRemnant = subMaterialLength > 0 && subProductSize > 0 
-                          ? (subMaterialLength - subProductSize).toFixed(1)
-                          : null
-
-                        return (
-                          <div
-                            key={subOrder.id}
-                            className={`rounded-lg border-2 transition-all ${
-                              isSubCompleted
-                                ? 'bg-card/30 border-green-500/50'
-                                : isSubExpanded
-                                ? 'bg-card border-blue-500 shadow-lg shadow-blue-500/20'
-                                : 'bg-card/50 border-border'
-                            }`}
-                          >
-                            {/* Header de la suborden */}
-                            <button
-                              onClick={() => isSubPending && toggleCutOrder(subOrder.id, subOrder.product_id, extractSizeFromName(subOrder.product?.name || '') || extractSizeFromCode(subOrder.product?.code || '') || 0)}
-                              disabled={isSubCompleted}
-                              className={`w-full p-4 ${
-                                isSubPending ? 'cursor-pointer hover:bg-muted/50' : 'cursor-default'
-                              } transition-colors`}
-                            >
-                              <div className="space-y-3">
-                                <div className="flex items-start justify-between gap-4">
-                                  <div className="flex items-center gap-2 flex-1">
-                                    <span className="text-xs text-muted-foreground">{subOrder.cut_number}</span>
-                                    {isSubPending && (
-                                      isSubExpanded ? <ChevronUp className="w-5 h-5 text-blue-400" /> : <ChevronDown className="w-5 h-5 text-muted-foreground" />
-                                    )}
-                                  </div>
-                                  <Badge variant={isSubCompleted ? 'success' : 'warning'} className="rounded-full px-3 py-1">
-                                    {isSubCompleted ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
-                                    {isSubCompleted ? 'Completada' : 'Pendiente'}
-                                  </Badge>
-                                </div>
-
-                                {subOrder.material_product && (
-                                  <div className="flex items-center justify-between gap-2">
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-xs text-muted-foreground">Material:</span>
-                                      <span className="text-sm text-blue-400 font-semibold">
-                                        {subOrder.material_product.name}
-                                      </span>
-                                    </div>
-                                    {subRemnant && parseFloat(subRemnant) > 0 && (
-                                      <span className="text-xs text-orange-400 font-semibold">
-                                        Remanente: {subRemnant}m
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
-
-                                <div className="space-y-1">
-                                  <div className="flex items-center justify-between text-xs">
-                                    <span className="text-muted-foreground">Progreso</span>
-                                    <span className="text-foreground font-bold">
-                                      {(subOrder.quantity_cut || 0) - (subOrder.quantity_delivered || 0)}/{subOrder.quantity_requested - (subOrder.quantity_delivered || 0)}
-                                    </span>
-                                  </div>
-                                  <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-                                    <div
-                                      className={`h-full rounded-full transition-all duration-500 ${
-                                        (subOrder.quantity_cut || 0) - (subOrder.quantity_delivered || 0) >= subOrder.quantity_requested - (subOrder.quantity_delivered || 0)
-                                          ? 'bg-green-500'
-                                          : (subOrder.quantity_cut || 0) - (subOrder.quantity_delivered || 0) > 0
-                                          ? 'bg-yellow-500'
-                                          : 'bg-secondary'
-                                      }`}
-                                      style={{
-                                        width: `${Math.min((((subOrder.quantity_cut || 0) - (subOrder.quantity_delivered || 0)) / (subOrder.quantity_requested - (subOrder.quantity_delivered || 0))) * 100, 100)}%`
-                                      }}
-                                    />
-                                  </div>
-                                </div>
-                              </div>
-                            </button>
-
-                            {/* Contenido expandido de la suborden */}
-                            {isSubExpanded && isSubPending && (
-                              <div className="px-4 pb-4 space-y-4 border-t border-border pt-4">
-                                {/* Información del material y remanente */}
-                                {subOrder.material_product && (
-                                  <div className="bg-background/50 rounded-xl p-4 border border-border">
-                                    <div className="grid grid-cols-2 gap-4 text-sm">
-                                      <div>
-                                        <span className="text-muted-foreground">Material asignado:</span>
-                                        <p className="font-bold text-foreground text-base">{subOrder.material_product.name}</p>
-                                      </div>
-                                      <div>
-                                        <span className="text-muted-foreground">Longitud:</span>
-                                        <p className="font-bold text-foreground text-base">{subMaterialLength}m</p>
-                                      </div>
-                                      {subRemnant && parseFloat(subRemnant) > 0 && (
-                                        <>
-                                          <div>
-                                            <span className="text-muted-foreground">Remanente generado:</span>
-                                            <p className="font-bold text-orange-400 text-base">{subRemnant}m</p>
-                                          </div>
-                                          <div>
-                                            <span className="text-muted-foreground">Chapa Restante:</span>
-                                            <p className={`font-bold text-base ${
-                                              parseFloat(subRemnant) > 1 ? 'text-orange-400' : 'text-green-400'
-                                            }`}>
-                                              {parseFloat(subRemnant) > 1 ? 'Alto' : 'Bajo'}
-                                            </p>
-                                          </div>
-                                        </>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-
-                                <div>
-                                  <label className="block text-base font-bold text-foreground mb-2 uppercase">
-                                    {(() => {
-                                      const materialSize = selectedMaterial?.length || 0
-                                      const productSize = cutOrder.product?.length_meters || 
-                                                       parseFloat(cutOrder.product?.code?.match(/\.(\d+),(\d+)$/)?.[0]?.replace('.', '')?.replace(',', '.') || '0') ||
-                                                       0
-                                      const isCut = materialSize > productSize
-                                      return isCut ? 'Cantidad a Cortar:' : 'Cantidad a Recoger:'
-                                    })()}
-                                  </label>
-                                  <QuantityStepper
-                                    value={parseInt(quantityInputs[subOrder.id] || '0')}
-                                    onChange={(v) => setQuantityInputs(prev => ({ ...prev, [subOrder.id]: v.toString() }))}
-                                    max={subOrder.quantity_requested - (subOrder.quantity_cut || 0)}
-                                  />
-                                </div>
-
-                                <button
-                                  onClick={() => handleConfirmCut(subOrder)}
-                                  disabled={!quantityInputs[subOrder.id] || parseInt(quantityInputs[subOrder.id]) < 1 || isSubProcessing}
-                                  className="w-full h-20 bg-green-600 hover:bg-green-700 disabled:bg-secondary disabled:cursor-not-allowed text-foreground font-bold text-2xl rounded-2xl transition-all transform active:scale-95 shadow-lg uppercase"
-                                >
-                                  {isSubProcessing ? 'Procesando...' : 'Confirmar Corte'}
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )
-          })
-        ) : (
-          <div className="bg-card/50 rounded-lg p-12 border border-border text-center">
-            <p className="text-muted-foreground text-lg">
-              No hay órdenes de corte para este pedido
-            </p>
-          </div>
-        )}
-
-        {/* Sección de Artículos a Preparar */}
-        {/* Se muestran también las preparaciones sin stock asignado (pedidos aprobados en pausa): el operario puede prepararlas igual */}
-        {pedido.preparation_items && pedido.preparation_items.length > 0 && (
-          <div className="mt-8 space-y-4">
-            <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
-              <Package className="w-6 h-6" />
-              Artículos a Preparar
-            </h2>
-            
-            {pedido.preparation_items
-              .map((item: any) => {
-              const isCompleted = item.status === 'completada'
-              const progress = (item.quantity_prepared / item.quantity_requested) * 100
-              const remaining = item.quantity_requested - item.quantity_prepared
-
+          {cuts.length === 0 && <div className={cn('rounded-2xl border p-6 text-lg', P.card, P.border, P.muted)}>Este pedido no tiene chapas que cortar.</div>}
+          {cuts.map(cut => {
+            const state = cutCardState(cut)
+            const isActive = activeCut?.id === cut.id
+            if (isActive) {
               return (
-                <div
-                  key={item.id}
-                  className={`rounded-lg border-2 p-6 ${
-                    isCompleted
-                      ? 'bg-card/50 border-green-500'
-                      : 'bg-card/70 border-blue-500'
-                  }`}
-                >
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <Package className={`w-6 h-6 ${isCompleted ? 'text-green-500' : 'text-blue-500'}`} />
-                      <div>
-                        <h3 className="text-lg font-bold text-foreground">{item.product.name}</h3>
-                        <p className="text-sm text-muted-foreground">{item.product.code}</p>
-                      </div>
-                    </div>
-                    {isCompleted && (
-                      <CheckCircle2 className="w-7 h-7 text-green-500" />
-                    )}
-                  </div>
+                <ActiveCutCard
+                  key={cut.id}
+                  cut={cut}
+                  rows={stockByCut[cut.id]}
+                  qty={qty[cut.id]}
+                  onQty={v => setQty(prev => ({ ...prev, [cut.id]: v }))}
+                  busy={busy === cut.id}
+                  onCut={() => handleCut(cut)}
+                  onChange={() => openChange(cut)}
+                />
+              )
+            }
+            return (
+              <CutRow
+                key={cut.id}
+                cut={cut}
+                state={state}
+                busy={busy === cut.id || busy === 'note'}
+                onSelect={() => setActiveCutId(cut.id)}
+                onConfirm={() => handleConfirmPickup(cut)}
+                onNotify={() => sendNote(`Falta chapa para ${cut.product?.code || cut.product?.name} (${cut.cut_number || 'corte'}). Avisad cuando esté asignada.`, 'Aviso enviado al admin')}
+              />
+            )
+          })}
+        </section>
 
-                  {/* Progreso */}
-                  <div className="mb-4">
-                    <div className="flex justify-between text-sm mb-2">
-                      <span className="text-foreground/90 font-medium">Progreso</span>
-                      <span className="text-muted-foreground">
-                        {item.quantity_prepared} / {item.quantity_requested} unidades
-                      </span>
+        <aside className="flex flex-col gap-4">
+          <div className={cn('flex flex-col gap-3 rounded-2xl border p-4', P.card, P.border)}>
+            <Label tone="blue">Para preparar · {preps.length}</Label>
+            {preps.length === 0 && <div className={cn('text-base', P.muted)}>Nada que preparar en este pedido.</div>}
+            {preps.map(item => {
+              const total = n(item.quantity_requested), doneQ = n(item.quantity_prepared)
+              const remaining = total - doneQ
+              const value = Math.min(qty[item.id] ?? remaining, remaining) || remaining
+              const finished = remaining <= 0
+              return (
+                <div key={item.id} className={cn('flex flex-col gap-3 rounded-xl border p-3', P.border, P.panel)}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className={cn('text-lg font-bold leading-tight', P.text)}>{item.product?.name}</div>
+                      <div className={cn('text-[15px]', P.muted)}>{item.product?.code}{!item.assigned_inventory && !finished && ' · sin stock asignado, prepara lo que haya'}</div>
                     </div>
-                    <div className="w-full bg-muted rounded-full h-3">
-                      <div
-                        className={`h-3 rounded-full transition-all ${
-                          isCompleted ? 'bg-green-500' : 'bg-blue-500'
-                        }`}
-                        style={{ width: `${progress}%` }}
-                      />
-                    </div>
+                    <span className={cn('shrink-0 text-lg font-bold tabular-nums', finished ? 'text-[#4ade80]' : P.soft)}>{doneQ}/{total}</span>
                   </div>
-
-                  {/* Stock disponible */}
-                  {item.assigned_inventory ? (
-                    <div className="text-sm text-muted-foreground mb-4">
-                      Stock disponible: {item.assigned_inventory.stock_disponible} unidades
-                    </div>
+                  {finished ? (
+                    <div className="inline-flex items-center gap-2 text-base font-semibold text-[#4ade80]"><Check className="h-5 w-5" /> Preparado</div>
                   ) : (
-                    <div className="text-sm text-amber-400 mb-4">
-                      Sin stock asignado en el sistema: prepara lo que haya físicamente
-                    </div>
-                  )}
-
-                  {/* Selector de cantidad y botón */}
-                  {!isCompleted && (
-                    <div className="space-y-3">
-                      <label className="text-sm font-medium text-foreground/90">
-                        Cantidad a preparar ({remaining} restantes):
-                      </label>
-                      <QuantityStepper
-                        size="sm"
-                        value={parseInt(quantityInputs[item.id] || '1')}
-                        onChange={(v) => setQuantityInputs(prev => ({ ...prev, [item.id]: v.toString() }))}
-                        max={remaining}
-                      />
-
-                      <button
-                        onClick={async () => {
-                          const quantity = parseInt(quantityInputs[item.id] || '1')
-
-                          if (quantity <= 0 || quantity > remaining) {
-                            toast.error('Cantidad inválida')
-                            return
-                          }
-
-                          try {
-                            const { prepareItem } = await import('@/app/actions/preparation')
-                            await prepareItem(item.id, quantity, operator?.id)
-                            await loadPedido()
-                          } catch (error: any) {
-                            toast.error(error.message || 'Error al preparar artículo')
-                          }
-                        }}
-                        className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-500 text-foreground rounded-lg font-semibold text-lg transition-colors"
-                      >
-                        Marcar como Preparado
-                      </button>
-                    </div>
-                  )}
-
-                  {isCompleted && (
-                    <div className="flex items-center justify-center gap-2 py-3 text-green-500 font-semibold text-lg">
-                      <CheckCircle2 className="w-5 h-5" />
-                      Artículo completamente preparado
+                    <div className="flex items-center justify-between gap-3">
+                      <PlantaStepper size="md" value={value} onChange={v => setQty(prev => ({ ...prev, [item.id]: v }))} min={1} max={remaining} />
+                      <BigButton tone="blue" className="h-14 flex-1" disabled={busy === item.id} onClick={() => handlePrepare(item)}>
+                        {busy === item.id ? '...' : `Preparar ${value}`}
+                      </BigButton>
                     </div>
                   )}
                 </div>
               )
             })}
           </div>
-        )}
-      </div>
 
-      {/* Modal de Cambio de Stock */}
-      {pedido?.cut_orders?.map((cutOrder: any) => (
-        showChangeStockModal[cutOrder.id] && (
-          <div key={cutOrder.id} className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-            <div className="bg-background rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col border-2 border-border">
-              {/* Header */}
-              <div className="p-6 border-b border-border">
-                <h3 className="text-2xl font-bold text-foreground mb-2">Cambiar Stock Asignado</h3>
-                <p className="text-muted-foreground">
-                  Orden: <strong>{cutOrder.cut_number}</strong> - {cutOrder.product?.name}
-                </p>
+          <div className={cn('flex flex-col gap-2 rounded-2xl border p-4', P.card, P.border)}>
+            <Label>Último movimiento</Label>
+            {activity.activity.length === 0 && <div className={cn('text-base', P.muted)}>Todavía no se ha cortado ni preparado nada.</div>}
+            {activity.activity.slice(0, 3).map((a, i) => (
+              <div key={i} className="flex gap-3 text-[15px]">
+                <span className={cn('shrink-0 tabular-nums', P.muted)}>{hora(a.created_at)}</span>
+                <span className={P.soft}>{a.description}</span>
               </div>
+            ))}
+          </div>
 
-              {/* Contenido */}
-              <div className="p-6 overflow-y-auto flex-1">
-                {loadingStock[cutOrder.id] ? (
-                  <div className="text-center py-12">
-                    <div className="text-foreground text-lg">Cargando stock disponible...</div>
-                  </div>
-                ) : (
-                  <>
-                    {/* Selector de cantidad */}
-                    <div className="mb-6">
-                      <label className="block text-foreground font-semibold mb-2">
-                        Cantidad de chapas a cambiar:
-                      </label>
-                      <div className="flex items-center gap-3">
-                        <button
-                          onClick={() => {
-                            const currentValue = quantityToChange[cutOrder.id] || cutOrder.quantity_requested
-                            const newValue = Math.max(1, currentValue - 1)
-                            setQuantityToChange(prev => ({ ...prev, [cutOrder.id]: newValue }))
-                          }}
-                          disabled={(quantityToChange[cutOrder.id] || cutOrder.quantity_requested) <= 1}
-                          className="w-14 h-14 bg-muted hover:bg-secondary disabled:bg-card disabled:cursor-not-allowed text-foreground rounded-xl text-2xl font-bold transition-colors border-2 border-border"
-                        >
-                          -
-                        </button>
-                        <input
-                          type="number"
-                          min="1"
-                          max={cutOrder.quantity_requested}
-                          value={quantityToChange[cutOrder.id] || cutOrder.quantity_requested}
-                          onChange={(e) => {
-                            const value = parseInt(e.target.value) || 1
-                            setQuantityToChange(prev => ({ ...prev, [cutOrder.id]: Math.min(Math.max(1, value), cutOrder.quantity_requested) }))
-                          }}
-                          className="flex-1 p-4 bg-card border-2 border-border rounded-xl text-foreground text-lg text-center focus:border-amber-500 focus:outline-none"
-                        />
-                        <button
-                          onClick={() => {
-                            const currentValue = quantityToChange[cutOrder.id] || cutOrder.quantity_requested
-                            const newValue = Math.min(cutOrder.quantity_requested, currentValue + 1)
-                            setQuantityToChange(prev => ({ ...prev, [cutOrder.id]: newValue }))
-                          }}
-                          disabled={(quantityToChange[cutOrder.id] || cutOrder.quantity_requested) >= cutOrder.quantity_requested}
-                          className="w-14 h-14 bg-muted hover:bg-secondary disabled:bg-card disabled:cursor-not-allowed text-foreground rounded-xl text-2xl font-bold transition-colors border-2 border-border"
-                        >
-                          +
-                        </button>
-                      </div>
-                      <p className="text-muted-foreground text-sm mt-1">
-                        Máximo: {cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)} chapas (sin cortar)
-                      </p>
-                    </div>
-
-                    <div className="mb-4">
-                      <p className="text-muted-foreground text-sm mb-2">
-                        Stock disponible para <strong>{cutOrder.product?.code}</strong>:
-                      </p>
-                    </div>
-
-                    {availableStock[cutOrder.id]?.length > 0 ? (
-                      <div className="grid grid-cols-2 gap-3">
-                        {availableStock[cutOrder.id].map((stock: any) => {
-                          const product = Array.isArray(stock.product) ? stock.product[0] : stock.product
-                          const size = extractSizeFromCode(product?.code || '')
-                          const isSelected = selectedStock[cutOrder.id]?.id === stock.id
-                          const isCurrent = stock.product_id === cutOrder.material_base_id
-
-                          return (
-                            <button
-                              key={stock.id}
-                              onClick={() => setSelectedStock(prev => ({ ...prev, [cutOrder.id]: stock }))}
-                              className={`p-4 rounded-xl border-2 transition-all ${
-                                isSelected
-                                  ? 'bg-card border-amber-500 shadow-lg'
-                                  : isCurrent
-                                  ? 'bg-card border-blue-500'
-                                  : 'bg-card border-border hover:bg-muted'
-                              }`}
-                            >
-                              <div className="text-center">
-                                <div className="text-xl font-bold text-foreground mb-1">
-                                  {product?.code}
-                                </div>
-                                <div className="text-muted-foreground text-sm">
-                                  {size}m
-                                </div>
-                                <div className="text-muted-foreground text-xs mt-1">
-                                  Disponible: {stock.stock_disponible}
-                                </div>
-                                {isCurrent && (
-                                  <div className="flex items-center gap-1 text-blue-400 text-xs mt-1 font-semibold">
-                                    <CheckCircle2 className="w-3 h-3" />
-                                    Actual
-                                  </div>
-                                )}
-                              </div>
-                            </button>
-                          )
-                        })}
-                      </div>
-                    ) : (
-                      <div className="text-center py-8 text-muted-foreground">
-                        No hay stock disponible para este producto
-                      </div>
-                    )}
-                  </>
-                )}
+          <div className={cn('flex items-center gap-3 rounded-2xl border p-4', P.card, P.border)}>
+            <span className={cn('inline-block h-3 w-3 shrink-0 rounded-full', evo.failed ? 'bg-red-500' : evo.pending ? 'bg-[#f59e0b]' : 'bg-[#16a34a]')} />
+            <div className="min-w-0">
+              <div className={cn('text-base font-semibold', P.text)}>
+                {evo.failed ? `${evo.failed} aviso${evo.failed > 1 ? 's' : ''} a EVO sin enviar` : evo.pending ? `${evo.pending} aviso${evo.pending > 1 ? 's' : ''} a EVO en cola` : 'EVO al día'}
               </div>
-
-              {/* Footer */}
-              <div className="p-6 border-t border-border flex gap-3">
-                <button
-                  onClick={() => setShowChangeStockModal(prev => ({ ...prev, [cutOrder.id]: false }))}
-                  className="flex-1 px-6 py-3 bg-muted hover:bg-secondary text-foreground rounded-xl font-semibold text-lg transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={() => handleStockChange(cutOrder.id, cutOrder)}
-                  disabled={!selectedStock[cutOrder.id] || processing[cutOrder.id]}
-                  className="flex-1 px-6 py-3 bg-amber-600 hover:bg-amber-500 disabled:bg-muted disabled:cursor-not-allowed text-foreground rounded-xl font-semibold text-lg transition-colors"
-                >
-                  {processing[cutOrder.id] ? 'Procesando...' : 'Confirmar Cambio'}
-                </button>
-              </div>
+              <div className={cn('text-[14px]', P.muted)}>{evo.failed ? 'El admin lo ve en su panel; tú puedes seguir cortando.' : evo.pending ? 'Se envían solos en unos segundos.' : 'Todo lo registrado está avisado.'}</div>
             </div>
           </div>
-        )
-      ))}
+        </aside>
+      </main>
+
+      {done && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0b1220]/85 p-6" onClick={() => setDone(null)}>
+          <div className={cn('flex w-full max-w-[560px] flex-col items-center gap-5 rounded-3xl border p-10 text-center', P.panel, P.border)} onClick={e => e.stopPropagation()}>
+            <span className="inline-flex h-24 w-24 items-center justify-center rounded-full bg-[#16a34a]"><Check className="h-14 w-14 text-white" strokeWidth={3} /></span>
+            <div className={cn('text-[34px] font-extrabold', P.text)}>{done.title}</div>
+            <div className="flex flex-col gap-1.5">
+              {done.lines.map((l, i) => <div key={i} className={cn(i === 0 ? cn('text-2xl font-bold', P.text) : cn('text-lg', P.soft))}>{l}</div>)}
+            </div>
+            <div className="mt-2 flex w-full flex-col gap-3">
+              <BigButton tone="green" className="h-16 text-xl" onClick={() => setDone(null)}>Seguir con este pedido</BigButton>
+              <BigButton tone="ghost" onClick={() => router.push('/planta/pedidos')}>Volver a la lista</BigButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {changeFor && (
+        <ChangeSheetModal
+          cut={changeFor}
+          rows={stockByCut[changeFor.id] || []}
+          selected={changeRow}
+          onSelect={setChangeRow}
+          qty={changeQty}
+          onQty={setChangeQty}
+          busy={busy === changeFor.id}
+          onClose={() => setChangeFor(null)}
+          onConfirm={handleChange}
+        />
+      )}
+
+      {showNotes && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-[#0b1220]/70" onClick={() => setShowNotes(false)}>
+          <div className={cn('flex h-full w-full max-w-[460px] flex-col border-l', P.panel, P.border)} onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-[#1e293b] px-5 py-4">
+              <div className={cn('text-xl font-bold', P.text)}>Notas del pedido</div>
+              <button type="button" onClick={() => setShowNotes(false)} aria-label="Cerrar notas" className={cn('inline-flex h-12 w-12 items-center justify-center rounded-xl border', P.border, P.card, P.muted)}><X className="h-6 w-6" /></button>
+            </div>
+            <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
+              {notes.length === 0 && <div className={cn('text-base', P.muted)}>El admin no ha dejado notas en este pedido.</div>}
+              {notes.map(note => {
+                const mine = String(note.created_by_name || '').endsWith('(planta)')
+                return (
+                  <div key={note.id} className={cn('flex flex-col gap-2 rounded-xl border p-4', mine ? cn(P.border, P.card) : note.read_at ? cn(P.border, P.card) : 'border-[#f59e0b] bg-[#f59e0b]/10')}>
+                    <div className={cn('text-[17px] leading-snug', P.text)}>{note.content}</div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className={cn('text-[14px]', P.muted)}>{note.created_by_name || 'Admin'} · {hora(note.created_at)}</span>
+                      {!mine && !note.read_at && <BigButton tone="amber" className="h-12 px-5" onClick={() => handleMarkRead(note.id)}>Leída</BigButton>}
+                      {!mine && note.read_at && <span className="inline-flex items-center gap-1 text-[14px] text-[#4ade80]"><Check className="h-4 w-4" /> Leída</span>}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="border-t border-[#1e293b] px-5 py-4">
+              <Label>Responder al admin</Label>
+              <div className="mt-3 grid grid-cols-2 gap-2.5">
+                {QUICK_REPLIES.map(r => (
+                  <BigButton key={r} tone="ghost" className="h-14 text-[15px]" disabled={busy === 'note'} onClick={() => sendNote(r, 'Respuesta enviada')}>{r}</BigButton>
+                ))}
+              </div>
+              {adminNotes.length === 0 && <div className={cn('mt-3 text-[14px]', P.muted)}>El admin verá tu respuesta en el detalle del pedido.</div>}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ActiveCutCard({ cut, rows, qty, onQty, busy, onCut, onChange }: {
+  cut: any
+  rows?: any[]
+  qty?: number
+  onQty: (v: number) => void
+  busy: boolean
+  onCut: () => void
+  onChange: () => void
+}) {
+  const total = n(cut.quantity_requested), doneQ = n(cut.quantity_cut)
+  const remaining = total - doneQ
+  const value = Math.min(qty ?? remaining, remaining) || remaining
+  const materialLength = productLength(cut.material_product)
+  const pieceLength = productLength(cut.product)
+  const plan = cutPlan(materialLength, pieceLength)
+  const assigned = rows?.find(r => r.product_id === cut.material_base_id)
+  const otherOptions = (rows || []).filter(r => r.product_id !== cut.material_base_id).length
+
+  return (
+    <div className={cn('flex flex-col gap-5 rounded-2xl border-2 border-[#f59e0b] p-6', P.card)}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className={cn('text-[30px] font-extrabold leading-tight', P.text)}>{cut.product?.name || cut.product?.code}</div>
+          <div className={cn('text-lg', P.muted)}>{cut.product?.code}{cut.cut_number ? ` · ${cut.cut_number}` : ''}</div>
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <Label tone="amber">{doneQ > 0 ? 'Cortando' : 'Por empezar'}</Label>
+          <span className={cn('text-2xl font-extrabold tabular-nums', P.text)}>{doneQ}/{total}</span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <Box label="Coger del estante" value={cut.material_product?.code || '—'} hint={materialLength ? `Chapa de ${formatMeters(materialLength)}${assigned ? ` · ${n(assigned.stock_disponible)} disponibles` : rows ? ' · sin stock en el sistema' : ''}` : 'Sin largo conocido'} warn={!!rows && !assigned} />
+        <Box label="Cortar a" value={pieceLength ? formatMeters(pieceLength) : '—'} hint={`${value} ${value === 1 ? 'pieza' : 'piezas'}, una por chapa`} />
+        <Box label="Sobrante" value={plan.exact ? 'Ninguno' : materialLength ? formatMeters(plan.remnant) : '—'} hint={plan.exact ? 'Chapa exacta' : `por chapa · ${value} × ${formatMeters(plan.remnant)} al estante`} tone={plan.exact ? 'green' : 'default'} />
+      </div>
+
+      {rows && !assigned && (
+        <div className="rounded-xl border border-[#f59e0b]/60 bg-[#f59e0b]/10 px-4 py-3 text-base text-[#fbbf24]">
+          Esta chapa no aparece con stock en el sistema. Si la tienes en el estante, corta igual; si no, elige otra o avisa al admin.
+        </div>
+      )}
+
+      <div className="flex items-center gap-4">
+        <div className="flex flex-col gap-1.5">
+          <Label>Cuántas cortas ahora</Label>
+          <PlantaStepper value={value} onChange={onQty} min={1} max={remaining} />
+        </div>
+        <BigButton tone="green" className="h-[72px] flex-1 text-[22px]" disabled={busy || remaining <= 0 || !cut.material_base_id} onClick={onCut}>
+          {busy ? 'Registrando...' : `Confirmar corte de ${value}`}
+        </BigButton>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <BigButton tone="ghost" className="h-12" disabled={!rows || otherOptions === 0} onClick={onChange}>
+          Usar otra chapa{rows && otherOptions > 0 ? ` (${otherOptions})` : ''}
+        </BigButton>
+        <span className={cn('text-[15px]', P.muted)}>{remaining === 1 ? 'Queda 1 pieza' : `Quedan ${remaining} piezas`}</span>
+      </div>
+    </div>
+  )
+}
+
+function Box({ label, value, hint, tone = 'default', warn }: { label: string; value: string; hint?: string; tone?: 'default' | 'green'; warn?: boolean }) {
+  return (
+    <div className={cn('flex flex-col gap-1 rounded-xl border p-4', P.panel, warn ? 'border-[#f59e0b]/60' : P.border)}>
+      <Label>{label}</Label>
+      <div className={cn('text-[26px] font-extrabold leading-tight', tone === 'green' ? 'text-[#4ade80]' : P.text)}>{value}</div>
+      {hint && <div className={cn('text-[14px] leading-snug', warn ? 'text-[#fbbf24]' : P.muted)}>{hint}</div>}
+    </div>
+  )
+}
+
+function CutRow({ cut, state, busy, onSelect, onConfirm, onNotify }: {
+  cut: any
+  state: CutCardState
+  busy: boolean
+  onSelect: () => void
+  onConfirm: () => void
+  onNotify: () => void
+}) {
+  const total = n(cut.quantity_requested), doneQ = n(cut.quantity_cut)
+  const label = STATE_LABEL[state]
+  const selectable = state === 'cortando' || state === 'por_empezar'
+  const Wrapper: any = selectable ? 'button' : 'div'
+
+  return (
+    <Wrapper
+      type={selectable ? 'button' : undefined}
+      onClick={selectable ? onSelect : undefined}
+      className={cn('flex flex-col gap-3 rounded-2xl border p-5 text-left', P.card, state === 'confirmar_recogida' ? 'border-[#f59e0b]' : state === 'terminada' ? 'border-[#16a34a]/50' : P.border, selectable && 'hover:border-[#f59e0b]/60 active:bg-[#162138]')}
+    >
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <div className={cn('text-[22px] font-bold leading-tight', state === 'terminada' ? P.soft : P.text)}>{cut.product?.name || cut.product?.code}</div>
+          <div className={cn('text-base', P.muted)}>
+            {cut.product?.code}{cut.material_product?.code ? ` · de ${cut.material_product.code}` : ''}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-4">
+          <div className="flex flex-col items-end">
+            <Label tone={label.tone}>{label.text}</Label>
+            <span className={cn('text-xl font-bold tabular-nums', state === 'terminada' ? 'text-[#4ade80]' : P.text)}>{doneQ}/{total}</span>
+          </div>
+          {selectable && <ChevronRight className={cn('h-7 w-7', P.muted)} />}
+          {state === 'terminada' && <Check className="h-7 w-7 text-[#4ade80]" />}
+        </div>
+      </div>
+
+      {state === 'confirmar_recogida' && (
+        <div className="flex flex-col gap-3">
+          <div className={cn('text-base', P.soft)}>Esta pieza viene ya cortada del pedido <b className={P.text}>{cut.reassigned_from_order?.order_number || '—'}</b>. Cógela de ahí y confirma.</div>
+          <BigButton tone="amber" className="h-16 text-xl" disabled={busy} onClick={onConfirm}>{busy ? '...' : 'Confirmar recogida'}</BigButton>
+        </div>
+      )}
+
+      {state === 'sin_chapa' && (
+        <div className="flex items-center justify-between gap-3">
+          <div className={cn('text-base', P.muted)}>El admin aún no ha asignado chapa. No hay nada que cortar todavía.</div>
+          <BigButton tone="outline-amber" className="h-12 shrink-0" disabled={busy} onClick={onNotify}>Avisar al admin</BigButton>
+        </div>
+      )}
+    </Wrapper>
+  )
+}
+
+function ChangeSheetModal({ cut, rows, selected, onSelect, qty, onQty, busy, onClose, onConfirm }: {
+  cut: any
+  rows: any[]
+  selected: any | null
+  onSelect: (r: any) => void
+  qty: number
+  onQty: (v: number) => void
+  busy: boolean
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  const pieceLength = productLength(cut.product)
+  const remaining = n(cut.quantity_requested) - n(cut.quantity_cut)
+  const options = sortByRemnant(
+    rows.filter(r => r.product_id !== cut.material_base_id).map(r => ({ ...r, code: r.product?.code || '', stock_disponible: n(r.stock_disponible) })),
+    pieceLength,
+  )
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0b1220]/85 p-6" onClick={onClose}>
+      <div className={cn('flex max-h-[90vh] w-full max-w-[760px] flex-col rounded-3xl border', P.panel, P.border)} onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-4 border-b border-[#1e293b] px-6 py-5">
+          <div>
+            <div className={cn('text-2xl font-bold', P.text)}>Usar otra chapa</div>
+            <div className={cn('text-base', P.muted)}>Para {cut.product?.code} ({formatMeters(pieceLength)}). Ahora: {cut.material_product?.code || '—'}. Ordenadas por menos sobrante.</div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Cerrar" className={cn('inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border', P.border, P.card, P.muted)}><X className="h-6 w-6" /></button>
+        </div>
+        <div className="flex-1 space-y-2.5 overflow-y-auto px-6 py-4">
+          {options.length === 0 && <div className={cn('text-lg', P.muted)}>No hay otra chapa de esta familia con stock.</div>}
+          {options.map(r => {
+            const len = extractSizeFromCode(r.code)
+            const plan = cutPlan(len, pieceLength)
+            const active = selected?.id === r.id
+            return (
+              <button key={r.id} type="button" onClick={() => onSelect(r)} className={cn('flex w-full items-center justify-between gap-4 rounded-2xl border p-4 text-left', active ? 'border-[#f59e0b] bg-[#f59e0b]/10' : cn(P.border, P.card))}>
+                <div>
+                  <div className={cn('text-xl font-bold', P.text)}>{r.code}</div>
+                  <div className={cn('text-[15px]', P.muted)}>Chapa de {formatMeters(len)} · {r.stock_disponible} disponibles</div>
+                </div>
+                <div className="text-right">
+                  <Label tone={plan.exact ? 'green' : 'muted'}>Sobrante</Label>
+                  <div className={cn('text-xl font-extrabold', plan.exact ? 'text-[#4ade80]' : P.text)}>{plan.exact ? 'Ninguno' : formatMeters(plan.remnant)}</div>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+        <div className="flex items-center justify-between gap-4 border-t border-[#1e293b] px-6 py-5">
+          <div className="flex flex-col gap-1.5">
+            <Label>Piezas con la chapa nueva</Label>
+            <PlantaStepper size="md" value={Math.min(qty, remaining) || 1} onChange={onQty} min={1} max={remaining} />
+          </div>
+          <BigButton tone="green" className="h-16 flex-1 text-xl" disabled={!selected || busy} onClick={onConfirm}>
+            {busy ? 'Cambiando...' : selected ? `Cambiar a ${selected.product?.code}` : 'Elige una chapa'}
+          </BigButton>
+        </div>
+      </div>
     </div>
   )
 }

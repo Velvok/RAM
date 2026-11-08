@@ -51,6 +51,34 @@ export async function createOrderNote(orderId: string, content: string): Promise
   return data
 }
 
+/**
+ * Nota escrita desde planta (respuesta rápida o aviso al admin). Queda marcada
+ * como leída por el propio operario para que en el admin no cuente como pendiente.
+ */
+export async function createPlantaNote(orderId: string, content: string): Promise<OrderNote> {
+  const actor = await requireStaff()
+  const text = String(content || '').trim().slice(0, 500)
+  if (!text) throw new Error('La nota está vacía')
+  const supabase = createAdminClient()
+  let name = 'Planta'
+  if (actor.kind === 'operator') {
+    const { data } = await supabase.from('users').select('full_name').eq('id', actor.operatorId).maybeSingle()
+    if (data?.full_name) name = data.full_name
+  } else if (actor.kind === 'admin') {
+    const { data } = await supabase.from('users').select('full_name').eq('id', actor.userId).maybeSingle()
+    if (data?.full_name) name = data.full_name
+  }
+  const now = new Date().toISOString()
+  const { data, error } = await supabase
+    .from('order_notes')
+    .insert({ order_id: orderId, content: text, created_by: null, created_by_name: `${name} (planta)`, read_at: now, read_by_operator_name: name })
+    .select()
+    .single()
+  if (error) throw error
+  revalidatePath(`/admin/pedidos/${orderId}`)
+  return data
+}
+
 export async function getOrderNotes(orderId: string): Promise<OrderNote[]> {
   await requireStaff()
 

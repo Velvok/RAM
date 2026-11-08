@@ -72,14 +72,19 @@ export async function getOrdersForPlanta() {
         status,
         quantity_requested,
         quantity_cut,
-        material_base_id
+        material_base_id,
+        product:products!cut_orders_product_id_fkey(code)
       ),
       preparation_items!preparation_items_order_id_fkey(
         id,
-        assigned_inventory_id
+        status,
+        quantity_requested,
+        quantity_prepared,
+        assigned_inventory_id,
+        product:products(code)
       )
     `)
-    .in('status', ['aprobado', 'aprobado_en_pausa', 'en_corte', 'finalizado', 'modificado', 'parcialmente_entregado'])
+    .in('status', ['aprobado', 'en_corte', 'finalizado', 'modificado', 'parcialmente_entregado'])
     .order('created_at', { ascending: false })
 
   if (activeError) throw activeError
@@ -94,11 +99,16 @@ export async function getOrdersForPlanta() {
         status,
         quantity_requested,
         quantity_cut,
-        material_base_id
+        material_base_id,
+        product:products!cut_orders_product_id_fkey(code)
       ),
       preparation_items!preparation_items_order_id_fkey(
         id,
-        assigned_inventory_id
+        status,
+        quantity_requested,
+        quantity_prepared,
+        assigned_inventory_id,
+        product:products(code)
       )
     `)
     .eq('status', 'aprobado_en_pausa')
@@ -286,4 +296,37 @@ export async function getProductById(productId: string) {
 
   if (error) throw error
   return data
+}
+
+/**
+ * Para la tablet: últimos movimientos del pedido y estado de sus envíos a EVO.
+ * Se usa en el detalle de planta (bloque "último movimiento" y aviso de cola).
+ */
+export async function getPlantaOrderActivity(orderId: string) {
+  await requireStaff()
+  const supabase = createAdminClient()
+  const [activityRes, cutsRes, prepsRes] = await Promise.all([
+    supabase
+      .from('order_activity_log')
+      .select('activity_type, description, metadata, created_at')
+      .eq('order_id', orderId)
+      .in('activity_type', ['cut_completed', 'item_prepared', 'reassignment_confirmed', 'reassign_in', 'stock_assigned'])
+      .order('created_at', { ascending: false })
+      .limit(5),
+    supabase.from('cut_orders').select('id').eq('order_id', orderId),
+    supabase.from('preparation_items').select('id').eq('order_id', orderId),
+  ])
+  // Los eventos salientes no llevan order_id: se filtran por las órdenes de corte
+  // y los artículos a preparar del pedido
+  const ids = [...(cutsRes.data || []), ...(prepsRes.data || [])].map(r => r.id)
+  const { data: related } = ids.length
+    ? await supabase.from('outbound_events').select('status').in('related_entity_id', ids).in('status', ['pending', 'processing', 'failed'])
+    : { data: [] as any[] }
+  return {
+    activity: activityRes.data || [],
+    evo: {
+      pending: (related || []).filter(e => e.status === 'pending' || e.status === 'processing').length,
+      failed: (related || []).filter(e => e.status === 'failed').length,
+    },
+  }
 }
