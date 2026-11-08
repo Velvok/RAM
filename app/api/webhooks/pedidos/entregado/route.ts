@@ -361,7 +361,8 @@ async function processPedidoEntregado(payload: PedidoEntregadoPayload, id_evento
         inventory = (await supabase.from('inventory').select('id, product_id, stock_reservado').eq('product_id', item.fallbackProductId).maybeSingle()).data
       }
       if (!inventory) {
-        errors.push(`No inventory found for ${item.table} ${item.id}`)
+        // Sin stock asignado (aprobado en pausa): no hay reserva que liberar, solo se marca entregado
+        await supabase.from(item.table).update({ quantity_delivered: item.done }).eq('id', item.id)
         continue
       }
       const { error: unreserveError } = await supabase.rpc('unreserve_stock', { p_inventory_id: inventory.id, p_quantity: item.amount })

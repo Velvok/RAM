@@ -1005,7 +1005,8 @@ export default function PlantaPedidoDetallePage() {
         )}
 
         {/* Sección de Artículos a Preparar */}
-        {pedido.preparation_items && pedido.preparation_items.filter((item: any) => item.assigned_inventory_id).length > 0 && (
+        {/* Se muestran también las preparaciones sin stock asignado (pedidos aprobados en pausa): el operario puede prepararlas igual */}
+        {pedido.preparation_items && pedido.preparation_items.length > 0 && (
           <div className="mt-8 space-y-4">
             <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
               <Package className="w-6 h-6" />
@@ -1013,7 +1014,6 @@ export default function PlantaPedidoDetallePage() {
             </h2>
             
             {pedido.preparation_items
-              .filter((item: any) => item.assigned_inventory_id)
               .map((item: any) => {
               const isCompleted = item.status === 'completada'
               const progress = (item.quantity_prepared / item.quantity_requested) * 100
@@ -1060,9 +1060,13 @@ export default function PlantaPedidoDetallePage() {
                   </div>
 
                   {/* Stock disponible */}
-                  {item.assigned_inventory && (
+                  {item.assigned_inventory ? (
                     <div className="text-sm text-muted-foreground mb-4">
                       Stock disponible: {item.assigned_inventory.stock_disponible} unidades
+                    </div>
+                  ) : (
+                    <div className="text-sm text-amber-400 mb-4">
+                      Sin stock asignado en el sistema: prepara lo que haya físicamente
                     </div>
                   )}
 
