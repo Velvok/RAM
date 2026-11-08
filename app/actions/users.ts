@@ -2,6 +2,7 @@
 
 import { requireAdmin } from '@/lib/auth/guards'
 import { findOperatorWithPin, hashPin, isValidPin } from '@/lib/auth/pin'
+import { inviteStaffUser } from '@/lib/auth/invitations'
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
@@ -55,36 +56,13 @@ export async function createUser(userData: {
     if (error) throw error
     return data
   } else {
-    if (!userData.email) {
-      return { error: 'El email es obligatorio' }
+    if (!userData.email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(userData.email.trim())) {
+      return { error: 'Introduce un email válido' }
     }
-    if (!userData.password || userData.password.length < 6) {
-      return { error: 'La contraseña inicial debe tener al menos 6 caracteres' }
-    }
-
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email: userData.email,
-      password: userData.password,
-      email_confirm: true,
-    })
-
-    if (authError) throw authError
-
-    const { data, error } = await supabase
-      .from('users')
-      .insert({
-        id: authData.user.id,
-        email: userData.email.toLowerCase(),
-        full_name: userData.full_name,
-        role: userData.role,
-        is_active: true,
-        first_login: true,
-      })
-      .select(USER_COLUMNS)
-      .single()
-
-    if (error) throw error
-    return data
+    const { data: existing } = await supabase.from('users').select('id').eq('email', userData.email.trim().toLowerCase()).maybeSingle()
+    if (existing) return { error: 'Ya existe un usuario con ese email' }
+    // Sin contraseña: la persona la elige en /login → "Primer acceso"
+    return await inviteStaffUser(supabase, { email: userData.email, fullName: userData.full_name, role: userData.role })
   }
 }
 

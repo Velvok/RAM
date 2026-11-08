@@ -248,23 +248,17 @@ export default function ConfiguracionPage() {
                     type="text"
                     value={formData.pin}
                     onChange={(e) => setFormData({ ...formData, pin: e.target.value })}
-                    placeholder="Dejar vacío para usar el PIN por defecto"
+                    placeholder="4 a 6 dígitos"
+                    required
                   />
                   <p className="text-xs text-muted-foreground mt-1">El operario deberá cambiarlo en su primer acceso</p>
                 </div>
               )}
 
               {formData.role !== 'operator' && !editingUser && (
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">Contraseña inicial</label>
-                  <Input
-                    type="password"
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    placeholder="Dejar vacío para usar la contraseña por defecto"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">El usuario deberá cambiarla en su primer acceso</p>
-                </div>
+                <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+                  Sin contraseña: la persona entra en el login → «Primer acceso», pone este email y elige su contraseña. La invitación vale 14 días.
+                </p>
               )}
 
               {editingUser && formData.role === 'operator' && (

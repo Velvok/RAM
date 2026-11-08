@@ -7,6 +7,7 @@ import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { adminUserIdFor, getAdminUserId, getPlantaOperatorId } from '@/lib/auth/guards'
 import { PLANTA_COOKIE, PLANTA_SESSION_MAX_AGE, createPlantaToken } from '@/lib/auth/planta-session'
 import { findOperatorWithPin, isValidPin } from '@/lib/auth/pin'
+import { PENDING_KEY, isActivatable, validatePassword } from '@/lib/auth/invitations'
 
 // Límite de PIN fallidos por IP. Las tablets de planta comparten IP pública,
 // así que el umbral deja margen para equivocarse sin bloquear la planta.
@@ -50,6 +51,55 @@ export async function loginWithEmail(formData: FormData) {
   }
 
   redirect('/admin')
+}
+
+/**
+ * Primer acceso de un usuario del panel dado de alta por un admin: pone su
+ * email y elige su contraseña. Solo para cuentas pendientes y en plazo; una
+ * cuenta ya activada no se puede volver a activar por aquí.
+ */
+export async function activateAccount(email: string, password: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const emailLower = String(email || '').trim().toLowerCase()
+    if (!emailLower) return { ok: false, error: 'Introduce tu email' }
+    const invalid = validatePassword(password)
+    if (invalid) return { ok: false, error: invalid }
+
+    const supabase = createAdminClient()
+    const key = `activacion:${await clientIp()}`
+    const since = new Date(Date.now() - 15 * 60_000).toISOString()
+    const { count } = await supabase.from('pin_login_attempts').select('id', { count: 'exact', head: true }).eq('ip', key).gte('created_at', since)
+    if ((count || 0) >= 10) return { ok: false, error: 'Demasiados intentos. Espera 15 minutos.' }
+
+    const notPending = async () => {
+      await supabase.from('pin_login_attempts').insert({ ip: key })
+      return { ok: false, error: 'No hay ninguna cuenta pendiente de activar con ese email. Si ya la activaste, entra con tu contraseña.' }
+    }
+
+    const { data: row } = await supabase
+      .from('users')
+      .select('id, role, is_active')
+      .eq('email', emailLower)
+      .maybeSingle()
+    if (!row || !row.is_active || !['admin', 'manager'].includes(row.role)) return notPending()
+
+    const { data: authData } = await supabase.auth.admin.getUserById(row.id)
+    if (!authData?.user || !isActivatable(authData.user)) return notPending()
+
+    const { error } = await supabase.auth.admin.updateUserById(row.id, {
+      password,
+      user_metadata: { ...authData.user.user_metadata, [PENDING_KEY]: false, activated_at: new Date().toISOString() },
+    })
+    if (error) {
+      console.error('Error activando cuenta:', error)
+      return { ok: false, error: 'No se pudo activar la cuenta' }
+    }
+    await supabase.from('users').update({ first_login: false, updated_at: new Date().toISOString() }).eq('id', row.id)
+    return { ok: true }
+  } catch (e) {
+    console.error('Error activando cuenta:', e)
+    return { ok: false, error: 'Error del servidor. Inténtalo más tarde.' }
+  }
 }
 
 async function clientIp(): Promise<string> {
