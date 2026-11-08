@@ -4,6 +4,7 @@ import { requireAdmin } from '@/lib/auth/guards'
 import { createAdminClient } from '@/lib/supabase/server'
 import { extractFamilyCode, extractSizeFromCode } from '@/lib/product-utils'
 import { lineUnits } from '@/lib/order-modification'
+import { getPlantaAlerts } from '@/lib/planta-status'
 
 // Dashboard operativo: qué hay que hacer ahora, qué pasa en planta y qué
 // stock comprometen los pedidos abiertos. Todo sale de tablas existentes.
@@ -291,6 +292,10 @@ export async function getOperationalDashboard(): Promise<OperationalDashboard> {
   }
   if (outboundFailed) {
     actions.push({ severity: 'alta', orderId: null, orderNumber: 'EVO', client: '', text: `${outboundFailed} evento(s) hacia EVO fallidos en las últimas 24 h`, cta: 'Ver logs', href: '/admin/logs', ageHours: 0 })
+  }
+  // Tablets de planta: acciones no registradas, sin conexión con acciones guardadas, sincronizaciones tardías
+  for (const a of await getPlantaAlerts(supabase, now).catch(() => [])) {
+    actions.push({ ...a, client: '', cta: a.orderId ? 'Ver pedido' : 'Ver', href: a.orderId ? `/admin/pedidos/${a.orderId}` : '/admin' })
   }
   actions.sort((a, b) => (a.severity === b.severity ? b.ageHours - a.ageHours : a.severity === 'alta' ? -1 : 1))
 

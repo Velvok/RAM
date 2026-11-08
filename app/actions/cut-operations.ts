@@ -4,6 +4,7 @@ import { requireStaff } from '@/lib/auth/guards'
 import { createAdminClient } from '@/lib/supabase/server'
 import { extractSizeFromCode, extractFamilyCode } from '@/lib/product-utils'
 import { updateOrderStatus } from './orders'
+import { offlineNote } from '@/lib/planta-offline-time'
 import { notifyCorteRealizado, notifyChapaPreparada, type CorteMovimiento } from '@/lib/ram-outbound'
 import { recordMovements } from '@/lib/historial-movimientos'
 import { revalidatePath } from 'next/cache'
@@ -14,6 +15,8 @@ export async function processCutOrder(params: {
   materialLength: number
   quantityToCut: number
   operatorId: string
+  /** Hora real del corte si se hizo sin conexión y llega más tarde */
+  occurredAt?: string
 }) {
   const actor = await requireStaff()
 
@@ -413,7 +416,7 @@ export async function processCutOrder(params: {
     order_id: cutOrder.order_id,
     cut_order_id: cutOrderId,
     activity_type: 'cut_completed',
-    description: `${operator?.name || 'Operario'} cortó ${quantityToCut} unidad${quantityToCut !== 1 ? 'es' : ''} de ${cutOrder.product?.name || 'producto'} (${newQuantityCut}/${cutOrder.quantity_requested})`,
+    description: `${operator?.name || 'Operario'} cortó ${quantityToCut} unidad${quantityToCut !== 1 ? 'es' : ''} de ${cutOrder.product?.name || 'producto'} (${newQuantityCut}/${cutOrder.quantity_requested})${offlineNote(params.occurredAt)}`,
     metadata: {
       action: `Corte ${isFullyCompleted ? 'completado' : 'parcial'}`,
       operator_name: operator?.name,
@@ -423,7 +426,8 @@ export async function processCutOrder(params: {
       material_length: materialLength,
       remnant_per_sheet: remnantPerSheet,
       sheets_used: sheetsUsed,
-      is_completed: isFullyCompleted
+      is_completed: isFullyCompleted,
+      occurred_at: params.occurredAt ?? null,
     }
   })
   

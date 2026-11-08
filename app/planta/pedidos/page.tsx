@@ -1,12 +1,16 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { MessageSquare, Package, X } from 'lucide-react'
 import { PlantaHeader, P, Label } from '@/components/planta/planta-ui'
 import { cutCardState, mainTask, orderProgress, orderTasks, TASK_ACTION, TASK_LABEL, type PlantaTask } from '@/lib/planta-tasks'
 import { getOrderStatusConfig } from '@/lib/order-status'
 import { cn } from '@/lib/utils'
+import { fetchWithSnapshot, listOutbox, readSnapshot, saveSnapshot, type QueuedOp } from '@/lib/planta-offline/store'
+import { applyPendingToOrder } from '@/lib/planta-offline/apply'
+import { PedidoDetalle } from '@/components/planta/pedido-detalle'
+import { PlantaOfflineBanner, PlantaSyncBadge, useSyncState } from '@/components/planta/sync-status'
 
 // Filtros por tarea, no por estado del pedido: el operario piensa en "qué me
 // toca hacer", no en el estado administrativo.
@@ -20,15 +24,98 @@ const TASK_TONE: Record<PlantaTask, 'amber' | 'blue' | 'green' | 'muted'> = {
   terminado: 'green',
 }
 
+const PREFETCH_EVERY_MS = 5 * 60 * 1000
+
+// Abrir un pedido sin pasar por el servidor (?pedido=…): así la tablet puede
+// moverse entre la lista y el detalle aunque no haya conexión.
+function openOrder(id: string | null) {
+  window.history.pushState(null, '', id ? `/planta/pedidos?pedido=${id}` : '/planta/pedidos')
+}
+
+/**
+ * Con conexión, guarda en la tablet cada pedido abierto, sus notas y el stock
+ * de sus chapas, para poder abrirlos y trabajar aunque luego se vaya la red.
+ */
+async function prefetchForOffline(orders: any[]) {
+  // Todo cada 5 minutos; los pedidos que aún no están en la tablet (recién
+  // aprobados), en cuanto aparecen en la lista.
+  const last = await readSnapshot<number>('prefetch-at')
+  const full = !last || Date.now() - last.data >= PREFETCH_EVERY_MS
+  const missing: any[] = []
+  for (const o of orders) if (full || !(await readSnapshot(`order:${o.id}`))) missing.push(o)
+  if (!missing.length) return
+  if (full) await saveSnapshot('prefetch-at', Date.now())
+  const [{ getOrderById }, { getOrderNotes }, { getAvailableStock }] = await Promise.all([
+    import('@/app/actions/client-queries'), import('@/app/actions/order-notes'), import('@/app/actions/get-available-stock'),
+  ])
+  const codes = new Set<string>()
+  for (const o of missing) {
+    if (!navigator.onLine) return
+    try {
+      const order = await getOrderById(o.id)
+      await saveSnapshot(`order:${o.id}`, order)
+      await saveSnapshot(`notes:${o.id}`, await getOrderNotes(o.id))
+      for (const c of order?.cut_orders || []) if (c.product?.code) codes.add(c.product.code)
+    } catch {}
+  }
+  for (const code of codes) {
+    if (!navigator.onLine) return
+    try { await saveSnapshot(`stock:${code}`, await getAvailableStock(code)) } catch {}
+  }
+}
+
 export default function PlantaPedidosPage() {
+  return (
+    <Suspense fallback={null}>
+      <PlantaPedidos />
+    </Suspense>
+  )
+}
+
+function PlantaPedidos() {
   const router = useRouter()
+  const params = useSearchParams()
+  const openId = params.get('pedido')
+  const sync = useSyncState()
   const [operator, setOperator] = useState<any>(null)
-  const [pedidos, setPedidos] = useState<any[]>([])
+  const [basePedidos, setBasePedidos] = useState<any[]>([])
+  const [pending, setPending] = useState<QueuedOp[]>([])
+  const [savedAt, setSavedAt] = useState<string | null>(null)
+  const [fromCache, setFromCache] = useState(false)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<PlantaTask | 'todos'>('todos')
   const [search, setSearch] = useState('')
   const [showSearch, setShowSearch] = useState(false)
   const [unreadNotes, setUnreadNotes] = useState<Record<string, number>>({})
+
+  // Acciones guardadas en la tablet aún sin enviar, pintadas encima de la lista
+  const pedidos = useMemo(() => basePedidos.map(p => applyPendingToOrder(p, pending)), [basePedidos, pending])
+
+  const loadPedidos = useCallback(async () => {
+    try {
+      const { getOrdersForPlanta } = await import('@/app/actions/client-queries')
+      const r = await fetchWithSnapshot('orders', () => getOrdersForPlanta())
+      if (r) {
+        const data = r.data || []
+        setBasePedidos(data)
+        setSavedAt(r.savedAt)
+        setFromCache(r.fromCache)
+        if (!r.fromCache && data.length) {
+          const { getUnreadNotesCountByOrders } = await import('@/app/actions/order-notes')
+          const u = await fetchWithSnapshot('unread', () => getUnreadNotesCountByOrders(data.map((p: any) => p.id)))
+          if (u) setUnreadNotes(u.data)
+          void prefetchForOffline(data)
+        } else if (r.fromCache) {
+          const u = await readSnapshot<Record<string, number>>('unread')
+          if (u) setUnreadNotes(u.data)
+        }
+      }
+    } catch (error) {
+      console.error('Error cargando pedidos:', error)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
     const operatorData = localStorage.getItem('operator')
@@ -38,31 +125,21 @@ export default function PlantaPedidosPage() {
     }
     setOperator(JSON.parse(operatorData))
     loadPedidos()
-  }, [router])
+  }, [router, loadPedidos])
 
-  async function loadPedidos() {
-    try {
-      const { getOrdersForPlanta } = await import('@/app/actions/client-queries')
-      const data = await getOrdersForPlanta()
-      setPedidos(data || [])
-      if (data && data.length > 0) {
-        const { getUnreadNotesCountByOrders } = await import('@/app/actions/order-notes')
-        setUnreadNotes(await getUnreadNotesCountByOrders(data.map((p: any) => p.id)))
-      }
-    } catch (error) {
-      console.error('Error cargando pedidos:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
+  useEffect(() => { listOutbox().then(setPending) }, [sync.pending])
+  // Tras enviar lo pendiente, traer el estado real
+  useEffect(() => { if (sync.lastSyncAt && sync.online) loadPedidos() }, [sync.lastSyncAt]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Al volver a la lista desde un pedido, refrescar
+  useEffect(() => { if (!openId) loadPedidos() }, [openId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Refresco periódico de la lista completa (cambios desde admin, notas nuevas)
   useEffect(() => {
     const interval = setInterval(() => {
-      if (!document.hidden) loadPedidos()
+      if (!document.hidden && !openId) loadPedidos()
     }, 15000)
     return () => clearInterval(interval)
-  }, [])
+  }, [openId, loadPedidos])
 
   const counts = useMemo(() => {
     const c: Record<PlantaTask, number> = { cortar: 0, preparar: 0, confirmar: 0, sin_stock: 0, terminado: 0 }
@@ -82,6 +159,10 @@ export default function PlantaPedidosPage() {
     return [...list].sort((a, b) => rank[mainTask(a)] - rank[mainTask(b)])
   }, [pedidos, filter, search])
 
+  if (openId) {
+    return <PedidoDetalle key={openId} pedidoId={openId} onBack={() => openOrder(null)} />
+  }
+
   if (loading) {
     return <div className={cn('flex min-h-screen items-center justify-center text-xl', P.bg, P.muted)}>Cargando pedidos...</div>
   }
@@ -95,7 +176,9 @@ export default function PlantaPedidosPage() {
         title="Pedidos"
         subtitle={pendientes === 0 ? 'Nada pendiente ahora mismo' : `${counts.cortar} para cortar · ${counts.preparar} para preparar${counts.confirmar ? ` · ${counts.confirmar} por confirmar` : ''}`}
         onSearch={() => setShowSearch(v => !v)}
+        right={<PlantaSyncBadge />}
       />
+      <PlantaOfflineBanner savedAt={savedAt} fromCache={fromCache} />
 
       <main className="mx-auto max-w-[1180px] px-6 py-5">
         {showSearch && (
@@ -125,13 +208,13 @@ export default function PlantaPedidosPage() {
         {filtered.length === 0 ? (
           <div className={cn('flex flex-col items-center gap-3 rounded-2xl border p-14 text-center', P.card, P.border)}>
             <Package className={cn('h-12 w-12', P.muted)} />
-            <div className={cn('text-2xl font-bold', P.text)}>{pedidos.length === 0 ? 'No hay pedidos aprobados' : 'Nada en este filtro'}</div>
+            <div className={cn('text-2xl font-bold', P.text)}>{pedidos.length === 0 ? (fromCache ? 'No hay pedidos guardados en la tablet' : 'No hay pedidos aprobados') : 'Nada en este filtro'}</div>
             <div className={cn('text-lg', P.muted)}>{pedidos.length === 0 ? 'Cuando el admin apruebe un pedido aparecerá aquí.' : 'Prueba con otro filtro o quita la búsqueda.'}</div>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {filtered.map(pedido => (
-              <OrderCard key={pedido.id} pedido={pedido} unread={unreadNotes[pedido.id] || 0} onOpen={() => router.push(`/planta/pedidos/${pedido.id}`)} />
+              <OrderCard key={pedido.id} pedido={pedido} unread={unreadNotes[pedido.id] || 0} onOpen={() => openOrder(pedido.id)} />
             ))}
           </div>
         )}
@@ -202,6 +285,11 @@ function OrderCard({ pedido, unread, onOpen }: { pedido: any; unread: number; on
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
+          {pedido._pendingOps > 0 && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#3b82f6]/60 bg-[#3b82f6]/15 px-3 py-1 text-[15px] font-bold text-[#93c5fd]">
+              {pedido._pendingOps} sin enviar
+            </span>
+          )}
           {unread > 0 && (
             <span className="inline-flex items-center gap-1.5 rounded-full border border-[#f59e0b]/60 bg-[#f59e0b]/15 px-3 py-1 text-[15px] font-bold text-[#fbbf24]">
               <MessageSquare className="h-4 w-4" /> {unread} {unread === 1 ? 'nota' : 'notas'}

@@ -18,6 +18,7 @@ npm run dev · npm run build · npm run start · npm run lint · npm run type-ch
 - `lib/order-modification.ts`: modificaciones de pedido que manda EVO (estado `modificado`).
 - `app/actions/dashboard-operativo.ts` + `components/dashboard-operativo.tsx`: dashboard operativo (`/admin`), todo calculado sobre tablas existentes.
 - `product_movements` (migración 00069) + `lib/historial-movimientos.ts`: historial de movimientos por producto (entregas, compras, cortes, remanentes) que alimenta `/admin/historial` (`app/actions/historial.ts`). Lo escriben el webhook de entrega, `processCutOrder` y el webhook `stock_actualizado`.
+- Planta sin conexión: la tablet guarda fotos y una cola de acciones en IndexedDB (`lib/planta-offline/`) y las envía a `app/api/planta/sync` (idempotente por `op_id`, tablas `planta_operations` y `planta_devices`, migración 00070, solo servidor). Avisos a la oficina: `lib/planta-status.ts` (dashboard y detalle del pedido). Service worker `public/planta-sw.js` solo en producción.
 - `supabase/migrations`: migraciones; se aplican con `./scripts/supabase-sql.sh -f`.
 
 ## Reglas

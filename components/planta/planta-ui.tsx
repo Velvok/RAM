@@ -43,8 +43,20 @@ export function PlantaHeader({ operator, title, subtitle, left, right, onSearch 
 }) {
   const router = useRouter()
   const clock = useClock()
+  const [confirmExit, setConfirmExit] = useState(false)
 
   async function logout() {
+    // Con acciones guardadas sin enviar, avisar: si entra otro operario se enviarían con su sesión
+    const { getSyncState, flush } = await import('@/lib/planta-offline/store')
+    if (getSyncState().pending > 0 && !confirmExit) {
+      void flush()
+      setConfirmExit(true)
+      setTimeout(() => setConfirmExit(false), 6000)
+      const { toast } = await import('sonner')
+      const n = getSyncState().pending
+      toast.warning(`Hay ${n} ${n === 1 ? 'acción' : 'acciones'} sin enviar. Espera a que vuelva la conexión o pulsa «Salir igualmente»: se enviarán cuando alguien vuelva a entrar en esta tablet.`, { duration: 6000 })
+      return
+    }
     localStorage.removeItem('operator')
     try {
       const { logoutPlanta } = await import('@/app/actions/auth')
@@ -76,7 +88,7 @@ export function PlantaHeader({ operator, title, subtitle, left, right, onSearch 
           </button>
         )}
         <button type="button" onClick={logout} className={cn('inline-flex h-14 items-center gap-2 rounded-2xl border px-4 text-base font-semibold', P.border, P.card, P.muted)}>
-          <LogOut className="h-5 w-5" /> Salir
+          <LogOut className="h-5 w-5" /> {confirmExit ? 'Salir igualmente' : 'Salir'}
         </button>
       </div>
     </header>

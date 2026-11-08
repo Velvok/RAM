@@ -13,6 +13,7 @@ import OrderNotesAdmin from '@/components/order-notes-admin'
 import { OrderStatusBadge } from '@/components/order-status-badge'
 import { AssignStockPanel, ReassignPanel, Summary, unassignedLines, type PanelLine } from '@/components/pedido/order-panels'
 import OrderActions from './order-actions'
+import { PlantaSyncBanner } from '@/components/pedido/planta-sync-banner'
 
 const n = (v: unknown) => Number(v) || 0
 
@@ -233,6 +234,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
       </div>
 
       {/* Avisos */}
+      <PlantaSyncBanner orderId={order.id} refreshKey={order} />
       {paused && (
         <div className={cn('flex items-center gap-3 rounded-xl border px-4 py-3', missing.length ? 'border-warning/40 bg-warning/10' : 'border-success/40 bg-success/10')}>
           <span className={cn('h-2.5 w-2.5 shrink-0 rounded-full', missing.length ? 'bg-warning' : 'bg-success')} />

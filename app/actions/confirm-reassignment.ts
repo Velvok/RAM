@@ -4,12 +4,13 @@ import { requireStaff } from '@/lib/auth/guards'
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { notifyChapaPreparada } from '@/lib/ram-outbound'
+import { offlineNote } from '@/lib/planta-offline-time'
 
 /**
  * Confirmar que el operario recogió la pieza reasignada
  * Marca la orden como completada
  */
-export async function confirmReassignmentPickup(cutOrderId: string) {
+export async function confirmReassignmentPickup(cutOrderId: string, occurredAt?: string) {
   await requireStaff()
 
   const supabase = createAdminClient()
@@ -212,7 +213,7 @@ export async function confirmReassignmentPickup(cutOrderId: string) {
     order_id: orderData.id,
     cut_order_id: cutOrderId,
     activity_type: 'reassignment_confirmed',
-    description: `Operario confirmó recogida de pieza reasignada desde pedido ${fromOrderData?.order_number}`,
+    description: `Operario confirmó recogida de pieza reasignada desde pedido ${fromOrderData?.order_number}${offlineNote(occurredAt)}`,
     metadata: {
       reassigned_from_order_id: cutOrder.reassigned_from_order_id,
       reassigned_from_cut_order_id: cutOrder.reassigned_from_cut_order_id,

@@ -4,6 +4,7 @@ import { requireAdmin, requireStaff } from '@/lib/auth/guards'
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidateOrders, revalidateStock } from '@/lib/revalidate'
 import { notifyChapaPreparada } from '@/lib/ram-outbound'
+import { offlineNote } from '@/lib/planta-offline-time'
 
 /**
  * Crear preparation_item para un artículo que no requiere corte
@@ -95,7 +96,9 @@ export async function createPreparationItem(
 export async function prepareItem(
   itemId: string,
   quantityPrepared: number,
-  clientOperatorId?: string
+  clientOperatorId?: string,
+  /** Hora real si se hizo sin conexión y llega más tarde */
+  occurredAt?: string
 ) {
   const actor = await requireStaff()
   // El operario es el de la sesión de planta; el del cliente solo cuenta si actúa un admin
@@ -200,11 +203,12 @@ export async function prepareItem(
   await supabase.from('order_activity_log').insert({
     order_id: item.order_id,
     activity_type: 'item_prepared',
-    description: `${operatorName} preparó ${quantityPrepared} unidades de ${item.product.name}`,
+    description: `${operatorName} preparó ${quantityPrepared} unidades de ${item.product.name}${offlineNote(occurredAt)}`,
     metadata: {
       preparation_item_id: itemId,
       quantity: quantityPrepared,
-      is_completed: isCompleted
+      is_completed: isCompleted,
+      occurred_at: occurredAt ?? null,
     }
   })
 
