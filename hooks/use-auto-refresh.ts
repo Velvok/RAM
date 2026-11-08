@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
+import { reportPossibleStaleDeploy } from '@/lib/stale-deploy'
 
 interface UseAutoRefreshOptions {
   enabled?: boolean
@@ -53,6 +54,7 @@ export function useAutoRefresh(
         lastDataRef.current = currentData
       } catch (error) {
         console.error('Error checking for changes:', error)
+        reportPossibleStaleDeploy(error)
       }
     }
 

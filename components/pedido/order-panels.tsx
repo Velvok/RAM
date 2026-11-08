@@ -32,7 +32,7 @@ export function PanelShell({ eyebrow, title, subtitle, onClose, children, footer
   footer?: ReactNode
 }) {
   return (
-    <section className="flex flex-col gap-4 rounded-xl border border-primary/60 bg-card p-5 shadow-[0_0_0_3px_hsl(var(--primary)/0.12)]">
+    <section data-reload-guard className="flex flex-col gap-4 rounded-xl border border-primary/60 bg-card p-5 shadow-[0_0_0_3px_hsl(var(--primary)/0.12)]">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           {eyebrow && <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{eyebrow}</div>}

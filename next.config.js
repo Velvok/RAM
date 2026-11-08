@@ -1,5 +1,13 @@
+// Identificador de esta compilación: el navegador lo compara con /api/version
+// para recargar solo cuando se ha desplegado una versión nueva.
+const BUILD_ID =
+  process.env.VERCEL_DEPLOYMENT_ID || process.env.VERCEL_GIT_COMMIT_SHA || String(Date.now())
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  env: {
+    NEXT_PUBLIC_BUILD_ID: BUILD_ID,
+  },
   turbopack: {
     // Configurar el root correcto para evitar conflictos con lockfiles en directorios padre
     root: __dirname,
