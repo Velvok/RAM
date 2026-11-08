@@ -6,6 +6,15 @@ const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')
 const base = { v: PLANTA_OP_VERSION, opId: id(1), orderId: id(2), occurredAt: '2026-11-08T09:00:00Z', label: 'Corte 2 × AC' }
 
 describe('parsePlantaOp', () => {
+  it('conserva el operario que hizo la acción y rechaza uno no válido', () => {
+    const prep = { ...base, kind: 'prepare', payload: { itemId: id(3), quantity: 1 } }
+    const r = parsePlantaOp({ ...prep, operatorId: id(9) }, NOW)
+    expect(r.ok && r.op.operatorId).toBe(id(9))
+    const sin = parsePlantaOp(prep, NOW)
+    expect(sin.ok && sin.op.operatorId).toBeUndefined()
+    expect(parsePlantaOp({ ...prep, operatorId: 'juan' }, NOW).ok).toBe(false)
+  })
+
   it('acepta un corte hecho horas antes sin conexión', () => {
     const r = parsePlantaOp({ ...base, kind: 'cut', payload: { cutOrderId: id(3), selectedMaterialId: id(4), materialLength: 9, quantity: 2 } }, NOW)
     expect(r.ok).toBe(true)

@@ -48,15 +48,19 @@ export function PlantaHeader({ operator, title, subtitle, left, right, onSearch 
   async function logout() {
     // Con acciones guardadas sin enviar, avisar: si entra otro operario se enviarían con su sesión
     const { getSyncState, flush } = await import('@/lib/planta-offline/store')
-    if (getSyncState().pending > 0 && !confirmExit) {
+    const st = getSyncState()
+    const mine = st.pending - st.heldOthers.reduce((a, h) => a + h.count, 0)
+    if (mine > 0 && !confirmExit) {
       void flush()
       setConfirmExit(true)
       setTimeout(() => setConfirmExit(false), 6000)
       const { toast } = await import('sonner')
-      const n = getSyncState().pending
-      toast.warning(`Hay ${n} ${n === 1 ? 'acción' : 'acciones'} sin enviar. Espera a que vuelva la conexión o pulsa «Salir igualmente»: se enviarán cuando alguien vuelva a entrar en esta tablet.`, { duration: 6000 })
+      const n = mine
+      toast.warning(`Hay ${n} ${n === 1 ? 'acción' : 'acciones'} sin enviar. Espera a que vuelva la conexión o pulsa «Salir igualmente»: se enviarán cuando vuelvas a entrar con tu PIN en esta tablet.`, { duration: 6000 })
       return
     }
+    const { clearLocalDataIfIdle } = await import('@/lib/planta-offline/store')
+    await clearLocalDataIfIdle()
     localStorage.removeItem('operator')
     try {
       const { logoutPlanta } = await import('@/app/actions/auth')

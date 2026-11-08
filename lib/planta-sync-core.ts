@@ -25,6 +25,8 @@ export interface PlantaOp<K extends PlantaOpKind = PlantaOpKind> {
   occurredAt: string
   /** Texto para enseñar al operario y al admin ("Corte 2 × AC25110.4,5") */
   label: string
+  /** Operario que la hizo: solo se envía con su propia sesión */
+  operatorId?: string
 }
 
 export type PlantaOpResult =
@@ -49,6 +51,7 @@ export function parsePlantaOp(raw: unknown, now = Date.now()): { ok: true; op: P
   // Sin conexión puede pasar un día (o un fin de semana); más de 7 días o del futuro es un reloj mal puesto
   if (!Number.isFinite(t) || t > now + 10 * 60 * 1000 || t < now - 7 * 24 * 3600 * 1000) return { ok: false, reason: 'Hora de la operación fuera de rango', opId }
   const label = typeof r.label === 'string' ? r.label.slice(0, 200) : ''
+  if (r.operatorId != null && !isUuid(r.operatorId)) return { ok: false, reason: 'Operario no válido', opId }
   const p = r.payload || {}
   let payload: any
   switch (r.kind) {
@@ -81,7 +84,7 @@ export function parsePlantaOp(raw: unknown, now = Date.now()): { ok: true; op: P
     default:
       return { ok: false, reason: `Tipo de operación desconocido (${String(r.kind)})`, opId }
   }
-  return { ok: true, op: { v: PLANTA_OP_VERSION, opId, kind: r.kind, orderId: r.orderId, payload, occurredAt: new Date(t).toISOString(), label } }
+  return { ok: true, op: { v: PLANTA_OP_VERSION, opId, kind: r.kind, orderId: r.orderId, payload, occurredAt: new Date(t).toISOString(), label, ...(r.operatorId ? { operatorId: r.operatorId } : {}) } }
 }
 
 /**

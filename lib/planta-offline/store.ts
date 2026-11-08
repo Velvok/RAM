@@ -20,7 +20,7 @@ const SYNC_URL = '/api/planta/sync'
 const HEARTBEAT_MS = 30 * 1000
 const BATCH = 20
 
-export interface QueuedOp extends PlantaOp { seq: number }
+export interface QueuedOp extends PlantaOp { seq: number; operatorName?: string }
 export interface SyncNotice { opId: string; label: string; orderId: string; message: string; occurredAt: string; at: string; kind: 'rejected' | 'partial' }
 export interface SyncState {
   online: boolean
@@ -31,6 +31,8 @@ export interface SyncState {
   lastSentCount: number
   sessionExpired: boolean
   notices: SyncNotice[]
+  /** Acciones de otros operarios que esperan a que vuelvan a entrar con su PIN */
+  heldOthers: { name: string; count: number }[]
 }
 
 // ---------- IndexedDB mínima ----------
@@ -70,7 +72,7 @@ export async function readSnapshot<T>(key: string): Promise<Snapshot<T> | undefi
 
 // ---------- Estado y suscripción ----------
 
-let state: SyncState = { online: typeof navigator === 'undefined' ? true : navigator.onLine, syncing: false, pending: 0, oldestPendingAt: null, lastSyncAt: null, lastSentCount: 0, sessionExpired: false, notices: [] }
+let state: SyncState = { online: typeof navigator === 'undefined' ? true : navigator.onLine, syncing: false, pending: 0, oldestPendingAt: null, lastSyncAt: null, lastSentCount: 0, sessionExpired: false, notices: [], heldOthers: [] }
 const listeners = new Set<(s: SyncState) => void>()
 function setState(patch: Partial<SyncState>) {
   state = { ...state, ...patch }
@@ -95,15 +97,26 @@ export async function listOutbox(): Promise<QueuedOp[]> {
   const all = await tx<QueuedOp[]>('outbox', 'readonly', s => s.getAll() as IDBRequest<QueuedOp[]>).catch(() => [] as QueuedOp[])
   return all.sort((a, b) => a.seq - b.seq)
 }
+function currentOperator(): { id?: string; full_name?: string } {
+  try { return JSON.parse(localStorage.getItem('operator') || '{}') || {} } catch { return {} }
+}
+/** Lo que puede enviar la sesión actual: lo suyo (y lo antiguo sin operario). */
+function isMine(op: QueuedOp, me: string | undefined) {
+  return !op.operatorId || op.operatorId === me
+}
 async function refreshCounts() {
   const ops = await listOutbox()
-  setState({ pending: ops.length, oldestPendingAt: ops[0]?.occurredAt ?? null })
+  const me = currentOperator().id
+  const others = new Map<string, number>()
+  for (const o of ops) if (!isMine(o, me)) others.set(o.operatorName || 'otro operario', (others.get(o.operatorName || 'otro operario') || 0) + 1)
+  setState({ pending: ops.length, oldestPendingAt: ops[0]?.occurredAt ?? null, heldOthers: [...others].map(([name, count]) => ({ name, count })) })
   return ops
 }
 
 /** Guarda una acción en la tablet y la intenta enviar ya. */
 export async function enqueue<K extends PlantaOpKind>(kind: K, orderId: string, payload: PlantaOpPayloads[K], label: string): Promise<QueuedOp> {
-  const op: QueuedOp = { v: PLANTA_OP_VERSION, opId: crypto.randomUUID(), kind, orderId, payload, occurredAt: new Date().toISOString(), label, seq: Date.now() * 1000 + Math.floor(Math.random() * 1000) }
+  const me = currentOperator()
+  const op: QueuedOp = { v: PLANTA_OP_VERSION, opId: crypto.randomUUID(), kind, orderId, payload, occurredAt: new Date().toISOString(), label, seq: Date.now() * 1000 + Math.floor(Math.random() * 1000), ...(me.id ? { operatorId: me.id, operatorName: me.full_name } : {}) }
   await tx('outbox', 'readwrite', s => s.put(op))
   await refreshCounts()
   void flush()
@@ -149,7 +162,7 @@ async function post(ops: QueuedOp[], all: QueuedOp[]) {
     cache: 'no-store',
     body: JSON.stringify({
       deviceId: deviceId(),
-      ops: ops.map(({ seq: _s, ...o }) => o),
+      ops: ops.map(({ seq: _s, operatorName: _n, ...o }) => o),
       pending: all.length,
       oldestPendingAt: all[0]?.occurredAt ?? null,
       pendingOrderIds: [...new Set(all.map(o => o.orderId))],
@@ -162,20 +175,24 @@ async function post(ops: QueuedOp[], all: QueuedOp[]) {
 }
 
 async function doFlush() {
-  let ops = await refreshCounts()
+  const me = currentOperator().id
+  // Sin operario dentro (tras salir) no hay latido ni envíos: esperan al siguiente que entre
+  if (!me) { await refreshCounts(); return }
+  const all = await refreshCounts()
+  let ops = all.filter(o => isMine(o, me))
   if (typeof navigator !== 'undefined' && !navigator.onLine) { setState({ online: false }); return }
   setState({ syncing: ops.length > 0 })
   let sent = 0
   try {
     // Sin acciones: solo latido
     if (!ops.length) {
-      await post([], [])
+      await post([], all)
       setState({ online: true })
       return
     }
     while (ops.length) {
       const batch = ops.slice(0, BATCH)
-      const { results } = await post(batch, ops)
+      const { results } = await post(batch, await listOutbox())
       setState({ online: true })
       const notices: SyncNotice[] = []
       let progressed = false
@@ -198,7 +215,7 @@ async function doFlush() {
         }
       }
       await addNotices(notices)
-      ops = await refreshCounts()
+      ops = (await refreshCounts()).filter(o => isMine(o, me))
       if (!progressed) break
     }
     setState({ lastSyncAt: new Date().toISOString(), lastSentCount: sent })
@@ -208,6 +225,22 @@ async function doFlush() {
     setState({ syncing: false })
     await refreshCounts()
   }
+}
+
+/**
+ * Al cerrar sesión sin nada pendiente: borrar de la tablet las copias de los
+ * pedidos, los avisos y la caché del service worker. Con acciones pendientes
+ * se conservan (hacen falta para enviarlas y verlas).
+ */
+export async function clearLocalDataIfIdle(): Promise<boolean> {
+  if ((await listOutbox()).length) return false
+  try {
+    const keys = await tx<IDBValidKey[]>('kv', 'readonly', s => s.getAllKeys())
+    for (const k of keys) await tx('kv', 'readwrite', s => s.delete(k))
+  } catch {}
+  try { for (const name of await caches.keys()) if (name.startsWith('ram-planta-')) await caches.delete(name) } catch {}
+  setState({ notices: [], heldOthers: [] })
+  return true
 }
 
 // ---------- Arranque ----------

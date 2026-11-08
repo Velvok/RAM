@@ -65,6 +65,11 @@ export async function POST(request: NextRequest) {
       if (parsed.opId) results.push({ opId: parsed.opId, status: 'rejected', message: parsed.reason })
       continue
     }
+    // Cada acción va a nombre de quien la hizo: si ahora hay otra sesión, espera a que vuelva a entrar
+    if (parsed.op.operatorId && parsed.op.operatorId !== actorId) {
+      results.push({ opId: parsed.op.opId, status: 'retry', message: 'Es de otro operario: se enviará cuando vuelva a entrar' })
+      break
+    }
     const { replay, ...res } = await applyOnce(supabase, parsed.op, { deviceId, actorId, actorName, actorKind: actor.kind })
     results.push(res)
     // Los reenvíos de algo ya recibido no cuentan como nuevas acciones sin conexión

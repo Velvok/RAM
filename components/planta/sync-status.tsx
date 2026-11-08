@@ -24,13 +24,14 @@ export function PlantaSyncBadge() {
   const s = useSyncState()
   const [open, setOpen] = useState(false)
   const problems = s.notices.filter(x => x.kind === 'rejected').length
+  const sendable = s.pending - s.heldOthers.reduce((a, h) => a + h.count, 0)
 
   let tone = 'border-[#16a34a]/50 text-[#4ade80]'
   let icon = <Wifi className="h-5 w-5" />
   let text = 'Conectado'
   if (s.sessionExpired) { tone = 'border-red-500/60 bg-red-500/10 text-red-300'; icon = <AlertTriangle className="h-5 w-5" />; text = 'Vuelve a entrar' }
   else if (!s.online) { tone = 'border-[#f59e0b] bg-[#f59e0b]/15 text-[#fbbf24]'; icon = <CloudOff className="h-5 w-5" />; text = s.pending ? `Sin conexión · ${s.pending} guardada${s.pending === 1 ? '' : 's'}` : 'Sin conexión' }
-  else if (s.syncing || s.pending) { tone = 'border-[#3b82f6]/60 bg-[#3b82f6]/10 text-[#93c5fd]'; icon = <RefreshCw className="h-5 w-5 animate-spin" />; text = `Enviando ${s.pending}` }
+  else if (s.syncing || sendable > 0) { tone = 'border-[#3b82f6]/60 bg-[#3b82f6]/10 text-[#93c5fd]'; icon = <RefreshCw className="h-5 w-5 animate-spin" />; text = `Enviando ${sendable}` }
 
   return (
     <>
@@ -55,6 +56,11 @@ export function PlantaSyncBadge() {
               {!s.online && (
                 <div className="rounded-xl border border-[#f59e0b]/60 bg-[#f59e0b]/10 px-4 py-3 text-[15px] leading-snug text-[#fbbf24]">
                   Puedes seguir cortando y preparando. Todo se guarda en la tablet y se envía solo en cuanto vuelva la conexión. No cierres sesión hasta entonces.
+                </div>
+              )}
+              {s.heldOthers.length > 0 && (
+                <div className="rounded-xl border border-[#3b82f6]/50 bg-[#3b82f6]/10 px-4 py-3 text-[15px] leading-snug text-[#93c5fd]">
+                  {s.heldOthers.map(h => `${h.count} de ${h.name}`).join(' · ')}: se enviarán a su nombre cuando vuelva a entrar con su PIN en esta tablet.
                 </div>
               )}
               {s.sessionExpired && (

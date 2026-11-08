@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { usePathname } from 'next/navigation'
 import { Toaster } from 'sonner'
-import { startPlantaSync } from '@/lib/planta-offline/store'
+import { flush, startPlantaSync } from '@/lib/planta-offline/store'
 
 export default function PlantaLayout({
   children,
@@ -11,6 +11,7 @@ export default function PlantaLayout({
   children: React.ReactNode
 }) {
   const pathname = usePathname()
+  const lastOperator = useRef<string | null>(null)
 
   useEffect(() => {
     document.documentElement.classList.add('dark')
@@ -23,7 +24,14 @@ export default function PlantaLayout({
   // Sincronización con la oficina (cola local + latido) en cuanto hay operario
   useEffect(() => {
     if (pathname?.startsWith('/planta/login') || pathname?.startsWith('/planta/first-login')) return
-    if (localStorage.getItem('operator')) startPlantaSync()
+    const operator = localStorage.getItem('operator')
+    if (!operator) return
+    startPlantaSync()
+    // Al entrar (o cambiar de operario) se envía ya lo que sea suyo, sin esperar al latido
+    if (lastOperator.current !== operator) {
+      lastOperator.current = operator
+      void flush()
+    }
   }, [pathname])
 
   // Service worker de planta (solo producción): abre la app aunque la tablet
