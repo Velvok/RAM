@@ -35,16 +35,20 @@ const nextConfig = {
           },
         ],
       },
-      {
-        // Assets estáticos - caché largo
-        source: '/_next/static/:path*',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: 'public, max-age=31536000, immutable',
-          },
-        ],
-      },
+      // Assets estáticos - caché largo, solo en producción: en desarrollo
+      // Turbopack reutiliza los nombres de los ficheros y el navegador se
+      // quedaba con el JavaScript antiguo aunque el código hubiera cambiado.
+      ...(process.env.NODE_ENV === 'production'
+        ? [{
+            source: '/_next/static/:path*',
+            headers: [
+              {
+                key: 'Cache-Control',
+                value: 'public, max-age=31536000, immutable',
+              },
+            ],
+          }]
+        : []),
       {
         // Imágenes - caché medio
         source: '/:path*.{jpg,jpeg,png,gif,svg,ico,webp}',

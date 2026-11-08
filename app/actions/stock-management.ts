@@ -900,55 +900,13 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
   // 8. Actualizar estados de ambos pedidos
   // (fromOrderData y toOrderData ya declarados arriba)
   
-  // Actualizar estado del pedido origen
-  const { data: fromOrderOrders } = await supabase
-    .from('cut_orders')
-    .select('status')
-    .eq('order_id', fromOrderData.id)
-
-  const fromAllCompleted = fromOrderOrders?.every(o => o.status === 'completada' || o.status === 'entregado')
-  const fromAnyInProgress = fromOrderOrders?.some(o => o.status === 'pendiente')
-  const fromAnyCompleted = fromOrderOrders?.some(o => o.status === 'completada' || o.status === 'entregado')
-
-  let fromNewStatus = fromOrderData.status
-  if (fromAllCompleted) {
-    fromNewStatus = 'finalizado'
-  } else if (fromAnyInProgress || fromAnyCompleted) {
-    // Si hay alguna en proceso O completada, está en corte
-    fromNewStatus = 'en_corte'
-  } else {
-    fromNewStatus = 'aprobado'
-  }
-
-  await supabase
-    .from('orders')
-    .update({ status: fromNewStatus })
-    .eq('id', fromOrderData.id)
-
-  // Actualizar estado del pedido destino
-  const { data: toOrderOrders } = await supabase
-    .from('cut_orders')
-    .select('status')
-    .eq('order_id', toOrderData.id)
-
-  const toAllCompleted = toOrderOrders?.every(o => o.status === 'completada' || o.status === 'entregado')
-  const toAnyInProgress = toOrderOrders?.some(o => o.status === 'pendiente')
-  const toAnyCompleted = toOrderOrders?.some(o => o.status === 'completada' || o.status === 'entregado')
-
-  let toNewStatus = toOrderData.status
-  if (toAllCompleted) {
-    toNewStatus = 'finalizado'
-  } else if (toAnyInProgress || toAnyCompleted) {
-    // Si hay alguna en proceso O completada, está en corte
-    toNewStatus = 'en_corte'
-  } else {
-    toNewStatus = 'aprobado'
-  }
-
-  await supabase
-    .from('orders')
-    .update({ status: toNewStatus })
-    .eq('id', toOrderData.id)
+  // Mismo cálculo de estado que el resto de la app: respeta la pausa (si al
+  // pedido destino aún le falta stock), 'modificado' y las entregas parciales,
+  // y tiene en cuenta también las preparaciones.
+  const { updateOrderStatus } = await import('./orders')
+  await updateOrderStatus(fromOrderData.id)
+  await updateOrderStatus(toOrderData.id)
+  await checkAndActivateOrderOnHold(toOrderData.id)
 
   // 9. Registrar en el log de actividades de AMBOS pedidos
   

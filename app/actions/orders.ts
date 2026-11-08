@@ -676,11 +676,11 @@ export async function updateOrderStatus(orderId: string) {
   const [cutRes, prepRes, currentRes] = await Promise.all([
     supabase
       .from('cut_orders')
-      .select('status, quantity_requested, quantity_cut')
+      .select('status, quantity_requested, quantity_cut, material_base_id')
       .eq('order_id', orderId),
     supabase
       .from('preparation_items')
-      .select('status, quantity_requested, quantity_prepared')
+      .select('status, quantity_requested, quantity_prepared, assigned_inventory_id')
       .eq('order_id', orderId),
     supabase
       .from('orders')
@@ -742,6 +742,16 @@ export async function updateOrderStatus(orderId: string) {
   // Un pedido con una entrega parcial conserva ese estado aunque la planta
   // termine lo que faltaba: solo el remito final (webhook) lo pasa a entregado.
   if (current?.status === 'parcialmente_entregado') return
+
+  // Un pedido en pausa sigue en pausa mientras le quede alguna línea pendiente
+  // sin stock asignado: solo checkAndActivateOrderOnHold lo saca de ahí. Sin
+  // esto, cambiar una chapa o cortar lo ya reservado lo pasaba a 'en_corte'.
+  if (current?.status === 'aprobado_en_pausa') {
+    const missingStock =
+      (cutOrders || []).some((co: any) => !co.material_base_id && co.status === 'pendiente' && (co.quantity_cut || 0) < co.quantity_requested) ||
+      (prepItems || []).some((pi: any) => !pi.assigned_inventory_id && (pi.quantity_prepared || 0) < pi.quantity_requested)
+    if (missingStock) return
+  }
 
   await supabase
     .from('orders')

@@ -5,6 +5,8 @@ import { createAdminClient } from '@/lib/supabase/server'
 
 export interface IntegrationLog {
   id: string
+  order_id?: string | null
+  order_number?: string | null
   direction: 'inbound' | 'outbound'
   event_type: string
   source: string
@@ -53,7 +55,9 @@ export async function getIntegrationLogs(filters: LogsFilters = {}) {
   }
 
   if (filters.search) {
-    query = query.or(`event_type.ilike.%${filters.search}%,error_message.ilike.%${filters.search}%`)
+    // Sin caracteres que rompan la sintaxis de filtros de PostgREST
+    const q = filters.search.replace(/[,()*%\\]/g, ' ').trim()
+    if (q) query = query.or(`event_type.ilike.%${q}%,error_message.ilike.%${q}%,payload->>id_pedido.ilike.%${q}%`)
   }
 
   if (filters.fromDate) {
@@ -78,51 +82,69 @@ export async function getIntegrationLogs(filters: LogsFilters = {}) {
     throw error
   }
 
+  // Pedido de cada evento: los entrantes lo traen en related_entity_id y todos
+  // (entrantes y salientes) llevan id_pedido en el payload
+  const logs = (data || []) as IntegrationLog[]
+  const numbers = [...new Set(logs.map(l => l.payload?.id_pedido).filter(Boolean).map(String))]
+  const ids = [...new Set(logs.filter(l => l.direction === 'inbound' && l.related_entity_id).map(l => l.related_entity_id as string))]
+  const orderMap = new Map<string, { id: string; order_number: string }>()
+  if (numbers.length || ids.length) {
+    const ors = [numbers.length ? `order_number.in.(${numbers.map(x => `"${x.replace(/"/g, '')}"`).join(',')})` : '', ids.length ? `id.in.(${ids.join(',')})` : ''].filter(Boolean).join(',')
+    const { data: orders } = await supabase.from('orders').select('id, order_number').or(ors)
+    for (const o of orders || []) { orderMap.set(o.id, o); orderMap.set(o.order_number, o) }
+  }
+
   return {
-    logs: (data || []) as IntegrationLog[],
+    logs: logs.map(l => {
+      const o = (l.direction === 'inbound' && l.related_entity_id && orderMap.get(l.related_entity_id)) || (l.payload?.id_pedido && orderMap.get(String(l.payload.id_pedido))) || null
+      return { ...l, order_id: o?.id || null, order_number: o?.order_number || (l.payload?.id_pedido ? String(l.payload.id_pedido) : null) }
+    }),
     total: count || 0,
   }
 }
 
-export async function getLogsStats() {
+/** Salud de la integración para la cabecera de la pantalla Integración EVO. */
+export async function getIntegrationHealth() {
   await requireAdmin()
-
   const supabase = createAdminClient()
+  const now = Date.now()
+  const h24 = new Date(now - 24 * 3600 * 1000).toISOString()
+  const d30 = new Date(now - 30 * 24 * 3600 * 1000).toISOString()
+  const min10 = new Date(now - 10 * 60 * 1000).toISOString()
 
-  // Estadísticas últimas 24h
-  const yesterday = new Date()
-  yesterday.setHours(yesterday.getHours() - 24)
+  const [inRes, outRes, queueRes, stuckRes, lastInRes, lastOkRes, out30Res] = await Promise.all([
+    supabase.from('evo_events').select('tipo_evento, success').gte('created_at', h24),
+    supabase.from('outbound_events').select('event_type, status, created_at, completed_at').gte('created_at', h24),
+    supabase.from('outbound_events').select('status').in('status', ['pending', 'processing', 'failed']),
+    supabase.from('outbound_events').select('id', { count: 'exact', head: true }).eq('status', 'processing').lte('created_at', min10),
+    supabase.from('evo_events').select('created_at').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    supabase.from('outbound_events').select('completed_at').eq('status', 'success').order('completed_at', { ascending: false }).limit(1).maybeSingle(),
+    supabase.from('outbound_events').select('status').gte('created_at', d30).in('status', ['success', 'failed']),
+  ])
 
-  const { data: recent } = await supabase
-    .from('v_integration_logs')
-    .select('direction, status')
-    .gte('created_at', yesterday.toISOString())
+  const inbound = inRes.data || []
+  const outbound = outRes.data || []
+  const byType = (rows: { t: string }[]) => rows.reduce<Record<string, number>>((acc, r) => { acc[r.t] = (acc[r.t] || 0) + 1; return acc }, {})
+  const confirmed = outbound.filter(o => o.status === 'success')
+  const secs = confirmed.filter(o => o.completed_at).map(o => (new Date(o.completed_at!).getTime() - new Date(o.created_at).getTime()) / 1000).filter(x => x >= 0)
+  const queue = queueRes.data || []
+  const out30 = out30Res.data || []
 
-  const stats = {
-    inbound_24h: 0,
-    outbound_24h: 0,
-    success_24h: 0,
-    failed_24h: 0,
-    pending: 0,
+  return {
+    inbound24: inbound.length,
+    inboundByType: byType(inbound.map(i => ({ t: i.tipo_evento }))),
+    inboundFailed24: inbound.filter(i => i.success === false).length,
+    outbound24: outbound.length,
+    outboundByType: byType(outbound.map(o => ({ t: o.event_type }))),
+    confirmed24: confirmed.length,
+    avgConfirmSeconds: secs.length ? Math.round(secs.reduce((a, b) => a + b, 0) / secs.length) : null,
+    pending: queue.filter(q => q.status === 'pending' || q.status === 'processing').length,
+    failed: queue.filter(q => q.status === 'failed').length,
+    unconfirmed10m: stuckRes.count || 0,
+    lastInboundAt: lastInRes.data?.created_at || null,
+    lastConfirmedAt: lastOkRes.data?.completed_at || null,
+    confirmRate30d: out30.length ? Math.round((out30.filter(o => o.status === 'success').length / out30.length) * 100) : null,
   }
-
-  recent?.forEach((log: any) => {
-    if (log.direction === 'inbound') stats.inbound_24h++
-    if (log.direction === 'outbound') stats.outbound_24h++
-    if (log.status === 'success') stats.success_24h++
-    if (log.status === 'failed') stats.failed_24h++
-    if (log.status === 'pending') stats.pending++
-  })
-
-  // Pendientes globales (no solo 24h)
-  const { count: pendingCount } = await supabase
-    .from('outbound_events')
-    .select('*', { count: 'exact', head: true })
-    .in('status', ['pending', 'failed'])
-
-  stats.pending = pendingCount || 0
-
-  return stats
 }
 
 export async function getEventTypes() {
@@ -285,4 +307,18 @@ export async function markEventsAsViewed() {
   // Por ahora, no hacemos nada con evo_events porque no tienen esa columna
 
   return { success: true }
+}
+
+/** Ficha de solo lectura de la conexión con EVO (sin valores de secretos). */
+export async function getEvoConnectionInfo() {
+  await requireAdmin()
+  const supabase = createAdminClient()
+  const { data: last } = await supabase.from('evo_events').select('created_at').order('created_at', { ascending: false }).limit(1).maybeSingle()
+  return {
+    apiConfigured: !!process.env.EVO_API_URL,
+    webhookSecretConfigured: !!process.env.EVO_WEBHOOK_SECRET,
+    region: process.env.VERCEL_REGION || null,
+    webhooks: ['pedidos/nuevo', 'pedidos/entregado', 'stock/actualizado', 'evo/confirmacion'],
+    lastInboundAt: last?.created_at || null,
+  }
 }

@@ -1,231 +1,141 @@
 'use server'
 
 import { requireAdmin } from '@/lib/auth/guards'
-import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/server'
-import { revalidateInventory } from '@/lib/revalidate'
-import { enqueueOutboundEvent } from '@/lib/ram-outbound'
+
+// El stock es de solo lectura en RAM: el saldo lo fija EVO (webhook
+// stock_actualizado) y aquí solo se consulta junto con lo que reservan los
+// pedidos abiertos. No hay ajuste manual.
+
+const ACTIVE_ORDER_STATUSES = ['aprobado', 'aprobado_en_pausa', 'en_corte', 'finalizado', 'modificado', 'parcialmente_entregado']
 
 export async function getInventory() {
   await requireAdmin()
-
   const supabase = createAdminClient()
 
-  // Primero obtener el total de productos para saber cuántos lotes necesitamos
   const { count, error: countError } = await supabase
     .from('inventory')
     .select('*', { count: 'exact', head: true })
-
   if (countError) throw countError
-  const totalCount = count || 0
-  console.log(`📊 Total inventory records: ${totalCount}`)
 
-  // Traer datos por lotes de 1000 (límite de Supabase con joins)
+  // Por lotes de 1000 (límite de PostgREST)
   const batchSize = 1000
-  const allData: any[] = []
-  let offset = 0
-
-  while (offset < totalCount) {
+  const all: any[] = []
+  for (let offset = 0; offset < (count || 0); offset += batchSize) {
     const { data, error } = await supabase
       .from('inventory')
-      .select(`
-        *,
-        product:products(
-          id,
-          code,
-          name,
-          category,
-          unit,
-          evo_product_id
-        )
-      `)
+      .select('id, product_id, stock_total, stock_reservado, stock_disponible, updated_at, product:products(id, code, name, category, unit)')
       .order('stock_disponible', { ascending: true })
       .range(offset, offset + batchSize - 1)
-
     if (error) throw error
-    if (data && data.length > 0) {
-      allData.push(...data)
-      console.log(`📦 Batch ${Math.floor(offset / batchSize) + 1}: ${data.length} products`)
-    }
-
-    offset += batchSize
+    all.push(...(data || []))
   }
-
-  console.log(`📊 Inventory loaded: ${allData.length} products`)
-
-  // NOTA: Consultas de pedidos relacionados desactivadas temporalmente
-  // para evitar stack overflow con muchos productos
-  // Se reactivará cuando sea necesario o se optimice la consulta
-  
-  const result = allData.map(item => ({
-    ...item,
-    related_orders: []
-  }))
-  console.log(`✅ Returning ${result.length} products to client`)
-  return result
+  return all
 }
 
 export async function getInventoryByProduct(productId: string) {
   await requireAdmin()
-
   const supabase = createAdminClient()
-
   const { data, error } = await supabase
     .from('inventory')
-    .select(`
-      *,
-      product:products(
-        id,
-        code,
-        name,
-        category,
-        unit,
-        evo_product_id
-      )
-    `)
+    .select('*, product:products(id, code, name, category, unit, evo_product_id)')
     .eq('product_id', productId)
     .single()
-
   if (error) throw error
   return data
 }
 
-export async function updateStock(productId: string, quantity: number, type: 'add' | 'subtract') {
-  await requireAdmin()
-
-  const supabase = createAdminClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  const { data: current } = await supabase
-    .from('inventory')
-    .select('stock_total')
-    .eq('product_id', productId)
-    .single()
-
-  const stockBefore = current?.stock_total || 0
-  const stockAfter = type === 'add' ? stockBefore + quantity : stockBefore - quantity
-
-  const { data, error } = await supabase
-    .from('inventory')
-    .update({ stock_total: stockAfter })
-    .eq('product_id', productId)
-    .select()
-    .single()
-
-  if (error) throw error
-
-  await supabase
-    .from('stock_movements')
-    .insert({
-      product_id: productId,
-      movement_type: type === 'add' ? 'ingreso' : 'egreso',
-      quantity: type === 'add' ? quantity : -quantity,
-      stock_before: stockBefore,
-      stock_after: stockAfter,
-      user_id: user?.id,
-    })
-
-  // Revalidar inventario
-  revalidateInventory()
-  return data
+export interface StockDemand {
+  orderId: string
+  orderNumber: string
+  orderStatus: string
+  client: string
+  /** Unidades de este producto que pide el pedido y faltan por cortar/preparar */
+  units: number
+  /** De esas, cuántas no tienen stock asignado */
+  unassigned: number
+  /** Si este producto es la chapa de la que se corta otro producto del pedido */
+  asMaterialFor?: string
 }
 
-export async function adjustStock(productId: string, newQuantity: number, notes: string) {
+/**
+ * Inventario + lo que piden los pedidos abiertos + consumo de los últimos 90
+ * días (entregas), para la pantalla de Stock.
+ */
+export async function getStockOverview() {
   await requireAdmin()
-
   const supabase = createAdminClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const since = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString()
 
-  const { data: current } = await supabase
-    .from('inventory')
-    .select('stock_total, stock_generado')
-    .eq('product_id', productId)
-    .single()
+  const [inventory, cutsRes, prepsRes, movRes] = await Promise.all([
+    getInventory(),
+    supabase
+      .from('cut_orders')
+      .select('product_id, material_base_id, quantity_requested, quantity_cut, status, product:products!cut_orders_product_id_fkey(code), order:orders!cut_orders_order_id_fkey!inner(id, order_number, status, client:clients(business_name))')
+      .in('status', ['pendiente', 'pendiente_confirmacion'])
+      .in('order.status', ACTIVE_ORDER_STATUSES),
+    supabase
+      .from('preparation_items')
+      .select('product_id, assigned_inventory_id, quantity_requested, quantity_prepared, status, order:orders!preparation_items_order_id_fkey!inner(id, order_number, status, client:clients(business_name))')
+      .neq('status', 'entregado')
+      .in('order.status', ACTIVE_ORDER_STATUSES),
+    supabase
+      .from('product_movements')
+      .select('product_id, units')
+      .eq('movement_type', 'entrega')
+      .gte('occurred_at', since),
+  ])
+  if (cutsRes.error) throw cutsRes.error
+  if (prepsRes.error) throw prepsRes.error
 
-  const stockBefore = current?.stock_total || 0
-  const generadoBefore = current?.stock_generado || 0
-  const difference = newQuantity - stockBefore
-
-  // Calcular nuevo stock_generado usando lógica FIFO
-  let newGenerado = generadoBefore
-  
-  if (difference < 0) {
-    // Si estamos REDUCIENDO stock, reducir primero del generado
-    const quantityToReduce = Math.abs(difference)
-    const reduceFromGenerated = Math.min(quantityToReduce, generadoBefore)
-    newGenerado = generadoBefore - reduceFromGenerated
-    
-    console.log(`📊 Ajuste de stock (reducción):`)
-    console.log(`   Stock total: ${stockBefore} → ${newQuantity}`)
-    console.log(`   Stock generado: ${generadoBefore} → ${newGenerado}`)
-    console.log(`   Reducido de generado: ${reduceFromGenerated}`)
-  } else if (difference > 0) {
-    // Si estamos AUMENTANDO stock, no tocar generado (es stock virgen)
-    console.log(`📊 Ajuste de stock (aumento):`)
-    console.log(`   Stock total: ${stockBefore} → ${newQuantity}`)
-    console.log(`   Stock generado: ${generadoBefore} (sin cambios)`)
-    console.log(`   Stock virgen añadido: ${difference}`)
+  const demand: Record<string, StockDemand[]> = {}
+  const add = (productId: string | null, d: StockDemand) => {
+    if (!productId) return
+    const list = (demand[productId] ||= [])
+    const same = list.find(x => x.orderId === d.orderId && x.asMaterialFor === d.asMaterialFor)
+    if (same) { same.units += d.units; same.unassigned += d.unassigned } else list.push(d)
   }
+  const one = (v: any) => (Array.isArray(v) ? v[0] : v)
 
-  const { data, error } = await supabase
-    .from('inventory')
-    .update({ 
-      stock_total: newQuantity,
-      stock_generado: newGenerado
-    })
-    .eq('product_id', productId)
-    .select()
-    .single()
-
-  if (error) throw error
-
-  await supabase
-    .from('stock_movements')
-    .insert({
-      product_id: productId,
-      movement_type: 'ajuste',
-      quantity: difference,
-      stock_before: stockBefore,
-      stock_after: newQuantity,
-      user_id: user?.id,
-      notes: difference < 0 
-        ? `${notes} (reducido ${Math.abs(difference)} unidades, ${Math.min(Math.abs(difference), generadoBefore)} de generado)`
-        : `${notes} (añadido ${difference} unidades vírgenes)`,
-    })
-
-  // Notificar a RAM del ajuste de stock
-  try {
-    const { data: product } = await supabase
-      .from('products')
-      .select('code, evo_product_id, unit')
-      .eq('id', productId)
-      .single()
-
-    if (product) {
-      await enqueueOutboundEvent({
-        eventType: 'stock_ajustado',
-        payload: {
-          timestamp: new Date().toISOString(),
-          product_id: productId,
-          product_code: product.code,
-          evo_product_id: product.evo_product_id,
-          stock_before: stockBefore,
-          stock_after: newQuantity,
-          difference,
-          unit: product.unit || 'm',
-          notes,
-          adjusted_by: user?.id,
-        },
-        relatedEntityType: 'product',
-        relatedEntityId: productId,
-      })
+  for (const c of cutsRes.data || []) {
+    const order = one(c.order)
+    const left = Math.max(0, Number(c.quantity_requested || 0) - Number(c.quantity_cut || 0))
+    if (!left || !order) continue
+    const base = { orderId: order.id, orderNumber: order.order_number, orderStatus: order.status, client: one(order.client)?.business_name || 'Sin cliente' }
+    add(c.product_id, { ...base, units: left, unassigned: c.material_base_id ? 0 : left })
+    if (c.material_base_id && c.material_base_id !== c.product_id) {
+      add(c.material_base_id, { ...base, units: left, unassigned: 0, asMaterialFor: one(c.product)?.code })
     }
-  } catch (notifyError) {
-    console.error('Error notificando ajuste de stock a RAM:', notifyError)
-    // No bloquear el ajuste si falla la notificación (queda en la cola para reintentar)
+  }
+  for (const p of prepsRes.data || []) {
+    const order = one(p.order)
+    const left = Math.max(0, Number(p.quantity_requested || 0) - Number(p.quantity_prepared || 0))
+    if (!left || !order) continue
+    add(p.product_id, {
+      orderId: order.id, orderNumber: order.order_number, orderStatus: order.status,
+      client: one(order.client)?.business_name || 'Sin cliente', units: left, unassigned: p.assigned_inventory_id ? 0 : left,
+    })
   }
 
-  // Revalidar inventario
-  revalidateInventory()
-  return data
+  const delivered90: Record<string, number> = {}
+  for (const m of movRes.data || []) {
+    if (m.product_id) delivered90[m.product_id] = (delivered90[m.product_id] || 0) + Number(m.units || 0)
+  }
+
+  return {
+    inventory: inventory.map((i: any) => ({
+      id: i.id as string,
+      productId: i.product_id as string,
+      code: (one(i.product)?.code || '') as string,
+      name: (one(i.product)?.name || '') as string,
+      category: (one(i.product)?.category || null) as string | null,
+      total: Number(i.stock_total || 0),
+      reserved: Number(i.stock_reservado || 0),
+      available: Number(i.stock_disponible || 0),
+      updatedAt: i.updated_at as string | null,
+    })),
+    demand,
+    delivered90,
+    generatedAt: new Date().toISOString(),
+  }
 }

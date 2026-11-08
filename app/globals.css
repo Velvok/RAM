@@ -82,3 +82,24 @@
     font-feature-settings: "tnum";
   }
 }
+
+/* Maquetación de las pantallas de admin: columna principal + columna lateral
+   (panel de acción, ficha, detalle). CSS propio para no depender de que
+   Tailwind genere clases arbitrarias, y con corte a 1100 px de ventana para que
+   en un portátil con la barra lateral abierta siga en dos columnas. */
+.admin-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+@media (min-width: 1100px) {
+  .admin-split {
+    grid-template-columns: minmax(0, 1fr) var(--aside-w, 380px);
+  }
+}
+.admin-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.75rem;
+}

@@ -2,7 +2,7 @@
 
 import { requireAdmin } from '@/lib/auth/guards'
 import { findOperatorWithPin, hashPin, isValidPin } from '@/lib/auth/pin'
-import { inviteStaffUser } from '@/lib/auth/invitations'
+import { inviteStaffUser, PENDING_KEY, INVITED_AT_KEY, INVITE_VALID_DAYS } from '@/lib/auth/invitations'
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
@@ -11,15 +11,46 @@ const USER_COLUMNS = 'id, email, full_name, role, is_active, first_login, last_l
 
 export async function getUsers() {
   await requireAdmin()
-
   const supabase = createAdminClient()
   const { data, error } = await supabase
     .from('users')
     .select(USER_COLUMNS)
     .order('created_at', { ascending: false })
-
   if (error) throw error
-  return data
+
+  // Admin y manager entran por Supabase Auth: de ahí sale su último acceso y,
+  // si no han activado la cuenta, cuándo caduca la invitación.
+  const { data: authList } = await supabase.auth.admin.listUsers({ perPage: 1000 })
+  const authById = new Map((authList?.users || []).map(u => [u.id, u]))
+  const authByEmail = new Map((authList?.users || []).filter(u => u.email).map(u => [u.email!.toLowerCase(), u]))
+  return (data || []).map(u => {
+    const au = u.role === 'operator' ? undefined : authById.get(u.id) || (u.email ? authByEmail.get(u.email.toLowerCase()) : undefined)
+    const meta = (au?.user_metadata || {}) as Record<string, any>
+    const pending = meta[PENDING_KEY] === true
+    const invitedAt = pending ? Date.parse(meta[INVITED_AT_KEY] || '') : NaN
+    return {
+      ...u,
+      last_access_at: (u.role === 'operator' ? u.last_login_at : au?.last_sign_in_at) || null,
+      invite_pending: pending,
+      invite_expires_at: Number.isFinite(invitedAt) ? new Date(invitedAt + INVITE_VALID_DAYS * 24 * 3600 * 1000).toISOString() : null,
+    }
+  })
+}
+
+/** Vuelve a dar 14 días a una invitación sin activar. */
+export async function renewInvitation(userId: string) {
+  await requireAdmin()
+  const supabase = createAdminClient()
+  const { data, error } = await supabase.auth.admin.getUserById(userId)
+  if (error || !data?.user) return { error: 'No se encontró la cuenta' }
+  const meta = (data.user.user_metadata || {}) as Record<string, any>
+  if (meta[PENDING_KEY] !== true) return { error: 'Esta cuenta ya está activada' }
+  const { error: upErr } = await supabase.auth.admin.updateUserById(userId, {
+    user_metadata: { ...meta, [INVITED_AT_KEY]: new Date().toISOString() },
+  })
+  if (upErr) throw upErr
+  revalidatePath('/admin/configuracion')
+  return { success: true }
 }
 
 export async function createUser(userData: {
@@ -105,17 +136,19 @@ export async function updateUser(userId: string, userData: {
   return data
 }
 
-export async function deleteUser(userId: string) {
-  await requireAdmin()
-
+// No se borra a nadie: dar de baja conserva su historial de cortes y pedidos.
+export async function setUserActive(userId: string, active: boolean) {
+  const actor = await requireAdmin()
+  if (!active && actor.kind === 'admin' && actor.userId === userId) {
+    return { error: 'No puedes darte de baja a ti mismo' }
+  }
   const supabase = createAdminClient()
-
+  // requireAdmin y el login por PIN ya rechazan a los usuarios inactivos
   const { error } = await supabase
     .from('users')
-    .delete()
+    .update({ is_active: active, updated_at: new Date().toISOString() })
     .eq('id', userId)
-
   if (error) throw error
-
   revalidatePath('/admin/configuracion')
+  return { success: true }
 }

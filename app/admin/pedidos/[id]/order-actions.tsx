@@ -1,345 +1,63 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { generateCutOrders, getOrderById, approveOrderOnHold, approveOrderModification, undoOrderDelivery } from '@/app/actions/orders'
-import { useRouter } from 'next/navigation'
+import { useState } from 'react'
+import { toast } from 'sonner'
+import { generateCutOrders, approveOrderOnHold } from '@/app/actions/orders'
 import { useConfirm } from '@/components/confirm-modal'
-import { useError } from '@/components/error-modal'
-import { useSuccess } from '@/components/success-modal'
 import { Button } from '@/components/ui/button'
-import { PauseCircle } from 'lucide-react'
 
-export default function OrderActions({ 
-  order: initialOrder, 
-  onUpdate,
-  isHeaderMode = false
-}: { 
-  order: any
-  onUpdate?: () => Promise<void>
-  isHeaderMode?: boolean
-}) {
+// Acciones de la cabecera del detalle: solo aprobar un pedido nuevo. La
+// ampliación de EVO, la asignación en pausa y deshacer entregas viven en sus
+// bloques del propio detalle.
+export default function OrderActions({ order, onUpdate }: { order: any; onUpdate?: () => Promise<void>; isHeaderMode?: boolean }) {
   const [loading, setLoading] = useState(false)
-  const [undoingDelivery, setUndoingDelivery] = useState(false)
-  const [order, setOrder] = useState(initialOrder)
-  const router = useRouter()
   const { confirm, ConfirmDialog } = useConfirm()
-  const { showError, ErrorDialog } = useError()
-  const { showSuccess, SuccessDialog } = useSuccess()
 
-  // Actualizar order cuando cambie initialOrder
-  useEffect(() => {
-    setOrder(initialOrder)
-  }, [initialOrder])
-
-  // Función para recargar datos del pedido
-  async function reloadOrder() {
-    if (onUpdate) {
-      await onUpdate()
-    } else {
-      try {
-        const updated = await getOrderById(order.id)
-        setOrder(updated)
-        router.refresh()
-      } catch (error) {
-        console.error('Error reloading order:', error)
-      }
-    }
-  }
-
-  async function handleGenerateCutOrders() {
-    const confirmed = await confirm(
-      'Aprobar Pedido y Asignar Stock',
-      '¿Aprobar este pedido? Se crearán órdenes de corte y se asignará stock automáticamente.',
-      { variant: 'success', confirmText: 'Sí, aprobar' }
+  async function handleApprove() {
+    const ok = await confirm(
+      '¿Aprobar el pedido?',
+      'Se crean sus órdenes de corte y preparación y se reserva el stock de cada línea. Si alguna línea no tiene stock, no se aprueba nada y te propone aprobar en pausa.',
+      { variant: 'success', confirmText: 'Sí, aprobar' },
     )
-    
-    if (!confirmed) return
-    
+    if (!ok) return
     setLoading(true)
     try {
       await generateCutOrders(order.id)
-      await reloadOrder()
-      
-      // Revalidar para sincronizar con tablet
-      try {
-        await fetch(`/api/revalidate?path=/admin/pedidos/${order.id}`, { method: 'POST' })
-        await fetch(`/api/revalidate?path=/planta/pedidos/${order.id}`, { method: 'POST' })
-      } catch (e) {
-        console.log('Revalidación fallida')
-      }
-      
-      showSuccess(
-        'Pedido aprobado. Órdenes de corte creadas y stock asignado correctamente.',
-        'Pedido Aprobado'
-      )
-    } catch (error: any) {
-      console.error('🔴 Error en handleGenerateCutOrders:', error)
-      showError(error?.message || 'No se pudo aprobar el pedido', 'Error al Aprobar')
+      toast.success('Pedido aprobado: la planta ya lo ve')
+      await onUpdate?.()
+    } catch (e: any) {
+      toast.error('No se pudo aprobar', { description: e?.message, duration: 10000 })
     } finally {
       setLoading(false)
     }
   }
 
   async function handleApproveOnHold() {
-    const confirmed = await confirm(
-      'Aprobar Pedido en Pausa',
-      '¿Aprobar este pedido en pausa? Se crearán órdenes de corte pero NO se asignará stock automáticamente. Útil cuando se espera la llegada de material.',
-      { variant: 'warning', confirmText: 'Sí, aprobar en pausa' }
+    const ok = await confirm(
+      '¿Aprobar en pausa?',
+      'Se crean las órdenes sin reservar stock. Después asignas cada línea desde este detalle; el pedido sale de la pausa al asignar la última.',
+      { variant: 'warning', confirmText: 'Sí, en pausa' },
     )
-    
-    if (!confirmed) return
-    
+    if (!ok) return
     setLoading(true)
     try {
-      const result = await approveOrderOnHold(order.id)
-      await reloadOrder()
-      
-      // Revalidar para sincronizar con tablet
-      try {
-        await fetch(`/api/revalidate?path=/admin/pedidos/${order.id}`, { method: 'POST' })
-        await fetch(`/api/revalidate?path=/planta/pedidos/${order.id}`, { method: 'POST' })
-      } catch (e) {
-        console.log('Revalidación fallida')
-      }
-      
-      showSuccess(
-        result.message || 'Pedido aprobado en pausa. El stock deberá asignarse manualmente desde el detalle del pedido.',
-        'Pedido Aprobado en Pausa'
-      )
-    } catch (error: any) {
-      showError(error?.message || 'No se pudo aprobar el pedido en pausa', 'Error al Aprobar')
+      const res = await approveOrderOnHold(order.id)
+      toast.success(res?.message || 'Pedido aprobado en pausa')
+      await onUpdate?.()
+    } catch (e: any) {
+      toast.error('No se pudo aprobar en pausa', { description: e?.message })
     } finally {
       setLoading(false)
     }
   }
 
-  async function handleApproveModification(onHold = false) {
-    const confirmed = onHold
-      ? await confirm(
-          'Aprobar Ampliación en Pausa',
-          'EVO ha modificado este pedido añadiendo artículos. ¿Aprobar la ampliación en pausa? Se crearán órdenes de corte / preparación solo para lo añadido, SIN asignar stock. El pedido quedará en pausa hasta asignar el stock a mano.',
-          { variant: 'warning', confirmText: 'Sí, aprobar en pausa' }
-        )
-      : await confirm(
-          'Aprobar Ampliación del Pedido',
-          'EVO ha modificado este pedido añadiendo artículos. ¿Aprobar la ampliación? Se comprobará el stock y se crearán órdenes de corte / preparación solo para lo añadido.',
-          { variant: 'success', confirmText: 'Sí, aprobar ampliación' }
-        )
+  if (order.status !== 'nuevo') return <ConfirmDialog />
 
-    if (!confirmed) return
-
-    setLoading(true)
-    try {
-      const result = await approveOrderModification(order.id, { onHold })
-      await reloadOrder()
-
-      // Revalidar para sincronizar con tablet
-      try {
-        await fetch(`/api/revalidate?path=/admin/pedidos/${order.id}`, { method: 'POST' })
-        await fetch(`/api/revalidate?path=/planta/pedidos/${order.id}`, { method: 'POST' })
-      } catch (e) {
-        console.log('Revalidación fallida')
-      }
-
-      if (result.success) {
-        showSuccess(
-          onHold
-            ? 'Ampliación aprobada en pausa. El stock deberá asignarse manualmente desde el detalle del pedido.'
-            : 'Ampliación aprobada. Órdenes de corte / preparación creadas y stock asignado.',
-          'Ampliación Aprobada'
-        )
-      } else {
-        showError(result.errors?.join('\n') || 'La ampliación se aprobó con incidencias', 'Ampliación con Incidencias')
-      }
-    } catch (error: any) {
-      showError(error?.message || 'No se pudo aprobar la ampliación', 'Error al Aprobar')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function handleUndoDelivery() {
-    const confirmed = await confirm(
-      '¿Estás seguro de deshacer esta entrega?',
-      'Esta acción restaurará el stock consumido y revertirá el estado del pedido.'
-    )
-    
-    if (!confirmed) return
-    
-    setUndoingDelivery(true)
-    try {
-      await undoOrderDelivery(order.id)
-      await reloadOrder()
-      
-      // Revalidar para sincronizar con tablet
-      try {
-        await fetch(`/api/revalidate?path=/admin/pedidos/${order.id}`, { method: 'POST' })
-        await fetch(`/api/revalidate?path=/planta/pedidos/${order.id}`, { method: 'POST' })
-      } catch (e) {
-        console.log('Revalidación fallida')
-      }
-      
-      showSuccess(
-        'Entrega deshecha correctamente. El stock ha sido restaurado.',
-        '✓ Entrega Deshecha'
-      )
-    } catch (error: any) {
-      showError(error?.message || 'No se pudo deshacer la entrega', 'Error al Deshacer')
-    } finally {
-      setUndoingDelivery(false)
-    }
-  }
-
-  // Verificar si se puede deshacer la entrega (dentro de 24h y estado entregado)
-  const canUndoDelivery = order.status === 'entregado'
-
-  // Verificar si el pedido en pausa tiene stock parcialmente asignado
-  const hasPartialStock = order.status === 'aprobado_en_pausa' && (
-    (order.cut_orders?.some((co: any) => co.material_base_id) || false) ||
-    (order.preparation_items?.some((pi: any) => pi.assigned_inventory_id) || false)
-  )
-
-  // Modificación de EVO con artículos añadidos pendientes de aprobar
-  const hasPendingModification = order.status === 'modificado'
-
-  // Modo header: solo botones sin cuadro
-  if (isHeaderMode) {
-    return (
-      <>
-        <ConfirmDialog />
-        <ErrorDialog />
-        <SuccessDialog />
-        <div className="flex items-center gap-2">
-          {/* Aprobar Pedido - DOS OPCIONES */}
-          {order.status === 'nuevo' && (
-            <>
-              <Button variant="success" size="sm" onClick={handleGenerateCutOrders} disabled={loading}>
-                Aprobar Pedido
-              </Button>
-              <Button variant="pause" size="sm" onClick={handleApproveOnHold} disabled={loading}>
-                Aprobar en Pausa
-              </Button>
-            </>
-          )}
-
-          {/* Ampliación pendiente (modificación desde EVO) */}
-          {hasPendingModification && (
-            <>
-              <Button variant="success" size="sm" onClick={() => handleApproveModification(false)} disabled={loading}>
-                Aprobar Ampliación
-              </Button>
-              <Button variant="pause" size="sm" onClick={() => handleApproveModification(true)} disabled={loading}>
-                Ampliación en Pausa
-              </Button>
-            </>
-          )}
-
-          {/* Estado Aprobado en Pausa */}
-          {order.status === 'aprobado_en_pausa' && (
-            <div className="flex items-center gap-1.5 px-4 py-2 bg-orange-100 text-orange-800 rounded-lg text-sm font-semibold">
-              <PauseCircle size={15} strokeWidth={1.75} />
-              En Pausa - {hasPartialStock ? 'Parcialmente asignado' : 'Sin stock asignado'}
-            </div>
-          )}
-
-
-          {/* Deshacer Entrega */}
-          {canUndoDelivery && (
-            <Button variant="pause" size="sm" onClick={handleUndoDelivery} disabled={undoingDelivery}>
-              {undoingDelivery ? 'Deshaciendo...' : 'Deshacer Entrega'}
-            </Button>
-          )}
-        </div>
-      </>
-    )
-  }
-
-  // Modo normal: cuadro completo (no se usa más pero lo mantenemos por compatibilidad)
   return (
     <>
       <ConfirmDialog />
-      <ErrorDialog />
-      <SuccessDialog />
-      <div className="bg-card rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold text-foreground mb-4">
-          Acciones
-        </h3>
-      
-        <div className="space-y-3">
-          {/* Aprobar Pedido - DOS OPCIONES */}
-          {order.status === 'nuevo' && (
-            <>
-              <button
-                onClick={handleGenerateCutOrders}
-                disabled={loading}
-                className="w-full px-4 py-3 bg-green-600 hover:bg-green-500 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Aprobar Pedido y Asignar Stock
-              </button>
-              <button
-                onClick={handleApproveOnHold}
-                disabled={loading}
-                className="w-full px-4 py-3 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Aprobar en Pausa (sin stock)
-              </button>
-            </>
-          )}
-
-          {order.status === 'aprobado' && (
-            <div className="px-4 py-3 bg-green-100 text-green-800 rounded-lg font-semibold text-center">
-              Pedido Aprobado - Stock asignado
-            </div>
-          )}
-
-          {order.status === 'aprobado_en_pausa' && (
-            <div className="px-4 py-3 bg-orange-100 text-orange-800 rounded-lg font-semibold text-center">
-              ⏸️ Pedido en Pausa - {hasPartialStock ? 'Parcialmente asignado' : 'Sin stock asignado'}
-            </div>
-          )}
-
-
-          {order.status === 'entregado' && (
-            <div className="space-y-3">
-              <div className="px-4 py-3 bg-blue-100 text-blue-800 rounded-lg font-semibold text-center">
-                Pedido Entregado
-              </div>
-              
-              {/* Deshacer Entrega */}
-              {canUndoDelivery && (
-                <button
-                  onClick={handleUndoDelivery}
-                  disabled={undoingDelivery}
-                  className="w-full px-4 py-3 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {undoingDelivery ? 'Deshaciendo...' : 'Deshacer Entrega'}
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Información de Estado */}
-        <div className="mt-6 pt-6 border-t border-border">
-          <h4 className="text-sm font-semibold text-foreground mb-2">
-            Estado del Pedido
-          </h4>
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Órdenes de Corte:</span>
-              <span className="text-foreground font-semibold">
-                {order.cut_orders?.length || 0}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Estado:</span>
-              <span className="text-foreground font-semibold capitalize">
-                {order.status}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
+      <Button variant="success" size="sm" onClick={handleApprove} disabled={loading}>Aprobar pedido</Button>
+      <Button variant="outline" size="sm" onClick={handleApproveOnHold} disabled={loading}>Aprobar en pausa</Button>
     </>
   )
 }

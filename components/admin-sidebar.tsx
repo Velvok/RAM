@@ -69,7 +69,7 @@ export function AdminSidebar({ displayEmail, isCollapsed, setIsCollapsed }: Admi
     { href: '/admin/pedidos', label: 'Pedidos', icon: ShoppingCart },
     { href: '/admin/stock', label: 'Stock', icon: Package },
     { href: '/admin/historial', label: 'Historial Anual', icon: History },
-    { href: '/admin/logs', label: 'Logs RAM', icon: FileText, badge: pendingCount },
+    { href: '/admin/logs', label: 'Integración EVO', icon: FileText, badge: pendingCount },
   ]
 
   return (
