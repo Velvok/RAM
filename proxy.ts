@@ -7,7 +7,9 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Páginas de planta: exigen la sesión firmada que crea el login por PIN
-  if (pathname.startsWith('/planta') && !PLANTA_PUBLIC.includes(pathname)) {
+  // (solo /planta y /planta/…: /planta-sw.js es el service worker, público)
+  const isPlanta = pathname === '/planta' || pathname.startsWith('/planta/')
+  if (isPlanta && !PLANTA_PUBLIC.includes(pathname)) {
     if (!verifyPlantaToken(request.cookies.get(PLANTA_COOKIE)?.value)) {
       return NextResponse.redirect(new URL('/planta/login', request.url))
     }
