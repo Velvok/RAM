@@ -1,6 +1,6 @@
 'use server'
 
-import { requireAdmin } from '@/lib/auth/guards'
+import { requireAdminRole } from '@/lib/auth/guards'
 import { findOperatorWithPin, hashPin, isValidPin } from '@/lib/auth/pin'
 import { inviteStaffUser, PENDING_KEY, INVITED_AT_KEY, INVITE_VALID_DAYS } from '@/lib/auth/invitations'
 import { createAdminClient } from '@/lib/supabase/server'
@@ -10,7 +10,7 @@ import { revalidatePath } from 'next/cache'
 const USER_COLUMNS = 'id, email, full_name, role, is_active, first_login, last_login_at, created_at, updated_at'
 
 export async function getUsers() {
-  await requireAdmin()
+  await requireAdminRole()
   const supabase = createAdminClient()
   const { data, error } = await supabase
     .from('users')
@@ -39,7 +39,7 @@ export async function getUsers() {
 
 /** Vuelve a dar 14 días a una invitación sin activar. */
 export async function renewInvitation(userId: string) {
-  await requireAdmin()
+  await requireAdminRole()
   const supabase = createAdminClient()
   const { data, error } = await supabase.auth.admin.getUserById(userId)
   if (error || !data?.user) return { error: 'No se encontró la cuenta' }
@@ -60,7 +60,7 @@ export async function createUser(userData: {
   pin?: string
   password?: string
 }) {
-  await requireAdmin()
+  await requireAdminRole()
 
   const supabase = createAdminClient()
 
@@ -103,7 +103,7 @@ export async function updateUser(userId: string, userData: {
   is_active?: boolean
   newPin?: string
 }) {
-  await requireAdmin()
+  await requireAdminRole()
 
   const supabase = createAdminClient()
 
@@ -138,7 +138,7 @@ export async function updateUser(userId: string, userData: {
 
 // No se borra a nadie: dar de baja conserva su historial de cortes y pedidos.
 export async function setUserActive(userId: string, active: boolean) {
-  const actor = await requireAdmin()
+  const actor = await requireAdminRole()
   if (!active && actor.kind === 'admin' && actor.userId === userId) {
     return { error: 'No puedes darte de baja a ti mismo' }
   }

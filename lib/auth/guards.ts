@@ -78,6 +78,23 @@ export async function requireAdmin(): Promise<Actor> {
   throw new Error(UNAUTHORIZED)
 }
 
+/**
+ * Solo rol 'admin' (no 'manager'): gestión de usuarios e invitaciones. Un
+ * manager no puede crear, editar, renovar ni dar de baja cuentas; si pudiera,
+ * se invitaría a sí mismo como admin y activaría esa cuenta.
+ */
+export async function requireAdminRole(): Promise<Actor> {
+  const actor = await requireAdmin()
+  if (actor.kind !== 'admin') return actor
+  const { data } = await createAdminClient()
+    .from('users')
+    .select('role')
+    .eq('id', actor.userId)
+    .maybeSingle()
+  if (data?.role !== 'admin') throw new Error('Solo un administrador puede gestionar usuarios.')
+  return actor
+}
+
 export async function requireStaff(): Promise<Actor> {
   if (systemContext.getStore()) return { kind: 'system' }
   // Primero la cookie de planta: se valida en local, sin ir a la red
