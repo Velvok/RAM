@@ -4,9 +4,11 @@ import { requireAdmin } from '@/lib/auth/guards'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidateAll } from '@/lib/revalidate'
+import { testOrdersEnabled } from '@/lib/test-orders'
 
 export async function generateTestOrder(status: string = 'nuevo', numLines: number = 1) {
   await requireAdmin()
+  if (!testOrdersEnabled()) throw new Error('Los pedidos de prueba están desactivados')
 
   console.log('🎲 Generando pedido de prueba...', { status, numLines })
   const supabase = createAdminClient()

@@ -89,7 +89,7 @@ export default function OrdenDetallePage() {
             </div>
             <div>
               <div className="text-sm text-muted-foreground mb-1">Cantidad Solicitada</div>
-              <div className="text-lg font-semibold text-foreground">{order.quantity_requested} m</div>
+              <div className="text-lg font-semibold text-foreground">{order.quantity_requested} uds</div>
             </div>
             {order.material_base && (
               <>

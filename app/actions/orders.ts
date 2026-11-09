@@ -210,7 +210,7 @@ async function createLineFulfillmentOnHold(
     const productSize = extractSizeFromCode(line.product?.code || '') ||
                        line.product?.length_meters ||
                        line.length_meters ||
-                       line.quantity
+                       0 // sin largo conocido (line.quantity son unidades, no metros)
 
     // Crear UNA orden de corte agrupada para todas las unidades
     const cutNumber = `CUT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
@@ -342,7 +342,7 @@ async function createLineFulfillment(
     const productSize = extractSizeFromCode(line.product?.code || '') ||
                        line.product?.length_meters ||
                        line.length_meters ||
-                       line.quantity
+                       0 // sin largo conocido (line.quantity son unidades, no metros)
     
     // Crear UNA orden de corte agrupada para todas las unidades
     const cutNumber = `CUT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`

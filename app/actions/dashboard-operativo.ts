@@ -69,8 +69,10 @@ export interface OperationalDashboard {
     deliveredPrevWeek: number
     avgApproveToFinishDays: number | null
     avgFinishToDeliveryDays: number | null
-    metersCut: number
-    remnants: { sheets: number; meters: number }
+    /** Chapas cortadas en la semana (unidades) */
+    sheetsCut: number
+    /** Chapas de las que salió sobrante al estante de remanentes */
+    remnantSheets: number
     sizeChanges: number
     reassignments: number
   }
@@ -393,11 +395,12 @@ export async function getOperationalDashboard(): Promise<OperationalDashboard> {
   }
   const avg = (xs: number[]) => (xs.length ? round1(xs.reduce((a, b) => a + b, 0) / xs.length) : null)
   const weekActivity = activity.filter(a => new Date(a.created_at) >= weekStart)
-  let metersCut = 0, remnantSheets = 0, remnantMeters = 0
+  // RAM trabaja en unidades: se cuentan chapas, no metros
+  let sheetsCut = 0, remnantSheets = 0
   for (const a of weekActivity.filter(x => x.activity_type === 'cut_completed')) {
     const m = a.metadata || {}
-    metersCut += Number(m.quantity_cut || 0) * Number(m.material_length || 0)
-    if (Number(m.remnant_per_sheet || 0) > 0) { remnantSheets += Number(m.sheets_used || 0); remnantMeters += Number(m.remnant_per_sheet) * Number(m.sheets_used || 0) }
+    sheetsCut += Number(m.quantity_cut || 0)
+    if (Number(m.remnant_per_sheet || 0) > 0) remnantSheets += Number(m.sheets_used || 0)
   }
   const { count: sizeChanges } = await supabase.from('cut_orders').select('id', { count: 'exact', head: true }).not('parent_cut_order_id', 'is', null).gte('created_at', weekStart.toISOString())
 
@@ -414,8 +417,8 @@ export async function getOperationalDashboard(): Promise<OperationalDashboard> {
       deliveredPrevWeek: deliveredPrevWeek.length,
       avgApproveToFinishDays: avg(approveToFinish),
       avgFinishToDeliveryDays: avg(finishToDelivery),
-      metersCut: Math.round(metersCut),
-      remnants: { sheets: remnantSheets, meters: round1(remnantMeters) },
+      sheetsCut,
+      remnantSheets,
       sizeChanges: sizeChanges || 0,
       reassignments: weekActivity.filter(x => x.activity_type === 'reassignment_confirmed').length,
     },

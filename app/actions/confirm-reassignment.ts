@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { notifyChapaPreparada } from '@/lib/ram-outbound'
 import { offlineNote } from '@/lib/planta-offline-time'
+import { extractSizeFromCode } from '@/lib/product-utils'
 
 /**
  * Confirmar que el operario recogió la pieza reasignada
@@ -41,8 +42,10 @@ export async function confirmReassignmentPickup(cutOrderId: string, occurredAt?:
 
   if (materialError) throw materialError
 
-  const chapaSize = materialInfo.length_meters || cutOrder.quantity_requested // Si length_meters es null, asumir mismo tamaño
-  const productSize = cutOrder.quantity_requested
+  // Largo de la pieza pedida y de la chapa de la que sale (quantity_requested son unidades, no metros)
+  const { data: pedidoInfo } = await supabase.from('products').select('code, length_meters').eq('id', cutOrder.product_id).maybeSingle()
+  const chapaSize = Number(materialInfo.length_meters) || extractSizeFromCode(materialInfo.code || '')
+  const productSize = Number(pedidoInfo?.length_meters) || extractSizeFromCode(pedidoInfo?.code || '') || chapaSize
   const remnantSize = chapaSize - productSize
   const isSameSize = Math.abs(chapaSize - productSize) < 0.01 // Tolerancia de 1cm
 

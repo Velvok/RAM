@@ -6,7 +6,8 @@ import { createAdminClient } from '@/lib/supabase/server'
 // Historial anual sobre product_movements: matriz producto × mes, comparación
 // con años anteriores, previsión por estacionalidad y cobertura de stock.
 
-export type HistorialUnit = 'units' | 'meters' | 'kg'
+/** RAM trabaja siempre en unidades (ni metros ni kilos) */
+export type HistorialUnit = 'units'
 export type HistorialMovement = 'entrega' | 'compra' | 'corte' | 'remanente'
 
 export interface HistorialFilters {
@@ -53,7 +54,7 @@ export interface HistorialData {
   rows: HistorialRow[]
   forecast: Array<{ productId: string; code: string; months: number[]; available: number | null; toReplenish: number | null; openDemand: number }>
   clients: Array<{ name: string; value: number; pct: number }>
-  extras: { cuts: number; exactPieces: number; remnantUnits: number; remnantMeters: number }
+  extras: { cuts: number; exactPieces: number; remnantUnits: number }
   unitLabel: string
 }
 
@@ -93,11 +94,11 @@ export async function getHistorial(input: Partial<HistorialFilters> = {}): Promi
     family: input.family ?? null,
     productId: input.productId ?? null,
     clientId: input.clientId ?? null,
-    unit: input.unit ?? 'units',
+    unit: 'units',
     movement: input.movement ?? 'entrega',
   }
-  const valueOf = (r: any) => Number(filters.unit === 'units' ? r.units : filters.unit === 'meters' ? r.meters : r.kg) || 0
-  const unitLabel = filters.unit === 'units' ? 'ud' : filters.unit === 'meters' ? 'm' : 'kg'
+  const valueOf = (r: any) => Number(r.units) || 0
+  const unitLabel = 'uds'
 
   // Tipos que cuentan para la vista: las entregas incluyen el histórico cargado
   const types = filters.movement === 'entrega' ? ['entrega', 'historico'] : [filters.movement]
@@ -109,7 +110,7 @@ export async function getHistorial(input: Partial<HistorialFilters> = {}): Promi
     fetchAll<any>((from, to) => {
       let q = supabase
         .from('product_movements')
-        .select('product_id, family_code, movement_type, units, meters, kg, client_id, occurred_at, product:products(code, name)')
+        .select('product_id, family_code, movement_type, units, client_id, occurred_at, product:products(code, name)')
         .in('movement_type', types)
         .gte('occurred_at', since)
         .lt('occurred_at', until)
@@ -229,14 +230,14 @@ export async function getHistorial(input: Partial<HistorialFilters> = {}): Promi
     const deltaPct = compareTotal && compareTotal > 0 ? round(((total - compareTotal) / compareTotal) * 100, 0) : null
     const last12 = (() => { let s = 0; for (let i = 0; i < 12; i++) { let mo = currentMonth - i, y = currentYear; while (mo <= 0) { mo += 12; y -= 1 } s += entry.agg.get(`${y}-${mo}`) || 0 } return s / 12 })()
     const available = availableByProduct.has(productId) ? availableByProduct.get(productId)! : null
-    const coverage = available != null && last12 > 0 && filters.unit === 'units' ? round(Math.max(0, available) / last12) : null
+    const coverage = available != null && last12 > 0 ? round(Math.max(0, available) / last12) : null
     rows.push({ productId, code: entry.code, name: entry.name, months, total, compareTotal, deltaPct, available, coverageMonths: coverage })
 
     const f = nextMonths.map(nm => round(forecastFor(entry.agg, nm.month, nm.year)))
     const demand = f.reduce((a, b) => a + b, 0) + (openDemand.get(productId) || 0)
     forecastRows.push({
       productId, code: entry.code, months: f, available,
-      toReplenish: available != null && filters.unit === 'units' ? Math.max(0, round(demand - Math.max(0, available), 0)) : null,
+      toReplenish: available != null ? Math.max(0, round(demand - Math.max(0, available), 0)) : null,
       openDemand: openDemand.get(productId) || 0,
     })
   }
@@ -262,7 +263,7 @@ export async function getHistorial(input: Partial<HistorialFilters> = {}): Promi
   const last12Total = (() => { let s = 0; for (let i = 0; i < 12; i++) { let mo = currentMonth - i, y = currentYear; while (mo <= 0) { mo += 12; y -= 1 } s += totalAgg.get(`${y}-${mo}`) || 0 } return s })()
   const forecast3 = round(nextMonths.reduce((s, nm) => s + forecastFor(totalAgg, nm.month, nm.year), 0))
   const totalAvailable = rows.reduce((s, r) => s + Math.max(0, r.available ?? 0), 0)
-  const coverageMonths = filters.unit === 'units' && last12Total > 0 ? round(totalAvailable / (last12Total / 12)) : null
+  const coverageMonths = last12Total > 0 ? round(totalAvailable / (last12Total / 12)) : null
   const best = monthly.reduce<{ month: number; value: number } | null>((b, m) => (m.current > 0 && (!b || m.current > b.value) ? { month: m.month, value: m.current } : b), null)
 
   // ---- Clientes ----
@@ -279,14 +280,13 @@ export async function getHistorial(input: Partial<HistorialFilters> = {}): Promi
 
   // ---- Cortes y remanentes del año (siempre en unidades/metros) ----
   const yearStart = new Date(Date.UTC(filters.year, 0, 1)).toISOString(), yearEnd = new Date(Date.UTC(filters.year + 1, 0, 2)).toISOString()
-  let extrasQ = supabase.from('product_movements').select('movement_type, units, meters').in('movement_type', ['corte', 'remanente']).gte('occurred_at', yearStart).lt('occurred_at', yearEnd)
+  let extrasQ = supabase.from('product_movements').select('movement_type, units').in('movement_type', ['corte', 'remanente']).gte('occurred_at', yearStart).lt('occurred_at', yearEnd)
   if (filters.family) extrasQ = extrasQ.eq('family_code', filters.family)
   if (filters.productId) extrasQ = extrasQ.eq('product_id', filters.productId)
   const { data: extrasRows } = await extrasQ.limit(5000)
   const cuts = (extrasRows || []).filter(r => r.movement_type === 'corte').reduce((s, r) => s + Number(r.units), 0)
   const remnantUnits = (extrasRows || []).filter(r => r.movement_type === 'remanente').reduce((s, r) => s + Number(r.units), 0)
-  const remnantMeters = (extrasRows || []).filter(r => r.movement_type === 'remanente').reduce((s, r) => s + Number(r.meters), 0)
-  const deliveredUnits = filters.movement === 'entrega' && filters.unit === 'units' ? total : movements.filter(m => localYearMonth(m.occurred_at).year === filters.year).reduce((s, m) => s + Number(m.units), 0)
+  const deliveredUnits = filters.movement === 'entrega' ? total : movements.filter(m => localYearMonth(m.occurred_at).year === filters.year).reduce((s, m) => s + Number(m.units), 0)
 
   return {
     filters,
@@ -309,7 +309,7 @@ export async function getHistorial(input: Partial<HistorialFilters> = {}): Promi
     rows,
     forecast: forecastRows.slice(0, 12),
     clients: topClients,
-    extras: { cuts: round(cuts, 0), exactPieces: Math.max(0, round(deliveredUnits - cuts, 0)), remnantUnits: round(remnantUnits, 0), remnantMeters: round(remnantMeters) },
+    extras: { cuts: round(cuts, 0), exactPieces: Math.max(0, round(deliveredUnits - cuts, 0)), remnantUnits: round(remnantUnits, 0) },
     unitLabel,
   }
 }

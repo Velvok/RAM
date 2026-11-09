@@ -45,7 +45,7 @@ export function HistorialClient({ initial }: { initial: HistorialData }) {
   }
 
   function exportCsv() {
-    const head = ['Producto', 'Nombre', ...MONTHS, 'Total', 'Comparación', 'Variación %', 'Stock', 'Cobertura meses']
+    const head = ['Producto', 'Nombre', ...MONTHS, 'Total (uds)', 'Comparación (uds)', 'Variación %', 'Stock (uds)', 'Cobertura meses']
     const lines = data.rows.map(r => [r.code, r.name, ...r.months, r.total, r.compareTotal ?? '', r.deltaPct ?? '', r.available ?? '', r.coverageMonths ?? ''])
     const csv = [head, ...lines].map(l => l.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\n')
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
@@ -106,11 +106,6 @@ export function HistorialClient({ initial }: { initial: HistorialData }) {
             {data.options.clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </SelectField>
         </label>
-        <label className="flex flex-col gap-1 text-xs font-semibold text-muted-foreground">Unidad
-          <SelectField className="min-w-[150px]" value={f.unit} onChange={e => update({ unit: e.target.value as HistorialFilters['unit'] })}>
-            <option value="units">Unidades</option><option value="meters">Metros</option><option value="kg">Kilos</option>
-          </SelectField>
-        </label>
         <label className="flex flex-col gap-1 text-xs font-semibold text-muted-foreground">Movimiento
           <SelectField className="min-w-[150px]" value={f.movement} onChange={e => update({ movement: e.target.value as HistorialFilters['movement'] })}>
             <option value="entrega">Entregas a cliente</option><option value="compra">Compras a proveedor</option><option value="corte">Cortes en planta</option><option value="remanente">Remanentes</option>
@@ -123,7 +118,7 @@ export function HistorialClient({ initial }: { initial: HistorialData }) {
         <Card className="p-4"><div className="text-xs font-semibold text-muted-foreground">{movementLabel} {f.year}</div><div className="mt-1 text-2xl font-bold">{fmt(data.kpis.total)} {data.unitLabel}</div><div className="mt-1 text-xs"><Delta pct={data.kpis.deltaPct} />{compareLabel ? <span className="text-muted-foreground"> vs {compareLabel}, mismo periodo</span> : null}</div></Card>
         <Card className="p-4"><div className="text-xs font-semibold text-muted-foreground">Media mensual</div><div className="mt-1 text-2xl font-bold">{fmt(data.kpis.monthlyAvg12)} {data.unitLabel}</div><div className="mt-1 text-xs text-muted-foreground">últimos 12 meses</div></Card>
         <Card className="p-4"><div className="text-xs font-semibold text-muted-foreground">Previsión {nextMonthLabels.join(' – ')}</div><div className="mt-1 text-2xl font-bold">{fmt(data.kpis.forecast3)} {data.unitLabel}</div><div className="mt-1 text-xs text-muted-foreground">mismo mes de años anteriores × tendencia</div></Card>
-        <Card className="p-4"><div className="text-xs font-semibold text-muted-foreground">Cobertura de stock</div><div className="mt-1 text-2xl font-bold">{data.kpis.coverageMonths == null ? '—' : data.kpis.coverageMonths > 36 ? '> 3 años' : `${fmt(data.kpis.coverageMonths, 1)} meses`}</div><div className={cn('mt-1 text-xs', data.kpis.lowCoverageProducts ? 'font-medium text-amber-700' : 'text-muted-foreground')}>{data.kpis.lowCoverageProducts ? `${data.kpis.lowCoverageProducts} producto(s) por debajo de 1 mes` : f.unit === 'units' ? 'stock disponible / media mensual' : 'solo en unidades'}</div></Card>
+        <Card className="p-4"><div className="text-xs font-semibold text-muted-foreground">Cobertura de stock</div><div className="mt-1 text-2xl font-bold">{data.kpis.coverageMonths == null ? '—' : data.kpis.coverageMonths > 36 ? '> 3 años' : `${fmt(data.kpis.coverageMonths, 1)} meses`}</div><div className={cn('mt-1 text-xs', data.kpis.lowCoverageProducts ? 'font-medium text-amber-700' : 'text-muted-foreground')}>{data.kpis.lowCoverageProducts ? `${data.kpis.lowCoverageProducts} producto(s) por debajo de 1 mes` : 'stock disponible / media mensual'}</div></Card>
         <Card className="p-4"><div className="text-xs font-semibold text-muted-foreground">Mejor mes</div><div className="mt-1 text-2xl font-bold">{data.kpis.bestMonth ? MONTHS[data.kpis.bestMonth.month - 1] : '—'}</div><div className="mt-1 text-xs text-muted-foreground">{data.kpis.bestMonth ? `${fmt(data.kpis.bestMonth.value)} ${data.unitLabel}` : 'sin datos'}</div></Card>
       </div>
 
@@ -177,7 +172,7 @@ export function HistorialClient({ initial }: { initial: HistorialData }) {
                     <td className="px-2 py-1.5 text-right font-bold">{fmt(r.total)}</td>
                     <td className="px-2 py-1.5 text-right"><Delta pct={r.deltaPct} /></td>
                     <td className={cn('px-2 py-1.5 text-right', r.available != null && r.available < 0 && 'font-semibold text-red-700')}>{fmt(r.available)}</td>
-                    <td className={cn('px-2 py-1.5 text-right', r.coverageMonths != null && (r.coverageMonths < 1 ? 'font-semibold text-red-700' : r.coverageMonths < 3 ? 'font-semibold text-amber-700' : 'text-emerald-700'))}>{r.coverageMonths == null ? '—' : r.coverageMonths > 36 ? '> 36 m' : `${fmt(r.coverageMonths, 1)} m`}</td>
+                    <td className={cn('px-2 py-1.5 text-right', r.coverageMonths != null && (r.coverageMonths < 1 ? 'font-semibold text-red-700' : r.coverageMonths < 3 ? 'font-semibold text-amber-700' : 'text-emerald-700'))}>{r.coverageMonths == null ? '—' : r.coverageMonths > 36 ? '> 36 meses' : `${fmt(r.coverageMonths, 1)} meses`}</td>
                   </tr>
                 ))}
               </tbody>
@@ -227,8 +222,8 @@ export function HistorialClient({ initial }: { initial: HistorialData }) {
             </div>
           )}
           <dl className="mt-5 space-y-2 border-t border-border pt-4 text-sm">
-            <div className="flex justify-between"><dt className="text-muted-foreground">Cortes reales vs piezas exactas</dt><dd className="font-semibold">{fmt(data.extras.cuts)} · {fmt(data.extras.exactPieces)}</dd></div>
-            <div className="flex justify-between"><dt className="text-muted-foreground">Remanentes generados en el año</dt><dd className="font-semibold">{fmt(data.extras.remnantUnits)} chapas · {fmt(data.extras.remnantMeters)} m</dd></div>
+            <div className="flex justify-between"><dt className="text-muted-foreground">Cortes reales vs piezas exactas</dt><dd className="font-semibold">{fmt(data.extras.cuts)} · {fmt(data.extras.exactPieces)} uds</dd></div>
+            <div className="flex justify-between"><dt className="text-muted-foreground">Remanentes generados en el año</dt><dd className="font-semibold">{fmt(data.extras.remnantUnits)} uds</dd></div>
           </dl>
         </Card>
       </div>

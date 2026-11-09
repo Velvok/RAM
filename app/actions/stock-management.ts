@@ -309,7 +309,7 @@ export async function reserveStockBatch(inventoryId: string, quantity: number) {
     stock_before: stockBefore,
     stock_after: stockAfter,
     user_id: user?.id,
-    notes: `Reserva de ${quantity} unidades de ${current.product?.name || 'pieza'} (${current.stock_total}m)`,
+    notes: `Reserva de ${quantity} unidades de ${current.product?.name || 'pieza'} (stock total ${current.stock_total} uds)`,
   })
 
   console.log(`✅ Stock reservado en lote: ${quantity} unidades`)
@@ -375,7 +375,7 @@ export async function reserveStock(inventoryId: string) {
     stock_before: stockBefore,
     stock_after: stockAfter,
     user_id: user?.id,
-    notes: `Reserva de ${current.product?.name || 'pieza'} (${current.stock_total}m)`,
+    notes: `Reserva de ${current.product?.name || 'pieza'} (stock total ${current.stock_total} uds)`,
   })
 
   // Revalidar todas las rutas relevantes

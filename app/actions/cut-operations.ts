@@ -86,7 +86,7 @@ export async function processCutOrder(params: {
 
   const productSize = cutOrder.product?.length_meters ||
                      extractSizeFromCode(cutOrder.product?.code || '') ||
-                     cutOrder.quantity_requested
+                     materialLength // sin largo conocido: corte exacto, sin sobrante (quantity_requested son unidades)
   
   // Determinar si es MATCH EXACTO o CORTE REAL
   const isExactMatch = Math.abs(materialLength - productSize) < 0.01

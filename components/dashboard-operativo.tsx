@@ -257,8 +257,8 @@ export function DashboardOperativo({ initial }: { initial: OperationalDashboard 
                 ['Pedidos entregados', `${data.week.delivered} (${deltaWeek >= 0 ? '+' : ''}${deltaWeek} vs anterior)`],
                 ['Aprobar → finalizado', data.week.avgApproveToFinishDays == null ? 'sin datos' : `${fmt(data.week.avgApproveToFinishDays)} días`],
                 ['Finalizado → remito', data.week.avgFinishToDeliveryDays == null ? 'sin datos' : `${fmt(data.week.avgFinishToDeliveryDays)} días`],
-                ['Metros cortados', `${fmt(data.week.metersCut)} m`],
-                ['Remanentes generados', `${data.week.remnants.sheets} chapas · ${fmt(data.week.remnants.meters)} m`],
+                ['Chapas cortadas', `${fmt(data.week.sheetsCut)} uds`],
+                ['Remanentes generados', `${fmt(data.week.remnantSheets)} uds`],
                 ['Cambios de tamaño', data.week.sizeChanges],
                 ['Reasignaciones', data.week.reassignments],
               ].map(([k, v]) => (
