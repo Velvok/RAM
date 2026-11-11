@@ -5,7 +5,9 @@
 // preparación en su inventario asignado. Lo ya entregado ya liberó su parte.
 // Las unidades que llegaron por reasignación desde otro pedido no se
 // reservaron aquí (siguen reservadas en el pedido de origen), así que no se
-// liberan.
+// liberan. Y al revés: lo que este pedido cedió a otros por reasignación sigue
+// reservado aquí pero lo va a usar el otro pedido (que lo liberará al
+// entregarse), así que tampoco se libera (`outgoing`, por inventario).
 
 export interface CancelCut {
   material_base_id: string | null
@@ -25,6 +27,7 @@ export function reservationsToRelease(
   cuts: CancelCut[],
   preps: CancelPrep[],
   inventoryByProduct: Map<string, string>,
+  outgoing: Map<string, number> = new Map(),
 ): Map<string, number> {
   const out = new Map<string, number>()
   const add = (inventoryId: string | null | undefined, amount: number) => {
@@ -38,6 +41,11 @@ export function reservationsToRelease(
   }
   for (const p of preps) {
     add(p.assigned_inventory_id, (Number(p.quantity_requested) || 0) - (Number(p.quantity_delivered) || 0))
+  }
+  for (const [inventoryId, given] of outgoing) {
+    const left = (out.get(inventoryId) || 0) - given
+    if (left > 0) out.set(inventoryId, left)
+    else out.delete(inventoryId)
   }
   return out
 }

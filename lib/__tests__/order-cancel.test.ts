@@ -43,4 +43,14 @@ describe('reservationsToRelease', () => {
     )
     expect(Object.fromEntries(out)).toEqual({ inv10: 3 })
   })
+
+  it('no libera lo que este pedido cedió a otro por reasignación', () => {
+    const out = reservationsToRelease(
+      [{ material_base_id: 'p10', quantity_requested: 5 }, { material_base_id: 'p13', quantity_requested: 1 }],
+      [],
+      inv,
+      new Map([['inv10', 2], ['inv13', 4]]),
+    )
+    expect(Object.fromEntries(out)).toEqual({ inv10: 3 })
+  })
 })

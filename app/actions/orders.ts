@@ -96,13 +96,17 @@ export async function cancelOrder(orderId: string) {
   const cuts = (order.cut_orders || []) as any[]
   const preps = (order.preparation_items || []) as any[]
 
-  // 1. Primero el estado: desde aquí la planta ya no puede registrar nada en él
-  const { error: statusError } = await supabase
+  // 1. Primero el estado, y es la llave: solo sigue quien consigue el cambio
+  //    (dos clics o dos personas a la vez no liberan el stock dos veces). Desde
+  //    aquí la planta ya no puede registrar nada en él.
+  const { data: changed, error: statusError } = await supabase
     .from('orders')
     .update({ status: 'cancelado', updated_at: new Date().toISOString() })
     .eq('id', orderId)
-    .neq('status', 'cancelado')
+    .eq('status', order.status)
+    .select('id')
   if (statusError) throw new Error('No se pudo eliminar el pedido')
+  if (!changed?.length) throw new Error('El pedido acaba de cambiar. Recarga la página y vuelve a intentarlo.')
 
   // 2. Liberar la reserva
   const materialIds = [...new Set(cuts.map(c => c.material_base_id).filter(Boolean))]
@@ -111,7 +115,23 @@ export async function cancelOrder(orderId: string) {
     const { data: inv } = await supabase.from('inventory').select('id, product_id').in('product_id', materialIds)
     for (const i of inv || []) inventoryByProduct.set(i.product_id, i.id)
   }
-  const releases = reservationsToRelease(cuts, preps, inventoryByProduct)
+  // Lo cedido a otros pedidos por reasignación sigue reservado para ellos
+  const { data: given } = await supabase
+    .from('cut_orders')
+    .select('material_base_id, reassigned_quantity')
+    .eq('reassigned_from_order_id', orderId)
+    .neq('order_id', orderId)
+  const givenIds = [...new Set((given || []).map(g => g.material_base_id).filter(id => id && !inventoryByProduct.has(id)))]
+  if (givenIds.length > 0) {
+    const { data: inv } = await supabase.from('inventory').select('id, product_id').in('product_id', givenIds)
+    for (const i of inv || []) inventoryByProduct.set(i.product_id, i.id)
+  }
+  const outgoing = new Map<string, number>()
+  for (const g of given || []) {
+    const invId = g.material_base_id ? inventoryByProduct.get(g.material_base_id) : null
+    if (invId) outgoing.set(invId, (outgoing.get(invId) || 0) + (Number(g.reassigned_quantity) || 0))
+  }
+  const releases = reservationsToRelease(cuts, preps, inventoryByProduct, outgoing)
   const warnings: string[] = []
   const userId = actor.kind === 'admin' ? actor.userId : null
   for (const [inventoryId, amount] of releases) {
