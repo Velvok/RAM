@@ -10,7 +10,7 @@ export interface IntegrationLog {
   direction: 'inbound' | 'outbound'
   event_type: string
   source: string
-  status: 'success' | 'failed' | 'pending' | 'processing'
+  status: 'success' | 'failed' | 'pending' | 'processing' | 'cancelled'
   http_status: number | null
   payload: any
   response_body: any | null

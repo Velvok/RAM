@@ -40,6 +40,7 @@ function hace(iso: string | null) {
 }
 function statusPill(l: Log): { label: string; cls: string } {
   if (l.status === 'failed') return { label: 'Fallido', cls: 'bg-destructive/10 text-destructive' }
+  if (l.status === 'cancelled') return { label: 'Descartado', cls: 'bg-muted text-muted-foreground' }
   if (l.status === 'pending') return { label: 'En cola', cls: 'bg-warning/10 text-warning' }
   if (l.status === 'processing') return { label: l.direction === 'outbound' ? 'Esperando a EVO' : 'Procesando', cls: 'bg-warning/10 text-warning' }
   return { label: l.direction === 'outbound' ? 'Confirmado' : 'Procesado', cls: 'bg-success/10 text-success' }

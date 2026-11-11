@@ -15,9 +15,11 @@ import { OrderStatusBadge } from '@/components/order-status-badge'
 import { getOrderStatusConfig, type OrderStatus } from '@/lib/order-status'
 import { useError } from '@/components/error-modal'
 import { cn } from '@/lib/utils'
+import { DeleteOrderButton } from '@/components/pedido/delete-order-button'
 
 interface OrdersGridWithFiltersProps {
   orders: any[]
+  canDelete?: boolean
 }
 
 const DOT_CLASS: Record<string, string> = {
@@ -71,7 +73,7 @@ function progressOf(order: any): { done: number; total: number } {
   return { done, total }
 }
 
-export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersProps) {
+export default function OrdersGridWithFilters({ orders, canDelete }: OrdersGridWithFiltersProps) {
   const [loading, setLoading] = useState<string | null>(null)
   // ?status=xxx desde el dashboard abre la lista ya filtrada
   const searchParams = useSearchParams()
@@ -134,6 +136,7 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
     { id: 'finalizado', label: 'Finalizados' },
     { id: 'parcialmente_entregado', label: 'Parciales' },
     { id: 'entregado', label: 'Entregados' },
+    { id: 'cancelado', label: 'Cancelados' },
   ]
 
   async function handleGenerateCutOrders(e: React.MouseEvent, orderId: string) {
@@ -259,6 +262,7 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
                     <td className="px-4 py-3"><OrderStatusBadge status={order.status} /></td>
                     <td className={cn('px-4 py-3 text-sm', step.tone === 'action' ? 'font-medium text-foreground' : 'text-muted-foreground')}>{step.text}</td>
                     <td className="px-4 py-3 text-right">
+                      <div className="inline-flex items-center justify-end gap-2">
                       {order.status === 'nuevo' && (
                         <button
                           onClick={e => handleGenerateCutOrders(e, order.id)}
@@ -269,6 +273,8 @@ export default function OrdersGridWithFilters({ orders }: OrdersGridWithFiltersP
                           Aprobar
                         </button>
                       )}
+                      {canDelete && <DeleteOrderButton compact order={order} onDone={() => router.refresh()} />}
+                      </div>
                     </td>
                   </tr>
                 )

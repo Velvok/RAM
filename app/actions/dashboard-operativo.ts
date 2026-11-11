@@ -148,8 +148,10 @@ export async function getOperationalDashboard(): Promise<OperationalDashboard> {
   ])
 
   const orders = (ordersRes.data || []) as any[]
-  const cuts = (cutsRes.data || []) as any[]
-  const preps = (prepsRes.data || []) as any[]
+  // Lo pendiente de pedidos ya cerrados (cancelados) no es trabajo de planta
+  const openOrder = (x: any) => !['cancelado', 'entregado'].includes((Array.isArray(x.order) ? x.order[0] : x.order)?.status)
+  const cuts = ((cutsRes.data || []) as any[]).filter(openOrder)
+  const preps = ((prepsRes.data || []) as any[]).filter(openOrder)
   const activity = (activityRes.data || []) as any[]
   const outbound = outboundRes.data || []
   const inbound = inboundRes.data || []

@@ -1,6 +1,7 @@
 'use server'
 
-import { requireAdmin, requireStaff } from '@/lib/auth/guards'
+import { requireAdmin, requireStaff, requireOrderDeleter } from '@/lib/auth/guards'
+import { reservationsToRelease } from '@/lib/order-cancel'
 import { revalidatePath } from 'next/cache'
 import { unstable_noStore } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/server'
@@ -65,51 +66,117 @@ export async function getOrderById(id: string) {
   return data[0]
 }
 
+/**
+ * "Eliminar pedido": lo deja cancelado (no se borra, queda su historial).
+ * Libera la reserva de lo no entregado, también de lo ya cortado o preparado
+ * (vuelve a stock disponible), y descarta los envíos a EVO que tenga en cola:
+ * quien lo elimina aquí lo elimina también en EVO. La planta deja de verlo y
+ * rechaza lo que le llegue de él.
+ */
 export async function cancelOrder(orderId: string) {
-  await requireAdmin()
+  const actor = await requireOrderDeleter()
 
   const supabase = createAdminClient()
 
-  // Guard: no se puede cancelar un pedido ya entregado o ya cancelado
-  const { data: existing, error: fetchExistingError } = await supabase
+  const { data: order, error: fetchError } = await supabase
     .from('orders')
-    .select('status')
+    .select(`
+      id, order_number, evo_order_id, status,
+      cut_orders:cut_orders!cut_orders_order_id_fkey(id, material_base_id, quantity_requested, quantity_delivered, reassigned_from_order_id, reassigned_quantity),
+      preparation_items(id, assigned_inventory_id, quantity_requested, quantity_delivered)
+    `)
     .eq('id', orderId)
-    .single()
+    .maybeSingle()
 
-  if (fetchExistingError) throw fetchExistingError
-  if (existing.status === 'entregado') {
-    throw new Error('No se puede cancelar un pedido ya entregado')
-  }
-  if (existing.status === 'cancelado') {
-    throw new Error('Este pedido ya está cancelado')
-  }
+  if (fetchError) throw new Error('No se pudo leer el pedido')
+  if (!order) throw new Error('El pedido no existe')
+  if (order.status === 'entregado') throw new Error('No se puede eliminar un pedido ya entregado')
+  if (order.status === 'cancelado') throw new Error('Este pedido ya está eliminado')
 
-  const { data, error } = await supabase
+  const cuts = (order.cut_orders || []) as any[]
+  const preps = (order.preparation_items || []) as any[]
+
+  // 1. Primero el estado: desde aquí la planta ya no puede registrar nada en él
+  const { error: statusError } = await supabase
     .from('orders')
-    .update({ status: 'cancelado' })
+    .update({ status: 'cancelado', updated_at: new Date().toISOString() })
     .eq('id', orderId)
-    .select()
+    .neq('status', 'cancelado')
+  if (statusError) throw new Error('No se pudo eliminar el pedido')
 
-  if (error) throw error
-
+  // 2. Liberar la reserva
+  const materialIds = [...new Set(cuts.map(c => c.material_base_id).filter(Boolean))]
+  const inventoryByProduct = new Map<string, string>()
+  if (materialIds.length > 0) {
+    const { data: inv } = await supabase.from('inventory').select('id, product_id').in('product_id', materialIds)
+    for (const i of inv || []) inventoryByProduct.set(i.product_id, i.id)
+  }
+  const releases = reservationsToRelease(cuts, preps, inventoryByProduct)
+  const warnings: string[] = []
+  const userId = actor.kind === 'admin' ? actor.userId : null
+  for (const [inventoryId, amount] of releases) {
+    const { data: current } = await supabase.from('inventory').select('product_id, stock_reservado').eq('id', inventoryId).maybeSingle()
+    const { error } = await supabase.rpc('unreserve_stock', { p_inventory_id: inventoryId, p_quantity: amount })
+    if (error) { warnings.push(`No se pudo liberar la reserva de ${amount} uds`); continue }
+    if (current) {
+      await supabase.from('stock_movements').insert({
+        product_id: current.product_id,
+        movement_type: 'liberacion',
+        quantity: -amount,
+        stock_before: current.stock_reservado || 0,
+        stock_after: Math.max(0, (current.stock_reservado || 0) - amount),
+        reference_id: orderId,
+        reference_type: 'order',
+        user_id: userId,
+        notes: `Reserva liberada al eliminar el pedido ${order.order_number}`,
+      })
+    }
+  }
   await supabase
     .from('stock_reservations')
     .update({ is_active: false, released_at: new Date().toISOString() })
     .eq('order_id', orderId)
     .eq('is_active', true)
 
-  // Cancelar cut_orders pendientes (nuevo modelo simplificado)
-  await supabase
-    .from('cut_orders')
-    .update({ status: 'completada' }) // Marcamos como completada aunque sea cancelación
-    .eq('order_id', orderId)
-    .eq('status', 'pendiente')
+  // 3. Descartar lo que quedaba por enviar a EVO de este pedido (el que ya
+  //    está enviado esperando confirmación se deja terminar)
+  const relatedIds = [orderId, ...cuts.map(c => c.id), ...preps.map(p => p.id)]
+  const discard = { status: 'cancelled', error_message: 'Descartado: pedido eliminado en RAM', completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }
+  const { data: byEntity } = await supabase
+    .from('outbound_events')
+    .update(discard)
+    .in('status', ['pending', 'failed'])
+    .in('related_entity_id', relatedIds)
+    .select('id')
+  let discarded = byEntity?.length || 0
+  if (order.evo_order_id) {
+    const { data: byPedido } = await supabase
+      .from('outbound_events')
+      .update(discard)
+      .in('status', ['pending', 'failed'])
+      .eq('payload->>id_pedido', String(order.evo_order_id))
+      .select('id')
+    discarded += byPedido?.length || 0
+  }
 
-  // Revalidar rutas de pedidos y stock
+  const { data: who } = userId ? await supabase.from('users').select('full_name, email').eq('id', userId).maybeSingle() : { data: null }
+  // user_id de este log apunta a auth.users (no a users): quién lo hizo va en el texto
+  const { error: logError } = await supabase.from('order_activity_log').insert({
+    order_id: orderId,
+    activity_type: 'cancelled',
+    description: `Pedido eliminado (queda cancelado)${who ? ` por ${who.full_name || who.email}` : ''}`,
+    metadata: {
+      previous_status: order.status,
+      released: Object.fromEntries(releases),
+      outbound_discarded: discarded,
+      warnings,
+    },
+  })
+  if (logError) console.error('No se pudo registrar la eliminación en el historial:', logError.message)
+
   revalidateOrders(orderId)
   revalidateStock()
-  return data
+  return { success: true, released: [...releases.values()].reduce((a, b) => a + b, 0), discarded, warnings }
 }
 
 // verifyPayment eliminada - Los pedidos ya vienen con pago verificado

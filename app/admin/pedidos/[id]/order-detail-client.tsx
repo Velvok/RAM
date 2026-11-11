@@ -14,6 +14,7 @@ import { OrderStatusBadge } from '@/components/order-status-badge'
 import { AssignStockPanel, ReassignPanel, Summary, unassignedLines, type PanelLine } from '@/components/pedido/order-panels'
 import OrderActions from './order-actions'
 import { PlantaSyncBanner } from '@/components/pedido/planta-sync-banner'
+import { DeleteOrderButton } from '@/components/pedido/delete-order-button'
 
 const n = (v: unknown) => Number(v) || 0
 
@@ -63,7 +64,7 @@ const th = 'px-2.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking
 const td = 'px-2.5 py-3 align-middle text-sm'
 const linkBtn = 'whitespace-nowrap text-xs font-semibold text-primary hover:underline disabled:opacity-40'
 
-export default function OrderDetailClient({ initialOrder }: { initialOrder: any }) {
+export default function OrderDetailClient({ initialOrder, canDelete }: { initialOrder: any; canDelete?: boolean }) {
   const [order, setOrder] = useState(initialOrder)
   const [refreshKey, setRefreshKey] = useState(0)
   const [panel, setPanel] = useState<Panel>(null)
@@ -230,6 +231,7 @@ export default function OrderDetailClient({ initialOrder }: { initialOrder: any 
             </Button>
           )}
           <OrderActions key={refreshKey} order={order} onUpdate={reloadOrder} isHeaderMode />
+          {canDelete && <DeleteOrderButton order={order} onDone={reloadOrder} />}
         </div>
       </div>
 

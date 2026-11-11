@@ -4,7 +4,7 @@ import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import OrderDetailClient from './order-detail-client'
 import { unstable_noStore } from 'next/cache'
-import { headers } from 'next/headers'
+import { canDeleteOrders } from '@/lib/auth/guards'
 
 // Deshabilitar caché completamente
 unstable_noStore()
@@ -51,7 +51,7 @@ export default async function PedidoDetallePage({
 
   return (
     <>
-      <OrderDetailClient initialOrder={order} />
+      <OrderDetailClient initialOrder={order} canDelete={await canDeleteOrders()} />
     </>
   )
 }

@@ -4,6 +4,7 @@ import OrdersGridWithFilters from '@/components/orders-grid-with-filters'
 import GenerateTestOrderButton from './generate-test-order-button'
 import { PageHeader } from '@/components/page-header'
 import { testOrdersEnabled } from '@/lib/test-orders'
+import { canDeleteOrders } from '@/lib/auth/guards'
 
 // Deshabilitar caché COMPLETAMENTE
 export const dynamic = 'force-dynamic'
@@ -30,6 +31,8 @@ export default async function PedidosPage() {
     console.error('❌ Error fatal loading orders:', error)
   }
 
+  const canDelete = await canDeleteOrders()
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -39,7 +42,7 @@ export default async function PedidosPage() {
       />
 
       <Suspense fallback={null}>
-        <OrdersGridWithFilters orders={orders} />
+        <OrdersGridWithFilters orders={orders} canDelete={canDelete} />
       </Suspense>
     </div>
   )

@@ -95,6 +95,31 @@ export async function requireAdminRole(): Promise<Actor> {
   return actor
 }
 
+/**
+ * Quién puede eliminar (cancelar) pedidos: correos de ORDER_DELETE_EMAILS,
+ * separados por comas. Sin la variable, nadie. Mientras EVO no avise de las
+ * cancelaciones, lo hace a mano quien las hace en EVO.
+ */
+export const canDeleteOrders = cache(async (): Promise<boolean> => {
+  const allowed = (process.env.ORDER_DELETE_EMAILS || '')
+    .split(',')
+    .map(e => e.trim().toLowerCase())
+    .filter(Boolean)
+  if (allowed.length === 0) return false
+  const userId = await getAdminUserId()
+  if (!userId) return false
+  const { data } = await createAdminClient().from('users').select('email').eq('id', userId).maybeSingle()
+  return !!data?.email && allowed.includes(data.email.toLowerCase())
+})
+
+export async function requireOrderDeleter(): Promise<Actor> {
+  const actor = await requireAdmin()
+  if (actor.kind === 'admin' && !(await canDeleteOrders())) {
+    throw new Error('No tienes permiso para eliminar pedidos.')
+  }
+  return actor
+}
+
 export async function requireStaff(): Promise<Actor> {
   if (systemContext.getStore()) return { kind: 'system' }
   // Primero la cookie de planta: se valida en local, sin ir a la red
