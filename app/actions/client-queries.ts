@@ -61,7 +61,7 @@ export async function getOrdersForPlanta() {
 
   // Pedidos activos: aprobados, en corte, finalizados y modificados (ampliación de
   // EVO sin aprobar: la planta sigue trabajando lo ya aprobado)
-  // Y pedidos aprobados en pausa que tengan al menos una línea con stock asignado
+  // Y los aprobados en pausa (falta asignar stock a alguna línea)
   const { data: activeOrders, error: activeError } = await supabase
     .from('orders')
     .select(`
@@ -116,15 +116,9 @@ export async function getOrdersForPlanta() {
 
   if (onHoldError) throw onHoldError
 
-  // Filtrar pedidos en pausa: solo aquellos con cut_orders con material_base_id
-  // o preparation_items con assigned_inventory_id
-  const onHoldWithStock = (onHoldOrders || []).filter((order: any) => {
-    const hasCutOrderWithStock = order.cut_orders?.some((co: any) => co.material_base_id)
-    const hasPrepItemWithStock = order.preparation_items?.some((pi: any) => pi.assigned_inventory_id)
-    return hasCutOrderWithStock || hasPrepItemWithStock
-  })
-
-  return [...(activeOrders || []), ...onHoldWithStock]
+  // Todos los pedidos en pausa: lo que no tiene stock asignado lo puede
+  // asignar el operario desde la tablet (elegir chapa)
+  return [...(activeOrders || []), ...(onHoldOrders || [])]
 }
 
 // =====================================================

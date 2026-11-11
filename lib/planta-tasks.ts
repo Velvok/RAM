@@ -77,7 +77,7 @@ export const TASK_ACTION: Record<PlantaTask, string> = {
   confirmar: 'Confirmar →',
   cortar: 'Cortar →',
   preparar: 'Preparar →',
-  sin_stock: 'Nada que hacer aún',
+  sin_stock: 'Elegir chapa →',
   terminado: 'Ver',
 }
 

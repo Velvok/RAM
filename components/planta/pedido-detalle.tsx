@@ -201,8 +201,21 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
     }
   }
 
-  function openChange(cut: any) {
-    const rows = stockByCut[cut.id] || []
+  async function openChange(cut: any) {
+    let rows: any[] = stockByCut[cut.id]
+    if (!rows) {
+      // Líneas sin chapa: no son la tarjeta activa, así que su stock aún no está cargado
+      const code = cut.product?.code || ''
+      try {
+        const { getAvailableStock } = await import('@/app/actions/get-available-stock')
+        const r = await fetchWithSnapshot(`stock:${code}`, () => getAvailableStock(code))
+        rows = (r?.data as any[]) || []
+      } catch (e) {
+        console.error('Error cargando stock:', e)
+        rows = []
+      }
+      setStockByCut(prev => ({ ...prev, [cut.id]: rows }))
+    }
     const remaining = n(cut.quantity_requested) - n(cut.quantity_cut)
     setChangeFor(cut)
     setChangeRow(rows.find(r => r.product_id !== cut.material_base_id) || null)
@@ -212,15 +225,16 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
   async function handleChange() {
     if (!changeFor || !changeRow) return
     const remaining = n(changeFor.quantity_requested) - n(changeFor.quantity_cut)
+    const quantity = Math.max(1, Math.min(changeQty, remaining, Math.floor(n(changeRow.stock_disponible))))
     // Cambiar solo una parte parte la línea en dos en el servidor: sin red no se puede pintar bien
-    if (!sync.online && changeQty < remaining) {
+    if (!sync.online && quantity < remaining) {
       toast.error('Sin conexión solo se puede cambiar la chapa de todas las piezas que faltan')
       return
     }
     setBusy(changeFor.id)
     try {
       const code = changeRow.product?.code || ''
-      await enqueue('change_sheet', pedidoId, { cutOrderId: changeFor.id, inventoryId: changeRow.id, productId: changeRow.product.id, size: extractSizeFromCode(code), quantity: changeQty }, `Cambiar chapa de ${changeFor.product?.code || 'la línea'} a ${code}`)
+      await enqueue('change_sheet', pedidoId, { cutOrderId: changeFor.id, inventoryId: changeRow.id, productId: changeRow.product.id, size: extractSizeFromCode(code), quantity }, `Cambiar chapa de ${changeFor.product?.code || 'la línea'} a ${code}`)
       await refreshPending()
       setChangeFor(null)
       toast.success(`Ahora se corta de ${code}${sync.online ? '' : ' (guardado en la tablet)'}`)
@@ -326,6 +340,7 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
                 busy={busy === cut.id || busy === 'note'}
                 onSelect={() => setActiveCutId(cut.id)}
                 onConfirm={() => handleConfirmPickup(cut)}
+                onAssign={() => openChange(cut)}
                 onNotify={() => sendNote(`Falta chapa para ${cut.product?.code || cut.product?.name} (${cut.cut_number || 'corte'}). Avisad cuando esté asignada.`, 'Aviso enviado al admin')}
               />
             )
@@ -530,12 +545,13 @@ function Box({ label, value, hint, tone = 'default', warn }: { label: string; va
   )
 }
 
-function CutRow({ cut, state, busy, onSelect, onConfirm, onNotify }: {
+function CutRow({ cut, state, busy, onSelect, onConfirm, onAssign, onNotify }: {
   cut: any
   state: CutCardState
   busy: boolean
   onSelect: () => void
   onConfirm: () => void
+  onAssign: () => void
   onNotify: () => void
 }) {
   const total = n(cut.quantity_requested), doneQ = n(cut.quantity_cut)
@@ -575,8 +591,11 @@ function CutRow({ cut, state, busy, onSelect, onConfirm, onNotify }: {
 
       {state === 'sin_chapa' && (
         <div className="flex items-center justify-between gap-3">
-          <div className={cn('text-base', P.muted)}>El admin aún no ha asignado chapa. No hay nada que cortar todavía.</div>
-          <BigButton tone="outline-amber" className="h-12 shrink-0" disabled={busy} onClick={onNotify}>Avisar al admin</BigButton>
+          <div className={cn('text-base', P.muted)}>Aún sin chapa asignada. Elige de qué chapa se corta o avisa al admin.</div>
+          <div className="flex shrink-0 gap-2">
+            <BigButton tone="outline-amber" className="h-12" disabled={busy} onClick={onNotify}>Avisar al admin</BigButton>
+            <BigButton tone="amber" className="h-12" disabled={busy} onClick={onAssign}>Elegir chapa</BigButton>
+          </div>
         </div>
       )}
     </Wrapper>
@@ -596,6 +615,8 @@ function ChangeSheetModal({ cut, rows, selected, onSelect, qty, onQty, busy, onC
 }) {
   const pieceLength = productLength(cut.product)
   const remaining = n(cut.quantity_requested) - n(cut.quantity_cut)
+  // No más piezas que chapas libres de la elegida
+  const max = Math.max(1, Math.min(remaining, selected ? Math.floor(n(selected.stock_disponible)) : remaining))
   const options = sortByRemnant(
     rows.filter(r => r.product_id !== cut.material_base_id).map(r => ({ ...r, code: r.product?.code || '', stock_disponible: n(r.stock_disponible) })),
     pieceLength,
@@ -605,8 +626,8 @@ function ChangeSheetModal({ cut, rows, selected, onSelect, qty, onQty, busy, onC
       <div className={cn('flex max-h-[90vh] w-full max-w-[760px] flex-col rounded-3xl border', P.panel, P.border)} onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-4 border-b border-[#1e293b] px-6 py-5">
           <div>
-            <div className={cn('text-2xl font-bold', P.text)}>Usar otra chapa</div>
-            <div className={cn('text-base', P.muted)}>Para {cut.product?.code} ({formatMeters(pieceLength)}). Ahora: {cut.material_product?.code || '—'}. Ordenadas por menos sobrante.</div>
+            <div className={cn('text-2xl font-bold', P.text)}>{cut.material_base_id ? 'Usar otra chapa' : 'Elegir chapa'}</div>
+            <div className={cn('text-base', P.muted)}>Para {cut.product?.code} ({formatMeters(pieceLength)}).{cut.material_base_id ? ` Ahora: ${cut.material_product?.code || '—'}.` : ''} Ordenadas por menos sobrante.</div>
           </div>
           <button type="button" onClick={onClose} aria-label="Cerrar" className={cn('inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border', P.border, P.card, P.muted)}><X className="h-6 w-6" /></button>
         </div>
@@ -633,7 +654,7 @@ function ChangeSheetModal({ cut, rows, selected, onSelect, qty, onQty, busy, onC
         <div className="flex items-center justify-between gap-4 border-t border-[#1e293b] px-6 py-5">
           <div className="flex flex-col gap-1.5">
             <Label>Piezas con la chapa nueva</Label>
-            <PlantaStepper size="md" value={Math.min(qty, remaining) || 1} onChange={onQty} min={1} max={remaining} />
+            <PlantaStepper size="md" value={Math.min(qty, max) || 1} onChange={onQty} min={1} max={max} />
           </div>
           <BigButton tone="green" className="h-16 flex-1 text-xl" disabled={!selected || busy} onClick={onConfirm}>
             {busy ? 'Cambiando...' : selected ? `Cambiar a ${selected.product?.code}` : 'Elige una chapa'}
