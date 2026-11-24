@@ -22,8 +22,9 @@ export default function OrderActions({ order, onUpdate }: { order: any; onUpdate
     if (!ok) return
     setLoading(true)
     try {
-      await generateCutOrders(order.id)
-      toast.success('Pedido aprobado: la planta ya lo ve')
+      const res: { success: boolean; notApproved?: boolean; errors?: string[] } = await generateCutOrders(order.id)
+      if (res.success) toast.success('Pedido aprobado: la planta ya lo ve')
+      else toast.error(res.notApproved ? 'No se puede aprobar: falta stock' : 'Aprobado con incidencias', { description: res.errors?.join('\n'), duration: 12000 })
       await onUpdate?.()
     } catch (e: any) {
       toast.error('No se pudo aprobar', { description: e?.message, duration: 10000 })
@@ -35,7 +36,7 @@ export default function OrderActions({ order, onUpdate }: { order: any; onUpdate
   async function handleApproveOnHold() {
     const ok = await confirm(
       '¿Aprobar en pausa?',
-      'Se crean las órdenes sin reservar stock. Después asignas cada línea desde este detalle; el pedido sale de la pausa al asignar la última.',
+      'Se reserva el stock de las líneas que lo tienen y las demás quedan sin asignar. Después las asignas desde este detalle (o el operario desde la tablet); el pedido sale de la pausa al asignar la última.',
       { variant: 'warning', confirmText: 'Sí, en pausa' },
     )
     if (!ok) return

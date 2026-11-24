@@ -235,7 +235,7 @@ export async function approveOrderOnHold(orderId: string) {
     // Cantidad de unidades que pide el cliente
     const units = line.units || Math.ceil(line.quantity) || 1
 
-    await createLineFulfillmentOnHold(supabase, orderId, line, units, errors)
+    await createLineFulfillmentWhereStock(supabase, orderId, line, units, user?.id, errors)
 
     // Pequeño delay para evitar duplicados en el timestamp
     await new Promise(resolve => setTimeout(resolve, 10))
@@ -251,16 +251,38 @@ export async function approveOrderOnHold(orderId: string) {
     })
     .eq('id', orderId)
 
+  // Si al final todas las líneas tenían stock, el pedido no se queda en pausa
+  const { checkAndActivateOrderOnHold } = await import('./stock-management')
+  await checkAndActivateOrderOnHold(orderId)
+
   // Revalidar rutas de pedidos y stock
   revalidatePath('/admin', 'layout')
   revalidatePath('/admin/pedidos', 'layout')
   revalidatePath(`/admin/pedidos/${orderId}`)
   revalidateOrders(orderId)
-  
-  return { 
+  revalidateStock()
+
+  return {
     success: true,
-    message: 'Pedido aprobado en pausa. El stock deberá asignarse manualmente.'
+    message: 'Pedido aprobado en pausa: reservado lo que tiene stock; el resto se asigna a mano.'
   }
+}
+
+// Aprobación en pausa de una línea: si tiene stock se asigna y reserva como en
+// una aprobación normal; si no, se crea sin asignar para hacerlo a mano.
+async function createLineFulfillmentWhereStock(
+  supabase: ReturnType<typeof createAdminClient>,
+  orderId: string,
+  line: any,
+  units: number,
+  userId: string | undefined,
+  errors: string[]
+): Promise<boolean> {
+  const noStock: string[] = []
+  await checkLineStock(supabase, line, units, noStock)
+  return noStock.length > 0
+    ? createLineFulfillmentOnHold(supabase, orderId, line, units, errors)
+    : createLineFulfillment(supabase, orderId, line, units, userId, errors)
 }
 
 // Crea la orden de corte (chapas) o el preparation_item (artículos normales)
@@ -583,10 +605,11 @@ export async function approveOrder(orderId: string) {
     await checkLineStock(supabase, line, units, errors)
   }
 
-  // Si hay errores de stock, no procesar y lanzar error
+  // Sin stock no se aprueba nada. Se devuelve (no se lanza): en producción Next
+  // oculta el mensaje de los errores lanzados y el admin vería un error técnico.
   if (errors.length > 0) {
     console.log('❌ Errores de stock detectados:', errors)
-    throw new Error(errors.join('\n'))
+    return { success: false, notApproved: true, errors }
   }
 
   // NUEVO: Crear órdenes de corte para CHAPAS y preparation_items para ARTÍCULOS NORMALES
@@ -662,8 +685,8 @@ export async function approveOrder(orderId: string) {
 // Aprobar la ampliación de un pedido modificado desde EVO (estado 'modificado'):
 // crea cortes / preparaciones solo para order_lines.quantity_pending_approval y
 // devuelve el pedido al estado que tenía. Lo que ya estaba aprobado no se toca.
-// Con onHold se crean sin asignar stock (como approveOrderOnHold) y el pedido
-// queda en 'aprobado_en_pausa' hasta asignarlo a mano.
+// Con onHold solo se asigna lo que tiene stock (como approveOrderOnHold) y el
+// pedido queda en 'aprobado_en_pausa' hasta asignar el resto a mano.
 export async function approveOrderModification(orderId: string, options?: { onHold?: boolean }) {
   await requireAdmin()
 
@@ -698,14 +721,14 @@ export async function approveOrderModification(orderId: string, options?: { onHo
 
     if (errors.length > 0) {
       console.log('❌ Errores de stock detectados en la ampliación:', errors)
-      throw new Error(errors.join('\n'))
+      return { success: false, notApproved: true, errors }
     }
   }
 
   for (const line of pendingLines) {
     const pending = line.quantity_pending_approval
     const created = onHold
-      ? await createLineFulfillmentOnHold(supabase, orderId, line, pending, errors)
+      ? await createLineFulfillmentWhereStock(supabase, orderId, line, pending, user?.id, errors)
       : await createLineFulfillment(supabase, orderId, line, pending, user?.id, errors)
     if (!created) continue
 
@@ -727,6 +750,12 @@ export async function approveOrderModification(orderId: string, options?: { onHo
     .from('orders')
     .update({ status: restoredStatus, status_before_modification: null })
     .eq('id', orderId)
+
+  // En pausa, si todo lo añadido tenía stock, no hay nada que asignar a mano
+  if (onHold) {
+    const { checkAndActivateOrderOnHold } = await import('./stock-management')
+    await checkAndActivateOrderOnHold(orderId)
+  }
 
   // Solo recalcular si la planta ya había empezado: un pedido 'finalizado' con
   // cortes nuevos vuelve a 'en_corte'. 'aprobado' y 'aprobado_en_pausa' se quedan igual.

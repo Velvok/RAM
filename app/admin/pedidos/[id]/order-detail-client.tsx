@@ -144,7 +144,7 @@ export default function OrderDetailClient({ initialOrder, canDelete }: { initial
     const ok = await confirm(
       onHold ? '¿Aprobar la ampliación en pausa?' : '¿Aprobar la ampliación?',
       onHold
-        ? 'Se crean las órdenes de lo añadido sin reservar stock y el pedido queda en pausa hasta que lo asignes aquí. La planta sigue con lo ya aprobado.'
+        ? 'Se reserva el stock de lo añadido que lo tenga; el resto queda sin asignar y el pedido en pausa hasta que lo asignes. La planta sigue con lo ya aprobado.'
         : 'Se comprueba el stock de lo añadido, se reserva y se crean sus órdenes de corte y preparación. Si algo no tiene stock, no se aprueba nada y te lo indica.',
       { variant: onHold ? 'warning' : 'success', confirmText: onHold ? 'Sí, en pausa' : 'Sí, aprobar' },
     )
@@ -153,6 +153,7 @@ export default function OrderDetailClient({ initialOrder, canDelete }: { initial
     try {
       const res = await approveOrderModification(order.id, { onHold })
       if (res.success) toast.success(onHold ? 'Ampliación aprobada en pausa' : 'Ampliación aprobada y stock reservado')
+      else if ('notApproved' in res && res.notApproved) toast.error('No se puede aprobar la ampliación: falta stock', { description: res.errors?.join('\n'), duration: 12000 })
       else toast.warning('Ampliación aprobada con incidencias', { description: res.errors?.join(' · ') })
       await reloadOrder()
     } catch (e: any) {

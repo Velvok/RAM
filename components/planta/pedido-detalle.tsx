@@ -22,7 +22,7 @@ const STATE_LABEL: Record<CutCardState, { text: string; tone: 'amber' | 'green' 
   cortando: { text: 'Cortando', tone: 'amber' },
   por_empezar: { text: 'Por empezar', tone: 'amber' },
   sin_chapa: { text: 'Sin chapa asignada', tone: 'muted' },
-  confirmar_recogida: { text: 'Confirmar recogida', tone: 'amber' },
+  confirmar_recogida: { text: 'Reasignación · confirmar recogida', tone: 'amber' },
   terminada: { text: 'Terminada', tone: 'green' },
 }
 
@@ -191,9 +191,9 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
   async function handleConfirmPickup(cut: any) {
     setBusy(cut.id)
     try {
-      await enqueue('confirm_pickup', pedidoId, { cutOrderId: cut.id }, `Recogida de ${cut.quantity_requested} × ${cut.product?.code || 'chapa'} del pedido ${cut.reassigned_from_order?.order_number || '—'}`)
+      await enqueue('confirm_pickup', pedidoId, { cutOrderId: cut.id }, `Reasignación: recogida de ${cut.quantity_requested} × ${cut.product?.code || 'chapa'} del pedido ${cut.reassigned_from_order?.order_number || '—'}`)
       await refreshPending()
-      setDone({ title: 'Recogida confirmada', lines: [`${cut.quantity_requested} × ${cut.product?.code || cut.product?.name}`, `Venía del pedido ${cut.reassigned_from_order?.order_number || '—'}`, savedLine()] })
+      setDone({ title: 'Recogida confirmada', lines: [`${cut.quantity_requested} × ${cut.product?.code || cut.product?.name}`, `Reasignación: venía del pedido ${cut.reassigned_from_order?.order_number || '—'}`, savedLine()] })
     } catch (e: any) {
       toast.error(e?.message || 'No se pudo guardar la recogida')
     } finally {
@@ -584,7 +584,7 @@ function CutRow({ cut, state, busy, onSelect, onConfirm, onAssign, onNotify }: {
 
       {state === 'confirmar_recogida' && (
         <div className="flex flex-col gap-3">
-          <div className={cn('text-base', P.soft)}>Esta pieza viene ya cortada del pedido <b className={P.text}>{cut.reassigned_from_order?.order_number || '—'}</b>. Cógela de ahí y confirma.</div>
+          <div className={cn('text-base', P.soft)}><b className={P.text}>Reasignación:</b> esta pieza viene ya cortada del pedido <b className={P.text}>{cut.reassigned_from_order?.order_number || '—'}</b>. Cógela de ahí y confirma.</div>
           <BigButton tone="amber" className="h-16 text-xl" disabled={busy} onClick={onConfirm}>{busy ? '...' : 'Confirmar recogida'}</BigButton>
         </div>
       )}
