@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils'
 import { fetchWithSnapshot, listOutbox, readSnapshot, saveSnapshot, type QueuedOp } from '@/lib/planta-offline/store'
 import { applyPendingToOrder } from '@/lib/planta-offline/apply'
 import { PedidoDetalle } from '@/components/planta/pedido-detalle'
-import { PlantaOfflineBanner, PlantaSyncBadge, useSyncState } from '@/components/planta/sync-status'
+import { PlantaOfflineBanner, PlantaRefreshButton, PlantaSyncBadge, useSyncState } from '@/components/planta/sync-status'
 
 // Filtros por tarea, no por estado del pedido: el operario piensa en "qué me
 // toca hacer", no en el estado administrativo.
@@ -176,7 +176,7 @@ function PlantaPedidos() {
         title="Pedidos"
         subtitle={pendientes === 0 ? 'Nada pendiente ahora mismo' : `${counts.cortar} para cortar · ${counts.preparar} para preparar${counts.confirmar ? ` · ${counts.confirmar} por confirmar` : ''}`}
         onSearch={() => setShowSearch(v => !v)}
-        right={<PlantaSyncBadge />}
+        right={<><PlantaSyncBadge /><PlantaRefreshButton onRefresh={loadPedidos} /></>}
       />
       <PlantaOfflineBanner savedAt={savedAt} fromCache={fromCache} />
 

@@ -66,7 +66,7 @@ export function orderProgress(order: { cut_orders?: CutLike[] | null; preparatio
 }
 
 export const TASK_LABEL: Record<PlantaTask, string> = {
-  confirmar: 'Reasignación · confirmar recogida',
+  confirmar: 'Reasignación',
   cortar: 'Para cortar',
   preparar: 'Para preparar',
   sin_stock: 'Sin stock',

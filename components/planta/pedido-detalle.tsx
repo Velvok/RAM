@@ -7,7 +7,7 @@ import { ArrowLeft, Check, ChevronRight, MessageSquare, X } from 'lucide-react'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { enqueue, fetchWithSnapshot, pendingFor, type QueuedOp } from '@/lib/planta-offline/store'
 import { applyPendingToNotes, applyPendingToOrder } from '@/lib/planta-offline/apply'
-import { PlantaOfflineBanner, PlantaSyncBadge, useSyncState } from '@/components/planta/sync-status'
+import { PlantaOfflineBanner, PlantaRefreshButton, PlantaSyncBadge, useSyncState } from '@/components/planta/sync-status'
 import { BigButton, Label, P, PlantaHeader, PlantaStepper } from './planta-ui'
 import { cutCardState, cutPlan, formatMeters, productLength, sortByRemnant, type CutCardState } from '@/lib/planta-tasks'
 import { extractSizeFromCode } from '@/lib/product-utils'
@@ -22,7 +22,7 @@ const STATE_LABEL: Record<CutCardState, { text: string; tone: 'amber' | 'green' 
   cortando: { text: 'Cortando', tone: 'amber' },
   por_empezar: { text: 'Por empezar', tone: 'amber' },
   sin_chapa: { text: 'Sin chapa asignada', tone: 'muted' },
-  confirmar_recogida: { text: 'Reasignación · confirmar recogida', tone: 'amber' },
+  confirmar_recogida: { text: 'Reasignación', tone: 'amber' },
   terminada: { text: 'Terminada', tone: 'green' },
 }
 
@@ -193,7 +193,7 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
     try {
       await enqueue('confirm_pickup', pedidoId, { cutOrderId: cut.id }, `Reasignación: recogida de ${cut.quantity_requested} × ${cut.product?.code || 'chapa'} del pedido ${cut.reassigned_from_order?.order_number || '—'}`)
       await refreshPending()
-      setDone({ title: 'Recogida confirmada', lines: [`${cut.quantity_requested} × ${cut.product?.code || cut.product?.name}`, `Reasignación: venía del pedido ${cut.reassigned_from_order?.order_number || '—'}`, savedLine()] })
+      setDone({ title: 'Reasignación confirmada', lines: [`${cut.quantity_requested} × ${cut.product?.code || cut.product?.name}`, `Venía del pedido ${cut.reassigned_from_order?.order_number || '—'}`, savedLine()] })
     } catch (e: any) {
       toast.error(e?.message || 'No se pudo guardar la recogida')
     } finally {
@@ -300,6 +300,7 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
         right={
           <>
           <PlantaSyncBadge />
+          <PlantaRefreshButton onRefresh={() => { setStockByCut({}); return Promise.all([loadPedido(), loadNotes(), loadActivity()]) }} />
           <button type="button" onClick={() => setShowNotes(true)} className={cn('relative inline-flex h-14 items-center gap-2 rounded-2xl border px-4 text-base font-semibold', unread ? 'border-[#f59e0b] bg-[#f59e0b]/15 text-[#fbbf24]' : cn(P.border, P.card, P.muted))}>
             <MessageSquare className="h-5 w-5" /> Notas{unread ? ` · ${unread}` : ''}
           </button>
@@ -585,7 +586,7 @@ function CutRow({ cut, state, busy, onSelect, onConfirm, onAssign, onNotify }: {
       {state === 'confirmar_recogida' && (
         <div className="flex flex-col gap-3">
           <div className={cn('text-base', P.soft)}><b className={P.text}>Reasignación:</b> esta pieza viene ya cortada del pedido <b className={P.text}>{cut.reassigned_from_order?.order_number || '—'}</b>. Cógela de ahí y confirma.</div>
-          <BigButton tone="amber" className="h-16 text-xl" disabled={busy} onClick={onConfirm}>{busy ? '...' : 'Confirmar recogida'}</BigButton>
+          <BigButton tone="amber" className="h-16 text-xl" disabled={busy} onClick={onConfirm}>{busy ? '...' : 'Confirmar reasignación'}</BigButton>
         </div>
       )}
 

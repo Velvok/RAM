@@ -20,6 +20,21 @@ function hora(iso: string | null) {
 }
 
 /** Píldora de conexión para la cabecera de planta, con el panel de avisos. */
+/** Botón «Actualizar»: trae ya lo último de la oficina sin esperar al refresco automático. */
+export function PlantaRefreshButton({ onRefresh }: { onRefresh: () => Promise<unknown> | unknown }) {
+  const [busy, setBusy] = useState(false)
+  async function run() {
+    if (busy) return
+    setBusy(true)
+    try { await onRefresh() } catch (e) { console.error('Error actualizando:', e) } finally { setBusy(false) }
+  }
+  return (
+    <button type="button" onClick={run} disabled={busy} aria-label="Actualizar" title="Actualizar" className={cn('inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border', P.border, P.card, P.muted)}>
+      <RefreshCw className={cn('h-6 w-6', busy && 'animate-spin')} />
+    </button>
+  )
+}
+
 export function PlantaSyncBadge() {
   const s = useSyncState()
   const [open, setOpen] = useState(false)
