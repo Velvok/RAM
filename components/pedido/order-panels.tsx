@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { extractSizeFromCode } from '@/lib/product-utils'
 import { cutPlan, formatMeters, productLength, sortByRemnant } from '@/lib/planta-tasks'
+import { userMessage } from '@/lib/user-error'
 
 // Paneles laterales del detalle de pedido: asignar o cambiar la chapa/stock de
 // una línea y traer chapas cortadas de otro pedido. Sustituyen a los modales
@@ -168,7 +169,7 @@ export function AssignStockPanel({ order, line, onClose, onDone }: { order: any;
       }
       await onDone()
     } catch (e: any) {
-      toast.error(e?.message || 'No se pudo asignar el stock')
+      toast.error(userMessage(e, 'No se pudo asignar el stock'))
     } finally {
       setBusy(false)
     }
@@ -179,7 +180,7 @@ export function AssignStockPanel({ order, line, onClose, onDone }: { order: any;
     summary.push({ label: 'Se reserva', value: `${q} × ${selected.code}` })
     if (currentCode && !isSame) summary.push({ label: 'Se libera', value: `${q} × ${currentCode}` })
     if (isCut && plan) {
-      summary.push({ label: 'La planta verá', value: plan.exact ? `coger ${q} × ${selected.code} (exacta)` : `cortar ${q} × ${formatMeters(pieceLength)} de ${selected.code}` })
+      summary.push({ label: 'La planta verá', value: plan.exact ? `chapa asignada: ${q} × ${selected.code} (exacta)` : `cortar ${q} × ${formatMeters(pieceLength)} de ${selected.code}` })
       summary.push({ label: 'Sobrante previsto', value: plan.exact ? 'ninguno' : `${q} × ${formatMeters(plan.remnant)}`, tone: plan.exact ? 'ok' : undefined })
     }
     if (q < remaining) summary.push({ label: 'La línea', value: `se parte: ${q} con ${selected.code} y ${remaining - q} ${currentCode ? `siguen con ${currentCode}` : 'quedan sin asignar'}`, tone: 'warn' })
@@ -290,10 +291,10 @@ export function ReassignPanel({ order, cut, onClose, onDone }: { order: any; cut
     try {
       const { reassignStock } = await import('@/app/actions/stock-management')
       const res = await reassignStock(selected.cutOrderId, cut.id, q)
-      toast.success(`${q} × ${code} reasignadas desde ${res.fromOrder}. La planta tiene que confirmar la recogida.`)
+      toast.success(`${q} × ${code} reasignadas desde ${res.fromOrder}. La planta tiene que confirmar la reasignación.`)
       await onDone()
     } catch (e: any) {
-      toast.error(e?.message || 'No se pudo reasignar')
+      toast.error(userMessage(e, 'No se pudo reasignar'))
     } finally {
       setBusy(false)
     }
@@ -343,9 +344,9 @@ export function ReassignPanel({ order, cut, onClose, onDone }: { order: any; cut
             <span className="text-right text-xs text-muted-foreground">máximo {maxQty}{remaining - q > 0 ? <><br />quedarán {remaining - q} por cubrir aquí</> : null}</span>
           </div>
           <Summary rows={[
-            { label: 'Este pedido', value: `recibe ${q} × ${code} ya cortadas; la planta confirma la recogida` },
-            { label: `Pedido ${selected.orderNumber}`, value: `al confirmar la recogida le faltarán ${q} por cortar`, tone: 'warn' },
-            { label: 'EVO', value: 'se avisa al confirmar la recogida en planta' },
+            { label: 'Este pedido', value: `recibe ${q} × ${code} ya cortadas; la planta confirma la reasignación` },
+            { label: `Pedido ${selected.orderNumber}`, value: `al confirmar la reasignación le faltarán ${q} por cortar`, tone: 'warn' },
+            { label: 'EVO', value: 'se avisa al confirmar la reasignación en planta' },
           ]} />
         </>
       )}

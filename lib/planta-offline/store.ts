@@ -4,7 +4,7 @@
 //
 // - Foto local (IndexedDB) de la lista de pedidos, de cada pedido, sus notas,
 //   su actividad y el stock que se puede usar, para seguir trabajando sin red.
-// - Cola local de acciones (cortes, preparaciones, recogidas, cambios de
+// - Cola local de acciones (cortes, preparaciones, reasignaciones, cambios de
 //   chapa, notas). Cada una con un opId único y la hora real.
 // - Envío en orden a /api/planta/sync en cuanto hay conexión. El servidor no
 //   aplica dos veces el mismo opId, así que reintentar siempre es seguro.

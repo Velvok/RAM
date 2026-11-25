@@ -6,6 +6,7 @@ import { revalidateOrders, revalidateStock } from '@/lib/revalidate'
 import { notifyCorteRealizado, notifyChapaPreparada, processOnePendingPrep, type CorteMovimiento } from '@/lib/ram-outbound'
 import { buildReversalMovimientos, evoActionFor, orderStatusAfterUndo, stockEffect, undoBlocker, type EvoAction } from '@/lib/cut-reversal'
 import { updateOrderStatus } from './orders'
+import { UserError } from '@/lib/user-error'
 
 // Deshacer el último corte de una orden (corte registrado por error). Solo
 // admins, desde el historial del pedido. La orden vuelve a su cantidad
@@ -55,7 +56,7 @@ async function loadUndoContext(supabase: SupabaseAdmin, cutOrderId: string): Pro
     `)
     .eq('id', cutOrderId)
     .maybeSingle()
-  if (error) throw new Error('No se pudo leer la orden de corte')
+  if (error) throw new UserError('No se pudo leer la orden de corte')
   if (!cutOrder) return null
   const order: any = Array.isArray(cutOrder.order) ? cutOrder.order[0] : cutOrder.order
 
@@ -65,7 +66,7 @@ async function loadUndoContext(supabase: SupabaseAdmin, cutOrderId: string): Pro
     supabase.from('cut_orders').select('id, quantity_cut').eq('order_id', cutOrder.order_id),
     supabase.from('preparation_items').select('quantity_prepared').eq('order_id', cutOrder.order_id),
   ])
-  if (linesRes.error) throw new Error('No se pudieron leer los cortes de la orden')
+  if (linesRes.error) throw new UserError('No se pudieron leer los cortes de la orden')
   const lines = linesRes.data || []
   const line = lines[0]
   if (!line) return null
@@ -198,9 +199,9 @@ export async function undoLastCut(cutOrderId: string, reason?: string) {
   const cleanReason = (reason || '').trim().slice(0, 300) || null
 
   const ctx = await loadUndoContext(supabase, cutOrderId)
-  if (!ctx) throw new Error('Esta orden no tiene ningún corte que deshacer')
-  if (ctx.blocker) throw new Error(ctx.blocker)
-  if (ctx.evoAction.action === 'bloqueado') throw new Error(ctx.evoAction.reason)
+  if (!ctx) throw new UserError('Esta orden no tiene ningún corte que deshacer')
+  if (ctx.blocker) throw new UserError(ctx.blocker)
+  if (ctx.evoAction.action === 'bloqueado') throw new UserError(ctx.evoAction.reason)
   const { cutOrder, order, line, event, evoAction } = ctx
   const product: any = Array.isArray(cutOrder.product) ? cutOrder.product[0] : cutOrder.product
   const quantity = num(line.quantity_produced)
@@ -215,8 +216,8 @@ export async function undoLastCut(cutOrderId: string, reason?: string) {
     .eq('id', line.id)
     .is('reverted_at', null)
     .select('id')
-  if (claimError) throw new Error('No se pudo deshacer el corte')
-  if (!claimed?.length) throw new Error('Este corte ya se había deshecho. Recarga la página.')
+  if (claimError) throw new UserError('No se pudo deshacer el corte')
+  if (!claimed?.length) throw new UserError('Este corte ya se había deshecho. Recarga la página.')
   const release = () => supabase.from('cut_lines').update({ reverted_at: null, reverted_by: null, revert_reason: null }).eq('id', line.id)
 
   // 2. EVO: descartar el evento que no llegó a aplicarse, o mandar el inverso
@@ -229,7 +230,7 @@ export async function undoLastCut(cutOrderId: string, reason?: string) {
         .eq('id', event.id)
         .eq('status', event.status)
         .select('id')
-      if (!discarded?.length) throw new Error('El aviso de este corte a EVO acaba de cambiar de estado. Vuelve a intentarlo en unos segundos.')
+      if (!discarded?.length) throw new UserError('El aviso de este corte a EVO acaba de cambiar de estado. Vuelve a intentarlo en unos segundos.')
     } else if (evoAction.action === 'inverso') {
       const payload = event.payload || {}
       const params = {
@@ -259,7 +260,7 @@ export async function undoLastCut(cutOrderId: string, reason?: string) {
   if (updateError) {
     // El inverso ya está en cola: se deja constancia para arreglarlo a mano
     console.error('❌ Corte deshecho en EVO pero no en la orden de corte:', cutOrderId, updateError.message)
-    throw new Error('Se avisó a EVO pero no se pudo actualizar la orden de corte. Avisa a soporte.')
+    throw new UserError('Se avisó a EVO pero no se pudo actualizar la orden de corte. Avisa a soporte.')
   }
   if (reversalEventId) await supabase.from('cut_lines').update({ reversal_event_id: reversalEventId }).eq('id', line.id)
 

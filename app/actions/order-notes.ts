@@ -3,6 +3,7 @@
 import { requireAdmin, requireStaff } from '@/lib/auth/guards'
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { UserError } from '@/lib/user-error'
 
 export interface OrderNote {
   id: string
@@ -58,7 +59,7 @@ export async function createOrderNote(orderId: string, content: string): Promise
 export async function createPlantaNote(orderId: string, content: string): Promise<OrderNote> {
   const actor = await requireStaff()
   const text = String(content || '').trim().slice(0, 500)
-  if (!text) throw new Error('La nota está vacía')
+  if (!text) throw new UserError('La nota está vacía')
   const supabase = createAdminClient()
   let name = 'Planta'
   if (actor.kind === 'operator') {

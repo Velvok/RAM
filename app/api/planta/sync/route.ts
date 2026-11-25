@@ -8,6 +8,7 @@ import { prepareItem } from '@/app/actions/preparation'
 import { confirmReassignmentPickup } from '@/app/actions/confirm-reassignment'
 import { reassignStock } from '@/app/actions/reassign-stock'
 import { createPlantaNote, markNoteAsRead } from '@/app/actions/order-notes'
+import { UserError, isUserError, userMessage } from '@/lib/user-error'
 
 // Sincronización de la tablet de planta. La tablet manda aquí, en orden, lo
 // que hizo (con o sin conexión) y un latido con cuántas acciones le quedan.
@@ -149,7 +150,9 @@ async function applyOnce(
     const message = await apply(supabase, op, ctx)
     result = { opId: op.opId, status: 'applied', message }
   } catch (e: any) {
-    const message = String(e?.message || 'No se pudo registrar').slice(0, 300)
+    // Solo se enseña (a la tablet y al admin) un mensaje nuestro; lo técnico va al log
+    if (!isUserError(e)) console.error(`Operación de planta ${op.opId} (${op.kind}) falló:`, e)
+    const message = userMessage(e, 'No se pudo registrar. Vuelve a intentarlo o avisa a la oficina.').slice(0, 300)
     result = { opId: op.opId, status: 'rejected', message }
   }
   await supabase.from('planta_operations').update({ status: result.status, message: result.message || null }).eq('op_id', op.opId)
@@ -159,28 +162,28 @@ async function applyOnce(
 /** Aplica una operación con las acciones de siempre. Devuelve un aviso si se aplicó a medias. */
 async function apply(supabase: Supa, op: PlantaOp, ctx: { actorId: string; actorKind: 'operator' | 'admin' }): Promise<string | undefined> {
   const { data: order } = await supabase.from('orders').select('id, status, order_number').eq('id', op.orderId).maybeSingle()
-  if (!order) throw new Error('El pedido ya no existe')
+  if (!order) throw new UserError('El pedido ya no existe')
   if (op.kind !== 'note' && op.kind !== 'note_read' && CLOSED.includes(order.status)) {
-    throw new Error(`El pedido ${order.order_number} está ${order.status === 'entregado' ? 'entregado' : 'cancelado'}: no se registró`)
+    throw new UserError(`El pedido ${order.order_number} está ${order.status === 'entregado' ? 'entregado' : 'cancelado'}: no se registró`)
   }
 
   switch (op.kind) {
     case 'cut': {
       const p = op.payload as PlantaOp<'cut'>['payload']
       const { data: cut } = await supabase.from('cut_orders').select('order_id, status, quantity_requested, quantity_cut').eq('id', p.cutOrderId).maybeSingle()
-      if (!cut || cut.order_id !== op.orderId) throw new Error('Esa orden de corte ya no existe en el pedido (el admin la cambió)')
-      if (cut.status === 'pendiente_confirmacion') throw new Error('Esa línea está pendiente de confirmar una recogida')
+      if (!cut || cut.order_id !== op.orderId) throw new UserError('Esa orden de corte ya no existe en el pedido (el admin la cambió)')
+      if (cut.status === 'pendiente_confirmacion') throw new UserError('Esa línea está pendiente de confirmar una reasignación')
       const { apply: n, excess } = clampQuantity(Number(cut.quantity_requested), Number(cut.quantity_cut), p.quantity)
-      if (n <= 0) throw new Error('Ya estaba cortado entero: no se registró otra vez')
+      if (n <= 0) throw new UserError('Ya estaba cortado entero: no se registró otra vez')
       await processCutOrder({ cutOrderId: p.cutOrderId, selectedMaterialId: p.selectedMaterialId, materialLength: p.materialLength, quantityToCut: n, operatorId: ctx.actorId, occurredAt: op.occurredAt })
       return excess ? `Se registraron ${n} de ${p.quantity}: el resto ya estaba cortado` : undefined
     }
     case 'prepare': {
       const p = op.payload as PlantaOp<'prepare'>['payload']
       const { data: item } = await supabase.from('preparation_items').select('order_id, quantity_requested, quantity_prepared').eq('id', p.itemId).maybeSingle()
-      if (!item || item.order_id !== op.orderId) throw new Error('Ese artículo ya no existe en el pedido (el admin lo cambió)')
+      if (!item || item.order_id !== op.orderId) throw new UserError('Ese artículo ya no existe en el pedido (el admin lo cambió)')
       const { apply: n, excess } = clampQuantity(Number(item.quantity_requested), Number(item.quantity_prepared), p.quantity)
-      if (n <= 0) throw new Error('Ya estaba preparado entero: no se registró otra vez')
+      if (n <= 0) throw new UserError('Ya estaba preparado entero: no se registró otra vez')
       await prepareItem(p.itemId, n, ctx.actorId, op.occurredAt)
       return excess ? `Se registraron ${n} de ${p.quantity}: el resto ya estaba preparado` : undefined
     }
@@ -192,7 +195,7 @@ async function apply(supabase: Supa, op: PlantaOp, ctx: { actorId: string; actor
     case 'change_sheet': {
       const p = op.payload as PlantaOp<'change_sheet'>['payload']
       const res = await reassignStock(p.cutOrderId, p.inventoryId, p.productId, p.size, p.quantity)
-      if (!res?.success) throw new Error('No se pudo cambiar la chapa')
+      if (!res?.success) throw new UserError('No se pudo cambiar la chapa')
       return undefined
     }
     case 'note': {

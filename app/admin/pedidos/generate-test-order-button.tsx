@@ -6,6 +6,7 @@ import { generateTestOrder } from '@/app/actions/test-data'
 import { useRouter } from 'next/navigation'
 import ErrorAlertModal from '@/components/error-alert-modal'
 import { FlaskConical } from 'lucide-react'
+import { userMessage } from '@/lib/user-error'
 
 export default function GenerateTestOrderButton() {
   const [isOpen, setIsOpen] = useState(false)
@@ -36,7 +37,7 @@ export default function GenerateTestOrderButton() {
     } catch (error: any) {
       console.error('Error generating test order:', error)
       setIsOpen(false)
-      const errorMessage = error?.message || 'Error desconocido al generar pedido de prueba'
+      const errorMessage = userMessage(error, 'No se pudo generar el pedido de prueba')
       setErrorModal({ isOpen: true, message: errorMessage })
     } finally {
       setLoading(false)

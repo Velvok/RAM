@@ -6,9 +6,10 @@ import { revalidatePath } from 'next/cache'
 import { notifyChapaPreparada } from '@/lib/ram-outbound'
 import { offlineNote } from '@/lib/planta-offline-time'
 import { extractSizeFromCode } from '@/lib/product-utils'
+import { UserError } from '@/lib/user-error'
 
 /**
- * Confirmar que el operario recogió la pieza reasignada
+ * Confirmar que el operario ya tiene la pieza reasignada
  * Marca la orden como completada
  */
 export async function confirmReassignmentPickup(cutOrderId: string, occurredAt?: string) {
@@ -30,7 +31,7 @@ export async function confirmReassignmentPickup(cutOrderId: string, occurredAt?:
   if (fetchError) throw fetchError
 
   if (cutOrder.status !== 'pendiente_confirmacion') {
-    throw new Error('Esta orden no está pendiente de confirmación')
+    throw new UserError('Esta orden no está pendiente de confirmación')
   }
 
   // Obtener información del producto y material asignado
@@ -216,7 +217,7 @@ export async function confirmReassignmentPickup(cutOrderId: string, occurredAt?:
     order_id: orderData.id,
     cut_order_id: cutOrderId,
     activity_type: 'reassignment_confirmed',
-    description: `Operario confirmó recogida de pieza reasignada desde pedido ${fromOrderData?.order_number}${offlineNote(occurredAt)}`,
+    description: `Operario confirmó la reasignación de la pieza desde el pedido ${fromOrderData?.order_number}${offlineNote(occurredAt)}`,
     metadata: {
       reassigned_from_order_id: cutOrder.reassigned_from_order_id,
       reassigned_from_cut_order_id: cutOrder.reassigned_from_cut_order_id,

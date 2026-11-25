@@ -5,10 +5,11 @@ import { revalidatePath, revalidateTag } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidateAll } from '@/lib/revalidate'
 import { testOrdersEnabled } from '@/lib/test-orders'
+import { UserError } from '@/lib/user-error'
 
 export async function generateTestOrder(status: string = 'nuevo', numLines: number = 1) {
   await requireAdmin()
-  if (!testOrdersEnabled()) throw new Error('Los pedidos de prueba están desactivados')
+  if (!testOrdersEnabled()) throw new UserError('Los pedidos de prueba están desactivados')
 
   console.log('🎲 Generando pedido de prueba...', { status, numLines })
   const supabase = createAdminClient()
@@ -169,7 +170,8 @@ export async function generateTestOrder(status: string = 'nuevo', numLines: numb
 
   if (orderError) {
     console.error('❌ Error creating order:', orderError)
-    return { error: orderError.message }
+    console.error('Error creando pedido de prueba:', orderError.message)
+    return { error: 'No se pudo crear el pedido de prueba' }
   }
 
   if (!orderData || orderData.length === 0) {
@@ -198,7 +200,8 @@ export async function generateTestOrder(status: string = 'nuevo', numLines: numb
 
   if (lineError) {
     console.error('❌ Error creating order lines:', lineError)
-    return { error: lineError.message }
+    console.error('Error creando líneas del pedido de prueba:', lineError.message)
+    return { error: 'No se pudieron crear las líneas del pedido de prueba' }
   }
 
   console.log('✅ Líneas de pedido creadas:', linesToInsert.length)

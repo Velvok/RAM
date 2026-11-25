@@ -12,7 +12,7 @@ interface CutOrderStatusConfig {
 const CUT_ORDER_STATUS_CONFIG: Record<CutOrderStatus, CutOrderStatusConfig> = {
   pendiente: { label: 'Pendiente', badgeVariant: 'warning', icon: Clock },
   completada: { label: 'Completada', badgeVariant: 'success', icon: CheckCircle2 },
-  pendiente_confirmacion: { label: 'Confirmar Recogida', badgeVariant: 'warning', icon: AlertTriangle },
+  pendiente_confirmacion: { label: 'Confirmar reasignación', badgeVariant: 'warning', icon: AlertTriangle },
 }
 
 const FALLBACK_STATUS: CutOrderStatusConfig = CUT_ORDER_STATUS_CONFIG.pendiente

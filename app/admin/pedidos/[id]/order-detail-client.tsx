@@ -16,6 +16,7 @@ import OrderActions from './order-actions'
 import { PlantaSyncBanner } from '@/components/pedido/planta-sync-banner'
 import { DeleteOrderButton } from '@/components/pedido/delete-order-button'
 import { OrderHistory } from '@/components/pedido/order-history'
+import { userMessage } from '@/lib/user-error'
 
 const n = (v: unknown) => Number(v) || 0
 
@@ -35,7 +36,7 @@ const Pill = ({ tone, children }: { tone: Tone; children: ReactNode }) => (
 
 function cutState(c: any, paused: boolean): { label: string; tone: Tone } {
   if (c.status === 'entregado') return { label: 'Entregada', tone: 'info' }
-  if (c.status === 'pendiente_confirmacion') return { label: 'Recogida pendiente', tone: 'warn' }
+  if (c.status === 'pendiente_confirmacion') return { label: 'Reasignación pendiente', tone: 'warn' }
   if (c.status === 'completada' || n(c.quantity_cut) >= n(c.quantity_requested)) return { label: 'Cortada', tone: 'ok' }
   if (!c.material_base_id) return { label: paused ? 'Bloquea' : 'Sin asignar', tone: paused ? 'bad' : 'warn' }
   return n(c.quantity_cut) > 0 ? { label: 'Cortando', tone: 'info' } : { label: 'Por empezar', tone: 'muted' }
@@ -113,7 +114,7 @@ export default function OrderDetailClient({ initialOrder, canDelete }: { initial
     }
   }
 
-  // Cambios desde la tablet (cortes, recogidas) sin recargar la página
+  // Cambios desde la tablet (cortes, reasignaciones) sin recargar la página
   useAutoRefresh(order.id, () => getOrderById(order.id), {
     enabled: true,
     interval: 10,
@@ -158,7 +159,7 @@ export default function OrderDetailClient({ initialOrder, canDelete }: { initial
       else toast.warning('Ampliación aprobada con incidencias', { description: res.errors?.join(' · ') })
       await reloadOrder()
     } catch (e: any) {
-      toast.error('No se pudo aprobar la ampliación', { description: e?.message })
+      toast.error('No se pudo aprobar la ampliación', { description: userMessage(e) })
     } finally {
       setBusy(false)
     }
@@ -177,7 +178,7 @@ export default function OrderDetailClient({ initialOrder, canDelete }: { initial
       toast.success('Entrega deshecha')
       await reloadOrder()
     } catch (e: any) {
-      toast.error('No se pudo deshacer la entrega', { description: e?.message })
+      toast.error('No se pudo deshacer la entrega', { description: userMessage(e) })
     } finally {
       setBusy(false)
     }

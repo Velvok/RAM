@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/server'
 import { updateOrderStatus } from './orders'
 import { revalidateCuts, revalidateOrders, revalidateStock } from '@/lib/revalidate'
+import { UserError } from '@/lib/user-error'
 
 export async function getCutOrders(status?: string) {
   await requireAdmin()
@@ -92,7 +93,7 @@ export async function startCutOrder(cutOrderId: string, operatorId: string) {
 
   if (fetchError) throw fetchError
   if (existing.status === 'completada') {
-    throw new Error('No se puede iniciar: esta orden de corte ya está completada')
+    throw new UserError('No se puede iniciar: esta orden de corte ya está completada')
   }
 
   // Al iniciar el corte, asignar automáticamente al operario

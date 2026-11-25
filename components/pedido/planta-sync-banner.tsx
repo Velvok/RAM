@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { acknowledgePlantaOperation, getPlantaOrderSyncInfo } from '@/app/actions/planta-status'
 import type { PlantaOrderSyncInfo } from '@/lib/planta-status'
 import { cn } from '@/lib/utils'
+import { userMessage } from '@/lib/user-error'
 
 function hora(iso: string) {
   const d = new Date(iso)
@@ -37,7 +38,7 @@ export function PlantaSyncBanner({ orderId, refreshKey }: { orderId: string; ref
       await acknowledgePlantaOperation(id)
       await load()
     } catch (e: any) {
-      toast.error(e?.message || 'No se pudo marcar como revisada')
+      toast.error(userMessage(e, 'No se pudo marcar como revisada'))
     } finally {
       setBusy(null)
     }

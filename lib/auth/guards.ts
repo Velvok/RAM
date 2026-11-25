@@ -3,6 +3,7 @@ import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { PLANTA_COOKIE, verifyPlantaToken } from './planta-session'
+import { UserError } from '@/lib/user-error'
 
 // Guardas de acceso para las server actions. Todo export de un fichero
 // 'use server' es un endpoint público: sin guarda, cualquiera que conozca el id
@@ -75,7 +76,7 @@ export async function requireAdmin(): Promise<Actor> {
   if (systemContext.getStore()) return { kind: 'system' }
   const userId = await getAdminUserId()
   if (userId) return { kind: 'admin', userId }
-  throw new Error(UNAUTHORIZED)
+  throw new UserError(UNAUTHORIZED)
 }
 
 /**
@@ -91,7 +92,7 @@ export async function requireAdminRole(): Promise<Actor> {
     .select('role')
     .eq('id', actor.userId)
     .maybeSingle()
-  if (data?.role !== 'admin') throw new Error('Solo un administrador puede gestionar usuarios.')
+  if (data?.role !== 'admin') throw new UserError('Solo un administrador puede gestionar usuarios.')
   return actor
 }
 
@@ -115,7 +116,7 @@ export const canDeleteOrders = cache(async (): Promise<boolean> => {
 export async function requireOrderDeleter(): Promise<Actor> {
   const actor = await requireAdmin()
   if (actor.kind === 'admin' && !(await canDeleteOrders())) {
-    throw new Error('No tienes permiso para eliminar pedidos.')
+    throw new UserError('No tienes permiso para eliminar pedidos.')
   }
   return actor
 }
@@ -127,5 +128,5 @@ export async function requireStaff(): Promise<Actor> {
   if (operatorId) return { kind: 'operator', operatorId }
   const userId = await getAdminUserId()
   if (userId) return { kind: 'admin', userId }
-  throw new Error(UNAUTHORIZED)
+  throw new UserError(UNAUTHORIZED)
 }

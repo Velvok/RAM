@@ -8,6 +8,7 @@ import { offlineNote } from '@/lib/planta-offline-time'
 import { notifyCorteRealizado, notifyChapaPreparada, type CorteMovimiento } from '@/lib/ram-outbound'
 import { recordMovements } from '@/lib/historial-movimientos'
 import { revalidatePath } from 'next/cache'
+import { UserError } from '@/lib/user-error'
 
 export async function processCutOrder(params: {
   cutOrderId: string
@@ -57,7 +58,7 @@ export async function processCutOrder(params: {
   
   if (!cutOrder) {
     console.error('❌ Orden de corte no encontrada para ID:', cutOrderId)
-    throw new Error('Orden de corte no encontrada')
+    throw new UserError('Orden de corte no encontrada')
   }
   
   console.log(`✅ Orden de corte encontrada:`, {
@@ -68,18 +69,18 @@ export async function processCutOrder(params: {
 
   // Guard: no permitir cortar una orden ya completada
   if (cutOrder.status === 'completada') {
-    throw new Error(
+    throw new UserError(
       `Esta orden de corte ya está completada (${cutOrder.quantity_cut}/${cutOrder.quantity_requested} unidades). No se puede registrar más corte.`
     )
   }
 
   // Guard: no permitir cortar más de lo que falta para completar la orden
   if (quantityToCut <= 0) {
-    throw new Error('La cantidad a cortar debe ser mayor que 0')
+    throw new UserError('La cantidad a cortar debe ser mayor que 0')
   }
   const remainingToCut = cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)
   if (quantityToCut > remainingToCut) {
-    throw new Error(
+    throw new UserError(
       `La cantidad a cortar (${quantityToCut}) supera lo que falta por cortar (${remainingToCut} de ${cutOrder.quantity_requested} unidades).`
     )
   }
@@ -147,7 +148,7 @@ export async function processCutOrder(params: {
   
   if (!inventoryItem) {
     console.error('❌ No se encontró inventario para ID:', selectedMaterialId)
-    throw new Error('No se encontró el producto en el inventario')
+    throw new UserError('No se encontró el producto en el inventario')
   }
   
   console.log(`📋 Material usado: inventory_id = ${inventoryItem.id}, product_id = ${inventoryItem.product_id}`)
@@ -269,7 +270,7 @@ export async function processCutOrder(params: {
 
     if (!usedProduct) {
       console.error(`❌ ERROR: No se encontró usedProduct para inventoryItem.product_id: ${inventoryItem.product_id}`)
-      throw new Error('No se encontró el producto usado')
+      throw new UserError('No se encontró el producto usado')
     }
 
     console.log(`✅ usedProduct encontrado:`, usedProduct)

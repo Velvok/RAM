@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { generateCutOrders, approveOrderOnHold } from '@/app/actions/orders'
 import { useConfirm } from '@/components/confirm-modal'
 import { Button } from '@/components/ui/button'
+import { userMessage } from '@/lib/user-error'
 
 // Acciones de la cabecera del detalle: solo aprobar un pedido nuevo. La
 // ampliación de EVO, la asignación en pausa y deshacer entregas viven en sus
@@ -27,7 +28,7 @@ export default function OrderActions({ order, onUpdate }: { order: any; onUpdate
       else toast.error(res.notApproved ? 'No se puede aprobar: falta stock' : 'Aprobado con incidencias', { description: res.errors?.join('\n'), duration: 12000 })
       await onUpdate?.()
     } catch (e: any) {
-      toast.error('No se pudo aprobar', { description: e?.message, duration: 10000 })
+      toast.error('No se pudo aprobar', { description: userMessage(e), duration: 10000 })
     } finally {
       setLoading(false)
     }
@@ -46,7 +47,7 @@ export default function OrderActions({ order, onUpdate }: { order: any; onUpdate
       toast.success(res?.message || 'Pedido aprobado en pausa')
       await onUpdate?.()
     } catch (e: any) {
-      toast.error('No se pudo aprobar en pausa', { description: e?.message })
+      toast.error('No se pudo aprobar en pausa', { description: userMessage(e) })
     } finally {
       setLoading(false)
     }

@@ -9,6 +9,7 @@ import { revalidateOrders, revalidateStock, revalidateOrderStatus } from '@/lib/
 import { notifyPedidoCompletado } from '@/lib/ram-outbound'
 import { extractSizeFromCode } from '@/lib/product-utils'
 import { lineUnits, lineUnitsUpdate } from '@/lib/order-modification'
+import { UserError, userMessage } from '@/lib/user-error'
 
 export async function getOrders() {
   await requireAdmin()
@@ -88,10 +89,10 @@ export async function cancelOrder(orderId: string) {
     .eq('id', orderId)
     .maybeSingle()
 
-  if (fetchError) throw new Error('No se pudo leer el pedido')
-  if (!order) throw new Error('El pedido no existe')
-  if (order.status === 'entregado') throw new Error('No se puede eliminar un pedido ya entregado')
-  if (order.status === 'cancelado') throw new Error('Este pedido ya está eliminado')
+  if (fetchError) throw new UserError('No se pudo leer el pedido')
+  if (!order) throw new UserError('El pedido no existe')
+  if (order.status === 'entregado') throw new UserError('No se puede eliminar un pedido ya entregado')
+  if (order.status === 'cancelado') throw new UserError('Este pedido ya está eliminado')
 
   const cuts = (order.cut_orders || []) as any[]
   const preps = (order.preparation_items || []) as any[]
@@ -105,8 +106,8 @@ export async function cancelOrder(orderId: string) {
     .eq('id', orderId)
     .eq('status', order.status)
     .select('id')
-  if (statusError) throw new Error('No se pudo eliminar el pedido')
-  if (!changed?.length) throw new Error('El pedido acaba de cambiar. Recarga la página y vuelve a intentarlo.')
+  if (statusError) throw new UserError('No se pudo eliminar el pedido')
+  if (!changed?.length) throw new UserError('El pedido acaba de cambiar. Recarga la página y vuelve a intentarlo.')
 
   // 2. Liberar la reserva
   const materialIds = [...new Set(cuts.map(c => c.material_base_id).filter(Boolean))]
@@ -219,13 +220,13 @@ export async function approveOrderOnHold(orderId: string) {
 
   if (orderError) throw orderError
   if (!orderData || orderData.length === 0) {
-    throw new Error('Pedido no encontrado')
+    throw new UserError('Pedido no encontrado')
   }
   const order = orderData[0]
 
   // Verificar que el pedido esté en estado 'nuevo'
   if (order.status !== 'nuevo') {
-    throw new Error('Solo se pueden aprobar pedidos en estado "nuevo"')
+    throw new UserError('Solo se pueden aprobar pedidos en estado "nuevo"')
   }
 
   const errors: string[] = []
@@ -341,7 +342,7 @@ async function createLineFulfillmentOnHold(
 
     if (cutError) {
       console.error('Error creando orden de corte:', cutError)
-      errors.push(`Error creando orden de corte: ${cutError.message}`)
+      { console.error('Error creando orden de corte:', cutError.message); errors.push(`No se pudo crear la orden de corte de ${line.product?.name || 'una línea'}`) }
       return false
     }
 
@@ -364,7 +365,7 @@ async function createLineFulfillmentOnHold(
   } catch (prepError: any) {
     console.error('❌ Error creando preparation_item:', prepError)
     console.error('   Stack:', prepError.stack)
-    errors.push(`Error creando preparation_item para ${line.product?.name}: ${prepError.message}`)
+    { console.error('Error creando preparation_item:', prepError.message); errors.push(`No se pudo crear la preparación de ${line.product?.name || 'un artículo'}`) }
     return false
   }
 }
@@ -473,13 +474,13 @@ async function createLineFulfillment(
     
     if (cutError) {
       console.error('Error creando orden de corte:', cutError)
-      errors.push(`Error creando orden de corte: ${cutError.message}`)
+      { console.error('Error creando orden de corte:', cutError.message); errors.push(`No se pudo crear la orden de corte de ${line.product?.name || 'una línea'}`) }
       return false
     }
 
     if (!cutOrderData || cutOrderData.length === 0) {
       console.error('No se devolvió ninguna orden de corte después del insert')
-      errors.push('Error: No se pudo crear la orden de corte')
+      errors.push(`No se pudo crear la orden de corte de ${line.product?.name || 'una línea'}`)
       return false
     }
 
@@ -535,7 +536,7 @@ async function createLineFulfillment(
         console.warn(`⚠️ No hay stock disponible para ${cutNumber}`)
       }
     } catch (stockError: any) {
-      errors.push(`Error asignando stock a ${cutNumber}: ${stockError.message}`)
+      { console.error(`Error asignando stock a ${cutNumber}:`, stockError.message); errors.push(userMessage(stockError, `No se pudo asignar stock a ${line.product?.name || 'una línea'}`)) }
       console.error('Error asignando stock:', stockError)
     }
     
@@ -560,7 +561,7 @@ async function createLineFulfillment(
     } catch (prepError: any) {
       console.error('❌ Error creando preparation_item:', prepError)
       console.error('   Stack:', prepError.stack)
-      errors.push(`Error creando preparation_item para ${line.product?.name}: ${prepError.message}`)
+      { console.error('Error creando preparation_item:', prepError.message); errors.push(`No se pudo crear la preparación de ${line.product?.name || 'un artículo'}`) }
       return false
     }
   }
@@ -586,13 +587,13 @@ export async function approveOrder(orderId: string) {
 
   if (orderError) throw orderError
   if (!orderData || orderData.length === 0) {
-    throw new Error('Pedido no encontrado')
+    throw new UserError('Pedido no encontrado')
   }
   const order = orderData[0]
 
   // Verificar que el pedido esté en estado 'nuevo'
   if (order.status !== 'nuevo') {
-    throw new Error('Solo se pueden aprobar pedidos en estado "nuevo"')
+    throw new UserError('Solo se pueden aprobar pedidos en estado "nuevo"')
   }
 
   const errors: string[] = []
@@ -703,12 +704,12 @@ export async function approveOrderModification(orderId: string, options?: { onHo
 
   if (orderError) throw orderError
   if (order.status !== 'modificado') {
-    throw new Error(`No se puede aprobar la ampliación de un pedido en estado "${order.status}"`)
+    throw new UserError(`No se puede aprobar la ampliación de un pedido en estado "${order.status}"`)
   }
 
   const pendingLines = (order.order_lines || []).filter((l: any) => (l.quantity_pending_approval || 0) > 0)
   if (pendingLines.length === 0) {
-    throw new Error('Este pedido no tiene ampliaciones pendientes de aprobar')
+    throw new UserError('Este pedido no tiene ampliaciones pendientes de aprobar')
   }
 
   const errors: string[] = []
@@ -737,7 +738,7 @@ export async function approveOrderModification(orderId: string, options?: { onHo
       .from('order_lines')
       .update({ ...lineUnitsUpdate(line, lineUnits(line) + pending), quantity_pending_approval: 0 })
       .eq('id', line.id)
-    if (lineError) errors.push(`Error actualizando línea de ${line.product?.name}: ${lineError.message}`)
+    if (lineError) { console.error('Error actualizando línea:', lineError.message); errors.push(`No se pudo actualizar la línea de ${line.product?.name}`) }
 
     // Pequeño delay para evitar duplicados en el timestamp
     await new Promise(resolve => setTimeout(resolve, 10))
@@ -921,7 +922,7 @@ export async function markOrderAsDelivered(orderId: string) {
   const allPrepItemsCompleted = prepItems?.every(pi => (pi.quantity_prepared || 0) >= pi.quantity_requested) ?? true
   
   if (!allCutOrdersCompleted || !allPrepItemsCompleted) {
-    throw new Error('No se puede marcar como entregado: hay items pendientes de completar')
+    throw new UserError('No se puede marcar como entregado: hay items pendientes de completar')
   }
 
   // Obtener estado anterior del pedido
@@ -935,7 +936,7 @@ export async function markOrderAsDelivered(orderId: string) {
 
   // Guard: solo se puede entregar un pedido en_corte o finalizado
   if (orderData.status !== 'en_corte' && orderData.status !== 'finalizado') {
-    throw new Error(
+    throw new UserError(
       `No se puede marcar como entregado: el pedido debe estar en "en_corte" o "finalizado" (actual: "${orderData.status}")`
     )
   }
@@ -1141,7 +1142,7 @@ export async function undoOrderDelivery(orderId: string) {
 
   if (historyError) {
     if (historyError.code === 'PGRST116') {
-      throw new Error('No se encontró historial de entrega para este pedido')
+      throw new UserError('No se encontró historial de entrega para este pedido')
     }
     throw historyError
   }
@@ -1150,7 +1151,7 @@ export async function undoOrderDelivery(orderId: string) {
   const deliveredAt = new Date(deliveryHistory.delivered_at).getTime()
   const hoursSinceDelivery = (Date.now() - deliveredAt) / (1000 * 60 * 60)
   if (hoursSinceDelivery > 24) {
-    throw new Error(
+    throw new UserError(
       `No se puede deshacer: han pasado más de 24 horas desde la entrega (${Math.floor(hoursSinceDelivery)}h)`
     )
   }

@@ -4,6 +4,7 @@ import { requireStaff } from '@/lib/auth/guards'
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { checkAndActivateOrderOnHold } from './stock-management'
+import { UserError } from '@/lib/user-error'
 
 export async function reassignStock(
   cutOrderId: string,
@@ -27,7 +28,7 @@ export async function reassignStock(
 
   // Guard: no se puede cambiar el material de una orden de corte ya completada
   if (cutOrder.status === 'completada') {
-    throw new Error('No se puede cambiar el material de una orden de corte ya completada')
+    throw new UserError('No se puede cambiar el material de una orden de corte ya completada')
   }
 
   // Guard: la cantidad a reasignar debe ser válida y no superar lo que falta
@@ -35,10 +36,10 @@ export async function reassignStock(
   // con el material anterior, esas no se pueden "reasignar" retroactivamente.
   const remainingToCut = cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)
   if (!Number.isFinite(quantityForNewMaterial) || quantityForNewMaterial <= 0) {
-    throw new Error('La cantidad debe ser mayor que 0')
+    throw new UserError('La cantidad debe ser mayor que 0')
   }
   if (quantityForNewMaterial > remainingToCut) {
-    throw new Error(
+    throw new UserError(
       `La cantidad no puede exceder lo que falta por cortar (${remainingToCut} de ${cutOrder.quantity_requested} unidades)`
     )
   }

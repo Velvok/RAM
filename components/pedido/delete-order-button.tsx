@@ -7,6 +7,7 @@ import { cancelOrder } from '@/app/actions/orders'
 import { useConfirm } from '@/components/confirm-modal'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { userMessage } from '@/lib/user-error'
 
 /**
  * "Eliminar pedido" (lo deja cancelado). Solo se pinta para quien tiene
@@ -38,7 +39,7 @@ export function DeleteOrderButton({ order, onDone, compact }: {
       else toast.success(`Pedido ${order.order_number} eliminado`, { description: res.released ? `${res.released} uds vuelven a estar disponibles` : undefined })
       await onDone?.()
     } catch (err: any) {
-      toast.error('No se pudo eliminar el pedido', { description: err?.message })
+      toast.error('No se pudo eliminar el pedido', { description: userMessage(err) })
     } finally {
       setLoading(false)
     }

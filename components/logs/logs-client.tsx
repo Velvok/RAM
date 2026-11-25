@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button'
 import { SelectField, FIELD_CLS } from '@/components/ui/select-field'
 import { useConfirm } from '@/components/confirm-modal'
 import { cn } from '@/lib/utils'
+import { userMessage } from '@/lib/user-error'
+import { explainEvoError } from '@/lib/evo-errors'
 import {
   getIntegrationHealth, getIntegrationLogs, retryOutboundEvent, sendTestEvent,
   type IntegrationLog, type LogsFilters,
@@ -128,10 +130,10 @@ export function LogsClient({ initialLogs, totalLogs, eventTypes, initialHealth }
     try {
       const res: any = await retryOutboundEvent(log.id)
       if (res?.success) toast.success('Evento reenviado a EVO')
-      else toast.error('EVO no lo aceptó', { description: res?.error })
+      else toast.error('EVO no lo aceptó', { description: explainEvoError(res?.error, res?.status) })
       await refresh()
     } catch (e: any) {
-      toast.error('No se pudo reenviar', { description: e?.message })
+      toast.error('No se pudo reenviar', { description: userMessage(e) })
     } finally {
       setBusy(false)
     }
@@ -145,7 +147,7 @@ export function LogsClient({ initialLogs, totalLogs, eventTypes, initialHealth }
       toast.success('Ping encolado', { description: 'El resultado aparece en la lista en unos segundos' })
       setTimeout(refresh, 1500)
     } catch (e: any) {
-      toast.error('No se pudo enviar el ping', { description: e?.message })
+      toast.error('No se pudo enviar el ping', { description: userMessage(e) })
     }
   }
 
@@ -254,7 +256,7 @@ export function LogsClient({ initialLogs, totalLogs, eventTypes, initialHealth }
                       </td>
                       <td className={td}><span className={cn('whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold', st.cls)}>{st.label}</span></td>
                       <td className={cn(td, 'max-w-[220px] truncate text-muted-foreground')} title={l.error_message || ''}>
-                        {l.status === 'failed' ? (l.error_message || `${l.attempts} intentos`) : secs != null ? `confirmado en ${secs} s` : l.http_status ? `HTTP ${l.http_status}` : '—'}
+                        {l.status === 'failed' ? (l.direction === 'outbound' ? explainEvoError(l.error_message, l.http_status) : (l.error_message || `${l.attempts} intentos`)) : secs != null ? `confirmado en ${secs} s` : l.http_status ? `HTTP ${l.http_status}` : '—'}
                       </td>
                     </tr>
                   )
@@ -290,7 +292,10 @@ export function LogsClient({ initialLogs, totalLogs, eventTypes, initialHealth }
                 {selected.order_id && <div className="flex justify-between gap-3"><span className="text-muted-foreground">Pedido</span><Link href={`/admin/pedidos/${selected.order_id}`} className="font-semibold text-primary hover:underline">{selected.order_number}</Link></div>}
               </div>
               {selected.error_message && (
-                <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-3 text-xs leading-relaxed text-destructive">{selected.error_message}</div>
+                <div className="flex flex-col gap-1.5 rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-3 text-xs leading-relaxed text-destructive">
+                  {selected.direction === 'outbound' && <strong className="text-[13px] font-semibold">{explainEvoError(selected.error_message, selected.http_status)}</strong>}
+                  <span className="opacity-80">Detalle técnico: {selected.error_message}</span>
+                </div>
               )}
               {selected.direction === 'outbound' && selected.status === 'failed' && (
                 <div className="rounded-lg border border-warning/40 bg-warning/10 px-3.5 py-3 text-xs leading-relaxed text-warning">

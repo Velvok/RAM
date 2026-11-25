@@ -13,6 +13,7 @@ import { cutCardState, cutPlan, formatMeters, productLength, sortByRemnant, type
 import { extractSizeFromCode } from '@/lib/product-utils'
 import { getOrderStatusConfig } from '@/lib/order-status'
 import { cn } from '@/lib/utils'
+import { userMessage } from '@/lib/user-error'
 
 const QUICK_REPLIES = ['Llegamos a tiempo', 'Falta material', 'Chapa dañada', 'Tengo una pregunta']
 
@@ -165,7 +166,7 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
         ],
       })
     } catch (e: any) {
-      toast.error(e?.message || 'No se pudo guardar el corte')
+      toast.error(userMessage(e, 'No se pudo guardar el corte'))
     } finally {
       setBusy(null)
     }
@@ -182,7 +183,7 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
       await refreshPending()
       setDone({ title: 'Preparación registrada', lines: [`${quantity} × ${item.product?.code || item.product?.name}`, `${Math.min(n(item.quantity_prepared) + quantity, n(item.quantity_requested))} de ${n(item.quantity_requested)} preparadas`, savedLine()] })
     } catch (e: any) {
-      toast.error(e?.message || 'No se pudo guardar la preparación')
+      toast.error(userMessage(e, 'No se pudo guardar la preparación'))
     } finally {
       setBusy(null)
     }
@@ -191,11 +192,11 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
   async function handleConfirmPickup(cut: any) {
     setBusy(cut.id)
     try {
-      await enqueue('confirm_pickup', pedidoId, { cutOrderId: cut.id }, `Reasignación: recogida de ${cut.quantity_requested} × ${cut.product?.code || 'chapa'} del pedido ${cut.reassigned_from_order?.order_number || '—'}`)
+      await enqueue('confirm_pickup', pedidoId, { cutOrderId: cut.id }, `Reasignación de ${cut.quantity_requested} × ${cut.product?.code || 'chapa'} del pedido ${cut.reassigned_from_order?.order_number || '—'}`)
       await refreshPending()
       setDone({ title: 'Reasignación confirmada', lines: [`${cut.quantity_requested} × ${cut.product?.code || cut.product?.name}`, `Venía del pedido ${cut.reassigned_from_order?.order_number || '—'}`, savedLine()] })
     } catch (e: any) {
-      toast.error(e?.message || 'No se pudo guardar la recogida')
+      toast.error(userMessage(e, 'No se pudo guardar la reasignación'))
     } finally {
       setBusy(null)
     }
@@ -239,7 +240,7 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
       setChangeFor(null)
       toast.success(`Ahora se corta de ${code}${sync.online ? '' : ' (guardado en la tablet)'}`)
     } catch (e: any) {
-      toast.error(e?.message || 'No se pudo cambiar la chapa')
+      toast.error(userMessage(e, 'No se pudo cambiar la chapa'))
     } finally {
       setBusy(null)
     }
@@ -251,7 +252,7 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
       await enqueue('note_read', pedidoId, { noteId, operatorName: operator.full_name }, 'Nota marcada como leída')
       await refreshPending()
     } catch (e: any) {
-      toast.error(e?.message || 'No se pudo marcar la nota')
+      toast.error(userMessage(e, 'No se pudo marcar la nota'))
     }
   }
 
@@ -262,7 +263,7 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
       await refreshPending()
       toast.success(sync.online ? okMessage : `${okMessage} (se enviará al volver la conexión)`)
     } catch (e: any) {
-      toast.error(e?.message || 'No se pudo enviar el aviso')
+      toast.error(userMessage(e, 'No se pudo enviar el aviso'))
     } finally {
       setBusy(null)
     }
@@ -505,7 +506,7 @@ function ActiveCutCard({ cut, rows, qty, onQty, busy, onCut, onChange }: {
       </div>
 
       <div className="grid grid-cols-3 gap-3">
-        <Box label="Coger del estante" value={cut.material_product?.code || '—'} hint={materialLength ? `Chapa de ${formatMeters(materialLength)}${assigned ? ` · ${n(assigned.stock_disponible)} disponibles` : rows ? ' · sin stock en el sistema' : ''}` : 'Sin largo conocido'} warn={!!rows && !assigned} />
+        <Box label="Chapa asignada" value={cut.material_product?.code || '—'} hint={materialLength ? `Chapa de ${formatMeters(materialLength)}${assigned ? ` · ${n(assigned.stock_disponible)} disponibles` : rows ? ' · sin stock en el sistema' : ''}` : 'Sin largo conocido'} warn={!!rows && !assigned} />
         <Box label="Cortar a" value={pieceLength ? formatMeters(pieceLength) : '—'} hint={`${value} ${value === 1 ? 'pieza' : 'piezas'}, una por chapa`} />
         <Box label="Sobrante" value={plan.exact ? 'Ninguno' : materialLength ? formatMeters(plan.remnant) : '—'} hint={plan.exact ? 'Chapa exacta' : `por chapa · ${value} × ${formatMeters(plan.remnant)} al estante`} tone={plan.exact ? 'green' : 'default'} />
       </div>
@@ -585,7 +586,7 @@ function CutRow({ cut, state, busy, onSelect, onConfirm, onAssign, onNotify }: {
 
       {state === 'confirmar_recogida' && (
         <div className="flex flex-col gap-3">
-          <div className={cn('text-base', P.soft)}><b className={P.text}>Reasignación:</b> esta pieza viene ya cortada del pedido <b className={P.text}>{cut.reassigned_from_order?.order_number || '—'}</b>. Cógela de ahí y confirma.</div>
+          <div className={cn('text-base', P.soft)}><b className={P.text}>Reasignación:</b> esta pieza viene ya cortada del pedido <b className={P.text}>{cut.reassigned_from_order?.order_number || '—'}</b>. Retírala de ahí y confirma la reasignación.</div>
           <BigButton tone="amber" className="h-16 text-xl" disabled={busy} onClick={onConfirm}>{busy ? '...' : 'Confirmar reasignación'}</BigButton>
         </div>
       )}

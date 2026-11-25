@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { revalidateStock } from '@/lib/revalidate'
 import { extractFamilyCode, extractSizeFromCode } from '@/lib/product-utils'
+import { UserError } from '@/lib/user-error'
 
 /**
  * Registrar actividad en el log de pedidos
@@ -653,7 +654,7 @@ export async function generateRemnantStock(
   if (!product) {
     console.error(`❌ Producto remanente no encontrado`)
     console.error(`   Patrón LIKE intentado: ${pattern}`)
-    throw new Error(`Producto remanente no encontrado (${productCode}). Por favor, contacta con RAM para crear este nuevo producto en caso de querer.`)
+    throw new UserError(`Producto remanente no encontrado (${productCode}). Por favor, contacta con RAM para crear este nuevo producto en caso de querer.`)
   }
 
   console.log(`🔍 Buscando producto para recorte: ${productCode} (${remnantSize}m)`)
@@ -817,16 +818,16 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
 
   if (fromError) throw fromError
   if (!fromOrder.material_base_id) {
-    throw new Error('La orden origen no tiene stock asignado')
+    throw new UserError('La orden origen no tiene stock asignado')
   }
   
   // NUEVO: Verificar que tenga suficientes unidades cortadas para reasignar
   if ((fromOrder.quantity_cut || 0) === 0) {
-    throw new Error('La orden origen no tiene unidades cortadas para reasignar')
+    throw new UserError('La orden origen no tiene unidades cortadas para reasignar')
   }
   
   if ((fromOrder.quantity_cut || 0) < quantityToReassign) {
-    throw new Error(`La orden origen solo tiene ${fromOrder.quantity_cut} unidades cortadas, no se pueden reasignar ${quantityToReassign}`)
+    throw new UserError(`La orden origen solo tiene ${fromOrder.quantity_cut} unidades cortadas, no se pueden reasignar ${quantityToReassign}`)
   }
 
   // Obtener el inventory que tiene este producto asignado
@@ -850,7 +851,7 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
 
   if (toError) throw toError
   if (toOrder.status === 'completada' || toOrder.status === 'entregado') {
-    throw new Error('No se puede reasignar a una orden ya completada o entregada')
+    throw new UserError('No se puede reasignar a una orden ya completada o entregada')
   }
 
   const inventoryId = assignedInventory.id
@@ -862,7 +863,7 @@ export async function reassignStock(fromCutOrderId: string, toCutOrderId: string
 
   // 2. IMPORTANTE: NO decrementar quantity_cut de la orden origen
   // La orden origen se mantiene "completada" hasta que el operario confirme
-  // que recogió la pieza reasignada
+  // que ya tiene la pieza reasignada
   console.log(`📊 Orden origen: ${fromOrder.quantity_cut}/${fromOrder.quantity_requested} (se mantiene completada hasta confirmación del operario)`)
   
   // NO hacemos nada con la orden origen por ahora

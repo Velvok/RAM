@@ -1,7 +1,7 @@
 import { extractSizeFromCode } from '@/lib/product-utils'
 
 // Lógica pura de la pantalla de planta: qué tarea hay en cada pedido, en qué
-// estado está cada tarjeta de corte y qué chapa coger. Sin dependencias de UI
+// estado está cada tarjeta de corte y qué chapa usar. Sin dependencias de UI
 // ni de base de datos, para poder probarla sola.
 
 export type PlantaTask = 'cortar' | 'preparar' | 'confirmar' | 'sin_stock' | 'terminado'

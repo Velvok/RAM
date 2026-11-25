@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import { getRecentEventsForNotifications } from '@/app/actions/integration-logs'
 import { toast } from 'sonner'
 import { ArrowDownCircle, ArrowUpCircle, Package, ShoppingCart, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { evoEventLabel, explainEvoError } from '@/lib/evo-errors'
 
 /**
  * Provider global de notificaciones en tiempo real.
@@ -54,7 +55,7 @@ export function RealtimeNotificationsProvider() {
 
       if (event.success) {
         // Agregar información de items procesados si es stock_actualizado
-        let description = `Recibido de RAM • ${new Date(event.created_at).toLocaleTimeString('es-AR')}`
+        let description = `Recibido de EVO • ${new Date(event.created_at).toLocaleTimeString('es-AR')}`
         if (event.tipo_evento === 'stock_actualizado' && event.payload?.items) {
           description = `${event.payload.items.length} productos actualizados • ${new Date(event.created_at).toLocaleTimeString('es-AR')}`
         }
@@ -72,8 +73,8 @@ export function RealtimeNotificationsProvider() {
         })
       } else {
         console.log(`🔔 Showing ERROR toast for ${event.tipo_evento}`)
-        toast.error(`⚠️ Error procesando: ${label}`, {
-          description: event.errors?.join('; ') || 'Error desconocido',
+        toast.error(`No se pudo aplicar: ${label}`, {
+          description: 'EVO lo envió, pero RAM no pudo aplicarlo. Revísalo en Integración EVO.',
           icon: <AlertTriangle className="w-5 h-5 text-red-500" />,
           duration: 15000,
           className: 'text-base',
@@ -98,21 +99,21 @@ export function RealtimeNotificationsProvider() {
 
       if (event.status === 'success') {
         console.log(`🔔 Showing OUTBOUND SUCCESS toast for ${event.event_type}`)
-        toast.success(`📤 Enviado a RAM: ${event.event_type}`, {
-          description: `Confirmado correctamente`,
+        toast.success(`EVO confirmó ${evoEventLabel(event.event_type)}`, {
+          description: 'Recibido y aplicado en EVO',
           icon: <ArrowUpCircle className="w-5 h-5 text-purple-500" />,
           duration: 5000,
           className: 'text-base',
         })
       } else if (event.status === 'failed') {
         console.log(`🔔 Showing OUTBOUND ERROR toast for ${event.event_type}`)
-        toast.error(`❌ Falló envío a RAM: ${event.event_type}`, {
-          description: event.error_message || 'Error en el envío',
+        toast.error(`No se pudo avisar a EVO de ${evoEventLabel(event.event_type)}`, {
+          description: explainEvoError(event.error_message, event.http_status),
           icon: <AlertTriangle className="w-5 h-5 text-red-500" />,
           duration: 12000,
           className: 'text-base',
           action: {
-            label: 'Reintentar',
+            label: 'Ver',
             onClick: () => router.push('/admin/logs'),
           },
         })

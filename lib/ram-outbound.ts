@@ -59,7 +59,7 @@ export type OutboundEventType =
   | 'pedido_parcialmente_entregado'  // Retirada parcial de un pedido
   | 'pedido_iniciado'     // Iniciamos preparación
   | 'stock_ajustado'      // Ajuste manual de stock
-  | 'chapa_preparada'     // Operario confirmó recogida de chapa del mismo tamaño (PREP)
+  | 'chapa_preparada'     // Operario confirmó una chapa del mismo tamaño (PREP)
   | 'test_ping'           // Para health checks
 
 // Mapeo de tipo de evento → endpoint en RAM/EVO
@@ -715,7 +715,7 @@ export async function notifyCorteRealizado(params: {
 
 /**
  * Notifica a EVO que se preparó una chapa del mismo tamaño (PREP)
- * Se usa cuando el operario confirma la recogida de una chapa que no requiere corte
+ * Se usa cuando el operario confirma una chapa que no requiere corte
  * Internamente usamos 'chapa_preparada' pero enviamos 'corte_realizado' a EVO
  */
 export async function notifyChapaPreparada(params: {

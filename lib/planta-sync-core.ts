@@ -64,7 +64,7 @@ export function parsePlantaOp(raw: unknown, now = Date.now()): { ok: true; op: P
       payload = { itemId: p.itemId, quantity: p.quantity }
       break
     case 'confirm_pickup':
-      if (!isUuid(p.cutOrderId)) return { ok: false, reason: 'Recogida con datos incompletos', opId }
+      if (!isUuid(p.cutOrderId)) return { ok: false, reason: 'Reasignación con datos incompletos', opId }
       payload = { cutOrderId: p.cutOrderId }
       break
     case 'change_sheet':

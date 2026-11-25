@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { getOrderStatusConfig } from '@/lib/order-status'
 import { cn } from '@/lib/utils'
+import { userMessage } from '@/lib/user-error'
 
 // Historial del pedido, con «Deshacer» en el último corte de cada orden.
 
@@ -83,7 +84,7 @@ export function OrderHistory({ orderId, orderNumber, activityLog, onChanged, cla
       setReason('')
       await onChanged()
     } catch (e: any) {
-      toast.error('No se pudo deshacer el corte', { description: e?.message })
+      toast.error('No se pudo deshacer el corte', { description: userMessage(e) })
       await load()
     } finally {
       setBusy(false)

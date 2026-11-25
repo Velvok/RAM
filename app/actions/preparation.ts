@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { revalidateOrders, revalidateStock } from '@/lib/revalidate'
 import { notifyChapaPreparada } from '@/lib/ram-outbound'
 import { offlineNote } from '@/lib/planta-offline-time'
+import { UserError } from '@/lib/user-error'
 
 /**
  * Crear preparation_item para un artículo que no requiere corte
@@ -42,7 +43,7 @@ export async function createPreparationItem(
         .eq('id', productId)
         .single()
       
-      throw new Error(`No hay stock disponible de ${product?.name || productId}. Sugiero aprobar el pedido en pausa.`)
+      throw new UserError(`No hay stock disponible de ${product?.name || productId}. Sugiero aprobar el pedido en pausa.`)
     }
 
     selectedInventory = inventory[0]
@@ -55,7 +56,7 @@ export async function createPreparationItem(
         .eq('id', productId)
         .single()
       
-      throw new Error(
+      throw new UserError(
         `Stock insuficiente de ${product?.name}. Disponible: ${selectedInventory.stock_disponible}, Solicitado: ${quantityRequested}. Sugiero aprobar el pedido en pausa.`
       )
     }
@@ -122,7 +123,7 @@ export async function prepareItem(
     .single()
 
   if (itemError || !item) {
-    throw new Error('Preparation item no encontrado')
+    throw new UserError('Ese artículo ya no existe en el pedido')
   }
 
   // 2. Obtener operario desde localStorage (ya no necesitamos auth)
@@ -131,7 +132,7 @@ export async function prepareItem(
   // 3. Validar cantidad
   const newTotal = item.quantity_prepared + quantityPrepared
   if (newTotal > item.quantity_requested) {
-    throw new Error(
+    throw new UserError(
       `Cantidad excede lo solicitado. Preparadas: ${item.quantity_prepared}, Intentando añadir: ${quantityPrepared}, Total solicitado: ${item.quantity_requested}`
     )
   }
@@ -176,7 +177,7 @@ export async function prepareItem(
     console.log(`✅ Evento PREP encolado para EVO`)
   } catch (error) {
     console.error('❌ Error encolando evento PREP a EVO:', error)
-    throw new Error(`No se pudo encolar el evento a EVO: ${error instanceof Error ? error.message : 'Error desconocido'}`)
+    throw new UserError('No se pudo avisar a EVO, así que no se ha registrado. Vuelve a intentarlo.')
   }
 
   // 6. Actualizar preparation_item (si llegamos aquí, el evento se encoló correctamente)
@@ -247,7 +248,7 @@ export async function assignStockToPreparationItem(
     .single()
 
   if (itemError || !item) {
-    throw new Error('Preparation item no encontrado')
+    throw new UserError('Ese artículo ya no existe en el pedido')
   }
 
   // 2. Verificar stock disponible
@@ -258,11 +259,11 @@ export async function assignStockToPreparationItem(
     .single()
 
   if (invError || !inventory) {
-    throw new Error('Inventario no encontrado')
+    throw new UserError('No se encontró ese stock')
   }
 
   if (inventory.stock_disponible < quantityToReserve) {
-    throw new Error(
+    throw new UserError(
       `Stock insuficiente. Disponible: ${inventory.stock_disponible}, Solicitado: ${quantityToReserve}`
     )
   }

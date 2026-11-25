@@ -17,7 +17,7 @@ const toneStyles: Record<DashboardTile['tone'], string> = {
 const stateLabel: Record<string, { label: string; className: string }> = {
   cortando: { label: 'Cortando', className: 'bg-blue-100 text-blue-800' },
   preparando: { label: 'Preparando', className: 'bg-blue-100 text-blue-800' },
-  confirmar: { label: 'Confirmar recogida', className: 'bg-amber-100 text-amber-800' },
+  confirmar: { label: 'Confirmar reasignación', className: 'bg-amber-100 text-amber-800' },
   pendiente: { label: 'Pendiente', className: 'bg-muted text-foreground/80' },
   sin_stock: { label: 'Sin stock', className: 'bg-orange-100 text-orange-800' },
 }

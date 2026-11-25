@@ -292,7 +292,7 @@ export async function getOperationalDashboard(): Promise<OperationalDashboard> {
     actions.push({ severity: 'media', orderId: o.id, orderNumber: o.order_number, client: clientName(o), text: `finalizado hace ${days} días, EVO aún no envió el remito`, cta: 'Ver', href: `/admin/pedidos/${o.id}`, ageHours: days * 24 })
   }
   for (const c of cuts.filter(x => x.status === 'pendiente_confirmacion')) {
-    actions.push({ severity: 'media', orderId: c.order_id, orderNumber: c.order?.order_number || '', client: '', text: `reasignación de ${c.quantity_requested} × ${c.product?.code}: esperando confirmación de recogida en planta`, cta: 'Ver', href: `/admin/pedidos/${c.order_id}`, ageHours: (now.getTime() - new Date(c.updated_at).getTime()) / HOURS })
+    actions.push({ severity: 'media', orderId: c.order_id, orderNumber: c.order?.order_number || '', client: '', text: `reasignación de ${c.quantity_requested} × ${c.product?.code}: esperando que planta confirme la reasignación`, cta: 'Ver', href: `/admin/pedidos/${c.order_id}`, ageHours: (now.getTime() - new Date(c.updated_at).getTime()) / HOURS })
   }
   if (outboundFailed) {
     actions.push({ severity: 'alta', orderId: null, orderNumber: 'EVO', client: '', text: `${outboundFailed} evento(s) hacia EVO fallidos en las últimas 24 h`, cta: 'Ver logs', href: '/admin/logs', ageHours: 0 })

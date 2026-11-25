@@ -55,7 +55,7 @@ function nextStep(order: any): { text: string; tone: 'action' | 'wait' | 'done' 
     case 'aprobado': return { text: 'Esperando a planta', tone: 'wait' }
     case 'en_corte': {
       const confirm = cuts.some((c: any) => c.status === 'pendiente_confirmacion')
-      return { text: confirm ? 'Confirmar recogida en planta' : 'En planta', tone: 'wait' }
+      return { text: confirm ? 'Confirmar reasignación en planta' : 'En planta', tone: 'wait' }
     }
     case 'finalizado': return { text: 'Esperando remito de EVO', tone: 'wait' }
     case 'parcialmente_entregado': return { text: 'Esperando remito final', tone: 'wait' }

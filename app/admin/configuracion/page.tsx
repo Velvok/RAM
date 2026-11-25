@@ -10,6 +10,7 @@ import { SelectField, FIELD_CLS } from '@/components/ui/select-field'
 import { PageLoader } from '@/components/ui/spinner'
 import { useConfirm } from '@/components/confirm-modal'
 import { cn } from '@/lib/utils'
+import { userMessage } from '@/lib/user-error'
 
 type User = Awaited<ReturnType<typeof getUsers>>[number]
 type Evo = Awaited<ReturnType<typeof getEvoConnectionInfo>>
@@ -93,7 +94,7 @@ export default function ConfiguracionPage() {
       setInvite({ full_name: '', email: '', role: 'manager' })
       await load()
     } catch (err: any) {
-      toast.error('No se pudo crear la invitación', { description: err?.message })
+      toast.error('No se pudo crear la invitación', { description: userMessage(err) })
     } finally {
       setBusy(false)
     }
@@ -113,7 +114,7 @@ export default function ConfiguracionPage() {
       setOp({ full_name: '', pin: randomPin() })
       await load()
     } catch (err: any) {
-      toast.error('No se pudo dar de alta', { description: err?.message })
+      toast.error('No se pudo dar de alta', { description: userMessage(err) })
     } finally {
       setBusy(false)
     }
@@ -134,7 +135,7 @@ export default function ConfiguracionPage() {
       setSide({ type: 'invite' })
       await load()
     } catch (err: any) {
-      toast.error('No se pudo guardar', { description: err?.message })
+      toast.error('No se pudo guardar', { description: userMessage(err) })
     } finally {
       setBusy(false)
     }
@@ -156,7 +157,7 @@ export default function ConfiguracionPage() {
       toast.success(off ? `${u.full_name} dado de baja` : `${u.full_name} reactivado`)
       await load()
     } catch (err: any) {
-      toast.error('No se pudo cambiar el estado', { description: err?.message })
+      toast.error('No se pudo cambiar el estado', { description: userMessage(err) })
     }
   }
 
@@ -167,7 +168,7 @@ export default function ConfiguracionPage() {
       toast.success('Invitación renovada 14 días', { description: `${u.email} puede activar su cuenta en /login → «Primer acceso».` })
       await load()
     } catch (err: any) {
-      toast.error('No se pudo renovar', { description: err?.message })
+      toast.error('No se pudo renovar', { description: userMessage(err) })
     }
   }
 

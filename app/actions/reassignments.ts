@@ -3,6 +3,7 @@
 import { requireAdmin } from '@/lib/auth/guards'
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/server'
+import { UserError } from '@/lib/user-error'
 
 /**
  * Reasigna un corte completado de un pedido a otro
@@ -30,7 +31,7 @@ export async function reassignCutOrder(
 
   if (fromError) throw fromError
   if (fromCutOrder.status !== 'completada') {
-    throw new Error('Solo se pueden reasignar cortes completados')
+    throw new UserError('Solo se pueden reasignar cortes completados')
   }
 
   // 2. Obtener información del corte destino (debe estar pendiente)
@@ -42,15 +43,15 @@ export async function reassignCutOrder(
 
   if (toError) throw toError
   if (toCutOrder.status !== 'pendiente') {
-    throw new Error('Solo se puede reasignar a cortes pendientes')
+    throw new UserError('Solo se puede reasignar a cortes pendientes')
   }
 
   // 3. Validar que sean del mismo producto y cantidad compatible
   if (fromCutOrder.product_id !== toCutOrder.product_id) {
-    throw new Error('Los cortes deben ser del mismo producto')
+    throw new UserError('Los cortes deben ser del mismo producto')
   }
   if (fromCutOrder.quantity_requested < toCutOrder.quantity_requested) {
-    throw new Error('El corte origen debe tener cantidad suficiente')
+    throw new UserError('El corte origen debe tener cantidad suficiente')
   }
 
   // 4. Registrar la reasignación en historial
@@ -191,7 +192,7 @@ export async function revertReassignment(reassignmentId: string) {
 
   if (reassignmentError) throw reassignmentError
   if (reassignment.is_reversed) {
-    throw new Error('Esta reasignación ya fue revertida')
+    throw new UserError('Esta reasignación ya fue revertida')
   }
 
   // 2. Marcar como revertida
