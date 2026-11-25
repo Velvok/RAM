@@ -72,7 +72,7 @@ export default function OrdenDetallePage() {
         </div>
 
         <Card className="p-8">
-          <h1 className="text-3xl font-bold text-foreground mb-6">{order.cut_number}</h1>
+          <h1 className="text-3xl font-bold text-foreground mb-6">{order.product?.code || order.product?.name}</h1>
 
           <div className="grid grid-cols-2 gap-6 mb-8">
             <div>
