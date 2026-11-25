@@ -2,6 +2,7 @@
 
 import { requireAdminRole } from '@/lib/auth/guards'
 import { findOperatorWithPin, hashPin, isValidPin } from '@/lib/auth/pin'
+import { randomBytes } from 'node:crypto'
 import { inviteStaffUser, PENDING_KEY, INVITED_AT_KEY, INVITE_VALID_DAYS } from '@/lib/auth/invitations'
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
@@ -49,6 +50,39 @@ export async function renewInvitation(userId: string) {
     user_metadata: { ...meta, [INVITED_AT_KEY]: new Date().toISOString() },
   })
   if (upErr) throw upErr
+  revalidatePath('/admin/configuracion')
+  return { success: true }
+}
+
+/**
+ * Restablece la contraseña de un admin/manager: la cuenta vuelve a quedar
+ * pendiente de activar, como recién invitada. La contraseña anterior deja de
+ * valer, se cierran sus sesiones y elige una nueva en /login → «Primer acceso»
+ * (14 días de plazo).
+ */
+export async function resetStaffPassword(userId: string) {
+  const actor = await requireAdminRole()
+  if (actor.kind === 'admin' && actor.userId === userId) {
+    return { error: 'No puedes restablecer tu propia contraseña desde aquí' }
+  }
+  const supabase = createAdminClient()
+  const { data: row } = await supabase.from('users').select('id, role, is_active').eq('id', userId).maybeSingle()
+  if (!row || row.role === 'operator') return { error: 'No se encontró la cuenta' }
+  if (!row.is_active) return { error: 'La cuenta está de baja. Reactívala primero.' }
+
+  const { data, error } = await supabase.auth.admin.getUserById(userId)
+  if (error || !data?.user) return { error: 'No se encontró la cuenta' }
+  const meta = (data.user.user_metadata || {}) as Record<string, any>
+  const { error: upErr } = await supabase.auth.admin.updateUserById(userId, {
+    password: randomBytes(24).toString('base64url'),
+    user_metadata: { ...meta, [PENDING_KEY]: true, [INVITED_AT_KEY]: new Date().toISOString(), password_reset_at: new Date().toISOString() },
+  })
+  if (upErr) throw upErr
+
+  const { error: sesErr } = await supabase.rpc('cerrar_sesiones_usuario', { p_user_id: userId })
+  if (sesErr) console.error('Error cerrando las sesiones del usuario:', sesErr)
+
+  await supabase.from('users').update({ first_login: true, updated_at: new Date().toISOString() }).eq('id', userId)
   revalidatePath('/admin/configuracion')
   return { success: true }
 }
@@ -123,6 +157,8 @@ export async function updateUser(userId: string, userData: {
       return { error: 'Ese PIN ya lo usa otro operario. Elige otro.' }
     }
     updateData.pin_hash = await hashPin(userData.newPin)
+    // Como en el alta: la tablet le pedirá cambiar el PIN que le da el admin
+    updateData.first_login = true
   }
 
   const { data, error } = await supabase

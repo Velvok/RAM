@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { getUsers, createUser, updateUser, setUserActive, renewInvitation } from '@/app/actions/users'
+import { getUsers, createUser, updateUser, setUserActive, renewInvitation, resetStaffPassword } from '@/app/actions/users'
 import { getEvoConnectionInfo } from '@/app/actions/integration-logs'
 import { Button } from '@/components/ui/button'
 import { SelectField, FIELD_CLS } from '@/components/ui/select-field'
@@ -131,7 +131,7 @@ export default function ConfiguracionPage() {
         newPin: side.user.role === 'operator' && edit.pin ? edit.pin : undefined,
       })
       if (res?.error) { toast.error(res.error); return }
-      toast.success(edit.pin ? `Cambios guardados. Nuevo PIN: ${edit.pin}` : 'Cambios guardados', { duration: edit.pin ? 15000 : 4000 })
+      toast.success(edit.pin ? `Cambios guardados. Nuevo PIN: ${edit.pin}` : 'Cambios guardados', { description: edit.pin ? 'La tablet le pedirá cambiarlo al entrar.' : undefined, duration: edit.pin ? 15000 : 4000 })
       setSide({ type: 'invite' })
       await load()
     } catch (err: any) {
@@ -169,6 +169,23 @@ export default function ConfiguracionPage() {
       await load()
     } catch (err: any) {
       toast.error('No se pudo renovar', { description: userMessage(err) })
+    }
+  }
+
+  async function resetPassword(u: User) {
+    const ok = await confirm(
+      `¿Restablecer la contraseña de ${u.full_name}?`,
+      `Su contraseña actual deja de valer y se cierra su sesión en todos los dispositivos. Tendrá que entrar en /login → «Primer acceso» con ${u.email} y elegir una nueva. Tiene 14 días para hacerlo.`,
+      { variant: 'danger', confirmText: 'Restablecer contraseña' },
+    )
+    if (!ok) return
+    try {
+      const res: any = await resetStaffPassword(u.id)
+      if (res?.error) { toast.error(res.error); return }
+      toast.success('Contraseña restablecida', { description: `${u.email} tiene que entrar en /login → «Primer acceso» y elegir una nueva.`, duration: 10000 })
+      await load()
+    } catch (err: any) {
+      toast.error('No se pudo restablecer la contraseña', { description: userMessage(err) })
     }
   }
 
@@ -229,6 +246,7 @@ export default function ConfiguracionPage() {
                     <td className={cn(td, 'text-right')}>
                       <span className="inline-flex gap-3">
                         {u.invite_pending && u.is_active && <button type="button" className={linkBtn} onClick={() => renew(u)}>Renovar invitación</button>}
+                        {!u.invite_pending && u.is_active && <button type="button" className={linkBtn} onClick={() => resetPassword(u)}>Restablecer contraseña</button>}
                         <button type="button" className={linkBtn} onClick={() => openEdit(u)}>Editar</button>
                         <button type="button" className={cn(linkBtn, u.is_active ? 'text-destructive' : '')} onClick={() => toggleActive(u)}>{u.is_active ? 'Dar de baja' : 'Reactivar'}</button>
                       </span>
@@ -317,7 +335,7 @@ export default function ConfiguracionPage() {
               </div>
               <Field label="Nombre"><input required value={edit.full_name} onChange={e => setEdit(v => ({ ...v, full_name: e.target.value }))} className={inputCls} /></Field>
               {side.user.role === 'operator' ? (
-                <Field label="Nuevo PIN" hint="Déjalo vacío para no cambiarlo. Si lo cambias, díselo en mano.">
+                <Field label="Nuevo PIN" hint="Déjalo vacío para no cambiarlo. Si lo cambias, díselo en mano: la tablet le pedirá cambiarlo al entrar.">
                   <div className="flex gap-2">
                     <input inputMode="numeric" pattern="[0-9]{4,6}" maxLength={6} value={edit.pin} onChange={e => setEdit(v => ({ ...v, pin: e.target.value.replace(/\D/g, '') }))} placeholder="4 a 6 dígitos" className={cn(inputCls, 'tracking-[0.3em]')} />
                     <Button type="button" variant="outline" onClick={() => setEdit(v => ({ ...v, pin: randomPin() }))}>Generar</Button>
