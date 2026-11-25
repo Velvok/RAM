@@ -3,7 +3,7 @@
 import { requireAdmin } from '@/lib/auth/guards'
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidateOrders, revalidateStock } from '@/lib/revalidate'
-import { notifyCorteRealizado, notifyChapaPreparada, type CorteMovimiento } from '@/lib/ram-outbound'
+import { notifyCorteRealizado, notifyChapaPreparada, processOnePendingPrep, type CorteMovimiento } from '@/lib/ram-outbound'
 import { buildReversalMovimientos, evoActionFor, orderStatusAfterUndo, stockEffect, undoBlocker, type EvoAction } from '@/lib/cut-reversal'
 import { updateOrderStatus } from './orders'
 
@@ -309,4 +309,16 @@ export async function undoLastCut(cutOrderId: string, reason?: string) {
   revalidateOrders(cutOrder.order_id)
   revalidateStock()
   return { success: true, quantity, cutAfter, evo: evoAction.action, reversalEventId }
+}
+
+/**
+ * Empuja la cola hacia EVO. La cola solo manda un evento cada vez que algo la
+ * dispara (otro envío o una confirmación de EVO), así que el aviso de un corte
+ * deshecho puede quedarse esperando detrás de otro. El historial llama a esto
+ * mientras tiene un aviso pendiente. Respeta el lock y el «uno a la vez».
+ */
+export async function nudgeOutboundQueue() {
+  await requireAdmin()
+  await processOnePendingPrep()
+  return { success: true }
 }

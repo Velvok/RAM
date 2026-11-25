@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Undo2 } from 'lucide-react'
-import { getCutUndoInfo, undoLastCut, type CutUndoInfo } from '@/app/actions/cut-undo'
+import { getCutUndoInfo, nudgeOutboundQueue, undoLastCut, type CutUndoInfo } from '@/app/actions/cut-undo'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -58,11 +58,16 @@ export function OrderHistory({ orderId, orderNumber, activityLog, onChanged, cla
   // Se recalcula cada vez que cambia el historial (corte nuevo, corte deshecho)
   useEffect(() => { load() }, [load, activityLog])
 
-  // Mientras EVO no confirma un deshacer, se vuelve a preguntar
+  // Mientras EVO no confirma un deshacer, se empuja la cola (el aviso puede
+  // estar esperando detrás de otro evento) y se vuelve a preguntar
   const waiting = Object.values(evoStatus).includes('pendiente')
   useEffect(() => {
     if (!waiting) return
-    const t = setInterval(load, 8000)
+    const tick = async () => {
+      try { await nudgeOutboundQueue() } catch (e) { console.error('Error empujando la cola de EVO:', e) }
+      await load()
+    }
+    const t = setInterval(tick, 8000)
     return () => clearInterval(t)
   }, [waiting, load])
 
