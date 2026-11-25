@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { generateCutOrders, approveOrderOnHold } from '@/app/actions/orders'
+import { approveOrderOrHold, approveOrderOnHold } from '@/app/actions/orders'
 import { useConfirm } from '@/components/confirm-modal'
 import { Button } from '@/components/ui/button'
 import { userMessage } from '@/lib/user-error'
@@ -17,15 +17,16 @@ export default function OrderActions({ order, onUpdate }: { order: any; onUpdate
   async function handleApprove() {
     const ok = await confirm(
       '¿Aprobar el pedido?',
-      'Se crean sus órdenes de corte y preparación y se reserva el stock de cada línea. Si alguna línea no tiene stock, no se aprueba nada y te propone aprobar en pausa.',
+      'Se crean sus órdenes de corte y preparación y se reserva el stock de cada línea. Si alguna línea no tiene stock, se aprueba en pausa: se reserva lo que hay y el resto lo asignas después.',
       { variant: 'success', confirmText: 'Sí, aprobar' },
     )
     if (!ok) return
     setLoading(true)
     try {
-      const res: { success: boolean; notApproved?: boolean; errors?: string[] } = await generateCutOrders(order.id)
-      if (res.success) toast.success('Pedido aprobado: la planta ya lo ve')
-      else toast.error(res.notApproved ? 'No se puede aprobar: falta stock' : 'Aprobado con incidencias', { description: res.errors?.join('\n'), duration: 12000 })
+      const res = await approveOrderOrHold(order.id)
+      if (res.mode === 'en_pausa') toast.warning('Aprobado en pausa: falta stock', { description: 'Se ha reservado lo que hay. Asigna el resto desde este detalle.', duration: 10000 })
+      else if (res.success) toast.success('Pedido aprobado: la planta ya lo ve')
+      else toast.error('Aprobado con incidencias', { description: res.errors?.join('\n'), duration: 12000 })
       await onUpdate?.()
     } catch (e: any) {
       toast.error('No se pudo aprobar', { description: userMessage(e), duration: 10000 })

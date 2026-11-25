@@ -783,6 +783,26 @@ export async function generateCutOrders(orderId: string) {
   return result
 }
 
+/**
+ * Botón «Aprobar» de la lista y del detalle: aprueba el pedido y, si alguna
+ * línea no tiene stock, lo aprueba en pausa (se asigna lo que tiene stock y el
+ * resto queda para asignar a mano). approveOrder comprueba el stock antes de
+ * crear nada, así que no hay nada que deshacer al pasar a la pausa.
+ */
+export async function approveOrderOrHold(orderId: string): Promise<{
+  success: boolean
+  mode: 'aprobado' | 'en_pausa'
+  errors?: string[]
+}> {
+  await requireAdmin()
+  const res = await approveOrder(orderId)
+  if (res.success || !res.notApproved) return { success: res.success, mode: 'aprobado', errors: res.errors }
+
+  await approveOrderOnHold(orderId)
+  const { data } = await createAdminClient().from('orders').select('status').eq('id', orderId).single()
+  return { success: true, mode: data?.status === 'aprobado_en_pausa' ? 'en_pausa' : 'aprobado', errors: res.errors }
+}
+
 // Actualizar estado del pedido basado en el estado de sus órdenes de corte Y preparation_items
 export async function updateOrderStatus(orderId: string) {
   await requireStaff()

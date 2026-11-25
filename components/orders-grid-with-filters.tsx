@@ -3,7 +3,9 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Package, Loader2, RefreshCw, Check, Search } from 'lucide-react'
-import { generateCutOrders } from '@/app/actions/orders'
+import { approveOrderOrHold } from '@/app/actions/orders'
+import { toast } from 'sonner'
+import { userMessage } from '@/lib/user-error'
 import { lineUnits } from '@/lib/order-modification'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -143,11 +145,18 @@ export default function OrdersGridWithFilters({ orders, canDelete }: OrdersGridW
     e.stopPropagation()
     setLoading(orderId)
     try {
-      await generateCutOrders(orderId)
+      const res = await approveOrderOrHold(orderId)
+      if (res.mode === 'en_pausa') {
+        toast.warning('Aprobado en pausa: falta stock', { description: 'Se ha reservado lo que hay. El resto se asigna desde el detalle del pedido.', duration: 10000 })
+      } else if (res.success) {
+        toast.success('Pedido aprobado: la planta ya lo ve')
+      } else {
+        toast.error('Aprobado con incidencias', { description: res.errors?.join('\n'), duration: 12000 })
+      }
       router.refresh()
     } catch (error) {
-      console.error('Error generating cut orders:', error)
-      showError('Error al generar órdenes de corte')
+      console.error('Error aprobando el pedido:', error)
+      showError(userMessage(error, 'No se pudo aprobar el pedido'))
     } finally {
       setLoading(null)
     }
