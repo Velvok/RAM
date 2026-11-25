@@ -15,7 +15,8 @@ import { getOrderStatusConfig } from '@/lib/order-status'
 import { cn } from '@/lib/utils'
 import { userMessage } from '@/lib/user-error'
 
-const QUICK_REPLIES = ['Llegamos a tiempo', 'Falta material', 'Chapa dañada', 'Tengo una pregunta']
+// Respuestas de la tablet a las notas del admin: acuse, confirmación o duda
+const QUICK_REPLIES = ['Recibido', 'Confirmado', 'Tengo una duda']
 
 const STATE_RANK: Record<CutCardState, number> = { confirmar_recogida: 0, cortando: 1, por_empezar: 2, sin_chapa: 3, terminada: 4 }
 
@@ -473,7 +474,7 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
             </div>
             <div className="border-t border-[#1e293b] px-5 py-4">
               <Label>Responder al admin</Label>
-              <div className="mt-3 grid grid-cols-2 gap-2.5">
+              <div className="mt-3 grid grid-cols-3 gap-2.5">
                 {QUICK_REPLIES.map(r => (
                   <BigButton key={r} tone="ghost" className="h-14 text-[15px]" disabled={busy === 'note'} onClick={() => sendNote(r, 'Respuesta enviada')}>{r}</BigButton>
                 ))}
