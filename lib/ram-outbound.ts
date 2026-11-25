@@ -397,6 +397,11 @@ export async function processOutboundEvent(eventId: string, triggeredBy: 'automa
       completed_at: isLastAttempt && !success ? new Date().toISOString() : null,
     })
     .eq('id', eventId)
+    // Solo si sigue «enviándose»: EVO a veces confirma por webhook antes de
+    // contestar a esta petición (o la petición da timeout aunque EVO sí la
+    // aplicó). Esa confirmación manda: sin esto, el timeout la pisaba y el
+    // evento quedaba como fallido estando confirmado.
+    .eq('status', 'processing')
 
   console.log(`📊 Evento ${eventId} actualizado a estado: ${nextStatus}${success ? ' (esperando confirmación de EVO)' : ''}`)
 
