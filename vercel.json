@@ -10,13 +10,19 @@
       "maxDuration": 300
     },
     "app/api/webhooks/pedidos/entregado/route.ts": {
-      "maxDuration": 60
+      "maxDuration": 300
     },
     "app/api/cron/process-outbound-queue/route.ts": {
-      "maxDuration": 60
+      "maxDuration": 300
     },
     "app/api/workers/process-outbound-events/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/webhooks/evo/confirmacion/route.ts": {
+      "maxDuration": 120
+    },
+    "app/api/planta/sync/route.ts": {
+      "maxDuration": 120
     }
   }
 }

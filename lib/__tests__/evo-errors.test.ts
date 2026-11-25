@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { evoEventLabel, explainEvoError } from '../evo-errors'
+import { evoEventLabel, explainEvoError, isUnconfirmedOutcome } from '../evo-errors'
 
 describe('explainEvoError', () => {
   const casos: Array<[string | null, number | null, RegExp]> = [
@@ -27,5 +27,25 @@ describe('evoEventLabel', () => {
     expect(evoEventLabel('chapa_preparada')).toBe('una preparación')
     expect(evoEventLabel('algo_nuevo')).toBe('un movimiento')
     expect(evoEventLabel(null)).toBe('un movimiento')
+  })
+})
+
+describe('isUnconfirmedOutcome', () => {
+  it('espera agotada, corte de red o error interno de EVO: no sabemos si lo aplicó', () => {
+    expect(isUnconfirmedOutcome({ status: 'failed', http_status: 0 })).toBe(true)
+    expect(isUnconfirmedOutcome({ status: 'failed', http_status: null })).toBe(true)
+    expect(isUnconfirmedOutcome({ status: 'failed', http_status: 502 })).toBe(true)
+    expect(isUnconfirmedOutcome({ status: 'failed', http_status: 200, response_body: {} })).toBe(true)
+  })
+
+  it('un rechazo claro de EVO sí es un fallo', () => {
+    expect(isUnconfirmedOutcome({ status: 'failed', http_status: 400 })).toBe(false)
+    expect(isUnconfirmedOutcome({ status: 'failed', http_status: 200, response_body: { evo_confirmation: { estado: 'error' } } })).toBe(false)
+  })
+
+  it('solo aplica a los marcados como fallidos', () => {
+    expect(isUnconfirmedOutcome({ status: 'processing', http_status: 0 })).toBe(false)
+    expect(isUnconfirmedOutcome({ status: 'success', http_status: 200 })).toBe(false)
+    expect(isUnconfirmedOutcome({ status: 'cancelled' })).toBe(false)
   })
 })

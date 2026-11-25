@@ -3,7 +3,7 @@ import { processPendingQueue } from '@/lib/ram-outbound'
 import { safeEqual } from '@/lib/auth/planta-session'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
+export const maxDuration = 300
 
 /**
  * Endpoint para procesar la cola de eventos pendientes hacia RAM.
@@ -26,9 +26,9 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Con el delay de 5s entre eventos (processPendingQueue) y maxDuration=60s,
-    // un lote de más de ~8 eventos arriesga que Vercel corte la función a mitad.
-    const result = await processPendingQueue(8)
+    // Cada envío puede esperar a EVO hasta 90 s (RAM_TIMEOUT_MS) más 5 s de
+    // pausa: con maxDuration=300 caben 3 sin que Vercel corte la función.
+    const result = await processPendingQueue(3)
     return NextResponse.json({
       success: true,
       ...result,

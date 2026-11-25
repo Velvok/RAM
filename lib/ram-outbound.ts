@@ -11,6 +11,7 @@
 
 import { createAdminClient } from '@/lib/supabase/server'
 import { createHash } from 'crypto'
+import { after } from 'next/server'
 
 // ============================================
 // CONFIGURACIÓN
@@ -20,7 +21,10 @@ const RAM_BASE_URL = process.env.RAM_API_URL || process.env.EVO_API_URL || ''
 const RAM_API_KEY_RAW = process.env.RAM_API_KEY || process.env.EVO_API_KEY || ''
 // Limpiar el token de espacios extra que puedan venir del .env
 const RAM_API_KEY = RAM_API_KEY_RAW.trim()
-const RAM_TIMEOUT_MS = 30000
+// EVO suele tardar 25-30 s en contestar: con 30 s los cortes lentos se daban
+// por fallidos aunque EVO los aplicaba. Las rutas que envían tienen que
+// permitir esta espera (maxDuration >= 120).
+const RAM_TIMEOUT_MS = 90000
 
 
 // Función para obtener información del token sin exponerlo
@@ -129,11 +133,19 @@ export async function enqueueOutboundEvent({
   // El evento se guardará en cola y será procesado por processOnePendingPrep()
   console.log(`📝 Evento ${data.id} guardado en cola (arquitectura Outbox)`)
 
-  // Intentar procesar un evento pending (puede ser este u otro)
-  // Esto se ejecuta en background para no bloquear el request
-  processOnePendingPrep().catch(err => {
+  // Intentar procesar un evento pending (puede ser este u otro) sin bloquear
+  // la respuesta. Va con after(): así Vercel mantiene viva la función hasta
+  // que EVO conteste. Lanzado «a pelo», la función podía congelarse a mitad
+  // del envío y el aviso se quedaba colgado sin respuesta ni error.
+  const dispatch = () => processOnePendingPrep().then(() => undefined).catch(err => {
     console.error('Error en processOnePendingPrep background:', err)
   })
+  try {
+    after(dispatch)
+  } catch {
+    // Fuera de una petición (scripts, tests) after() no existe
+    void dispatch()
+  }
 
   return data.id
 }

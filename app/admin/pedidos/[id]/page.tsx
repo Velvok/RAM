@@ -6,6 +6,10 @@ import OrderDetailClient from './order-detail-client'
 import { unstable_noStore } from 'next/cache'
 import { canDeleteOrders } from '@/lib/auth/guards'
 
+// Desde aquí se deshacen cortes, y eso avisa a EVO: la función tiene que
+// aguantar su espera (RAM_TIMEOUT_MS en lib/ram-outbound.ts)
+export const maxDuration = 120
+
 // Deshabilitar caché completamente
 unstable_noStore()
 export const dynamic = 'force-dynamic'

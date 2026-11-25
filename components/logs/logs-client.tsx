@@ -9,7 +9,7 @@ import { SelectField, FIELD_CLS } from '@/components/ui/select-field'
 import { useConfirm } from '@/components/confirm-modal'
 import { cn } from '@/lib/utils'
 import { userMessage } from '@/lib/user-error'
-import { explainEvoError } from '@/lib/evo-errors'
+import { explainEvoError, isUnconfirmedOutcome } from '@/lib/evo-errors'
 import {
   getIntegrationHealth, getIntegrationLogs, retryOutboundEvent, sendTestEvent,
   type IntegrationLog, type LogsFilters,
@@ -41,6 +41,8 @@ function hace(iso: string | null) {
   return h < 48 ? `hace ${h} h` : `hace ${Math.round(h / 24)} días`
 }
 function statusPill(l: Log): { label: string; cls: string } {
+  // Sin resultado conocido (EVO tardó o se cortó la conexión): puede que sí lo aplicara
+  if (l.direction === 'outbound' && isUnconfirmedOutcome(l)) return { label: 'Sin confirmar', cls: 'bg-warning/10 text-warning' }
   if (l.status === 'failed') return { label: 'Fallido', cls: 'bg-destructive/10 text-destructive' }
   if (l.status === 'cancelled') return { label: 'Descartado', cls: 'bg-muted text-muted-foreground' }
   if (l.status === 'pending') return { label: 'En cola', cls: 'bg-warning/10 text-warning' }

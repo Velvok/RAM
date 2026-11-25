@@ -21,7 +21,7 @@ export function evoEventLabel(eventType: string | null | undefined): string {
 export function explainEvoError(errorMessage: string | null | undefined, httpStatus?: number | null): string {
   const msg = errorMessage || ''
   const http = Number(httpStatus) || Number(/HTTP (\d{3})/.exec(msg)?.[1]) || 0
-  if (/timeout/i.test(msg)) return 'EVO tardó demasiado en responder. Puede que sí lo haya recibido: compruébalo antes de reenviarlo.'
+  if (/timeout/i.test(msg)) return 'EVO tardó demasiado en responder. Puede que sí lo haya recibido: si lo confirma más tarde, se marcará solo. Compruébalo antes de reenviarlo.'
   if (/ref_evo/i.test(msg)) return 'El pedido no tiene los datos de EVO que hacen falta para avisarle (suele pasar con los pedidos de prueba).'
   if (http === 401 || http === 403) return 'EVO rechazó la conexión: hay que revisar las credenciales de la integración.'
   if (http === 404) return 'EVO no reconoce la dirección a la que se envió: hay que revisar la configuración de la integración.'
@@ -30,4 +30,24 @@ export function explainEvoError(errorMessage: string | null | undefined, httpSta
   if (/fetch failed|network|ECONN|ENOTFOUND|socket/i.test(msg)) return 'No se pudo conectar con EVO.'
   if (/max attempts/i.test(msg)) return 'Se agotaron los intentos de envío a EVO.'
   return 'EVO no confirmó el envío.'
+}
+
+/**
+ * Un aviso a EVO marcado como fallido del que en realidad NO sabemos el
+ * resultado: se agotó la espera, se cortó la conexión o EVO dio un error
+ * interno. EVO puede haberlo aplicado igual, así que:
+ * - si su confirmación llega después, se acepta (webhook de confirmación);
+ * - se enseña como «Sin confirmar», no como rechazado;
+ * - nunca se deshace ni se reenvía solo.
+ * Un rechazo claro (4xx o una confirmación de EVO con error) sí es un fallo.
+ */
+export function isUnconfirmedOutcome(event: {
+  status?: string | null
+  http_status?: number | null
+  response_body?: any
+}): boolean {
+  if (event.status !== 'failed') return false
+  if (event.response_body?.evo_confirmation) return false
+  const http = Number(event.http_status) || 0
+  return !(http >= 400 && http < 500)
 }

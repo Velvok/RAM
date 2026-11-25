@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
 import { createWebhookVerifier } from '@/lib/webhook-security'
+import { isUnconfirmedOutcome } from '@/lib/evo-errors'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 30
+// Tras confirmar se envía el siguiente aviso de la cola desde esta misma
+// petición: tiene que caber la espera de EVO (RAM_TIMEOUT_MS en lib/ram-outbound.ts)
+export const maxDuration = 120
 
 interface ConfirmacionPayload {
   id_evento: string
@@ -92,8 +95,13 @@ export async function POST(request: NextRequest) {
       created_at: outboundEvent.created_at
     })
 
-    // Verificar que el evento esté en estado 'processing' (esperando confirmación)
-    if (outboundEvent.status !== 'processing') {
+    // La confirmación de EVO se acepta si el aviso está esperándola o si lo
+    // dimos por fallido sin saber el resultado (se agotó la espera, se cortó
+    // la conexión): EVO a veces contesta tarde y lo que dice EVO es lo que vale.
+    // No se toca un aviso ya confirmado, descartado o rechazado por EVO.
+    const lateConfirmation = isUnconfirmedOutcome(outboundEvent)
+    if (lateConfirmation) console.log(`⏱️ Confirmación tardía de EVO para ${outboundEvent.id} (estaba como fallido sin resultado conocido)`)
+    if (outboundEvent.status !== 'processing' && !lateConfirmation) {
       console.log(`⚠️ Event ${outboundEvent.id} is not in 'processing' state (current: ${outboundEvent.status}), skipping update`)
       return NextResponse.json({
         success: true,
@@ -114,11 +122,17 @@ export async function POST(request: NextRequest) {
     if (payload.estado === 'error' && payload.error_message) {
       updateData.error_message = payload.error_message
     }
+    // Confirmado tarde: se quita el error de «tardó demasiado» y el reintento
+    if (payload.estado === 'completado') {
+      updateData.error_message = null
+      updateData.next_retry_at = null
+    }
 
     const { error: updateError } = await supabase
       .from('outbound_events')
       .update(updateData)
       .eq('id', outboundEvent.id)
+      .eq('status', outboundEvent.status)
 
     if (updateError) {
       console.error('❌ Error updating outbound event:', updateError)
