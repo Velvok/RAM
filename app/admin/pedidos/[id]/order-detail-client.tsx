@@ -329,7 +329,7 @@ export default function OrderDetailClient({ initialOrder, canDelete }: { initial
                         <tr key={c.id} className={cn(activeLineId === c.id && 'bg-primary/5', st.tone === 'bad' && activeLineId !== c.id && 'bg-destructive/5')}>
                           <td className={td}>
                             <div className="font-semibold text-foreground">{c.product?.code}</div>
-                            <div className="max-w-[180px] truncate text-xs text-muted-foreground" title={c.product?.name}>{c.product?.name}</div>
+                            <div className="text-xs text-muted-foreground">{c.product?.name}</div>
                           </td>
                           <td className={cn(td, 'text-right tabular-nums')}>{n(c.quantity_requested)}</td>
                           <td className={td}>
@@ -370,7 +370,7 @@ export default function OrderDetailClient({ initialOrder, canDelete }: { initial
                         <tr key={p.id} className={cn(activeLineId === p.id && 'bg-primary/5', st.tone === 'bad' && activeLineId !== p.id && 'bg-destructive/5')}>
                           <td className={td}>
                             <div className="font-semibold text-foreground">{p.product?.code}</div>
-                            <div className="max-w-[180px] truncate text-xs text-muted-foreground" title={p.product?.name}>{p.product?.name}</div>
+                            <div className="text-xs text-muted-foreground">{p.product?.name}</div>
                           </td>
                           <td className={cn(td, 'text-right tabular-nums')}>{n(p.quantity_requested)}</td>
                           <td className={td}>
