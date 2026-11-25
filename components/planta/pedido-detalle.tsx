@@ -388,7 +388,15 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
             {activity.activity.slice(0, 3).map((a, i) => (
               <div key={i} className="flex gap-3 text-[15px]">
                 <span className={cn('shrink-0 tabular-nums', P.muted)}>{hora(a.created_at)}</span>
-                <span className={P.soft}>{a.description}</span>
+                {/* Un corte que el admin deshizo: tachado, para que no se cuente como hecho */}
+                {a.activity_type === 'cut_completed' && a.metadata?.reverted_at ? (
+                  <span className="flex min-w-0 flex-col gap-1">
+                    <span className={cn('line-through', P.muted)}>{a.description}</span>
+                    <span className="self-start rounded bg-[#f59e0b]/15 px-1.5 py-0.5 text-[12px] font-semibold uppercase tracking-wide text-[#fbbf24]">Deshecho por la oficina</span>
+                  </span>
+                ) : (
+                  <span className={P.soft}>{a.description}</span>
+                )}
               </div>
             ))}
           </div>

@@ -304,7 +304,7 @@ export async function getPlantaOrderActivity(orderId: string) {
       .from('order_activity_log')
       .select('activity_type, description, metadata, created_at')
       .eq('order_id', orderId)
-      .in('activity_type', ['cut_completed', 'item_prepared', 'reassignment_confirmed', 'reassign_in', 'stock_assigned'])
+      .in('activity_type', ['cut_completed', 'cut_reverted', 'item_prepared', 'reassignment_confirmed', 'reassign_in', 'stock_assigned'])
       .order('created_at', { ascending: false })
       .limit(5),
     supabase.from('cut_orders').select('id').eq('order_id', orderId),
