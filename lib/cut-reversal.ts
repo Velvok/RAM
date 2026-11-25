@@ -125,3 +125,27 @@ export function orderStatusAfterUndo(currentStatus: string, nothingDone: boolean
   if (['parcialmente_entregado', 'aprobado_en_pausa', 'modificado'].includes(currentStatus)) return currentStatus
   return nothingDone ? 'aprobado' : 'en_corte'
 }
+
+/**
+ * Movimientos que se mandan a EVO por un corte real (la chapa no mide lo mismo
+ * que la pieza): baja de las chapas gastadas, alta de las piezas con el
+ * nro_item de la línea del pedido y alta de cada sobrante que vuelve al stock.
+ * De una chapa pueden salir varias piezas, así que las cantidades no coinciden:
+ * 3 piezas de 4 m de una chapa de 12 m = BAJA 1, ALTA 3 y ningún sobrante.
+ */
+export function buildCutMovimientos(input: {
+  sheets: number
+  sheetEvoId: string
+  pieces: number
+  pieceEvoId: string
+  nroItem: number
+  remnants: Array<{ evoId: string | null | undefined; count: number }>
+}): CorteMovimiento[] {
+  return [
+    { tipo: 'BAJA', nro_item: 0, id_articulo: input.sheetEvoId, cantidad: input.sheets },
+    { tipo: 'ALTA', nro_item: input.nroItem, id_articulo: input.pieceEvoId, cantidad: input.pieces },
+    ...input.remnants
+      .filter(r => r.evoId && r.count > 0)
+      .map(r => ({ tipo: 'ALTA' as const, nro_item: 0, id_articulo: r.evoId as string, cantidad: r.count })),
+  ]
+}

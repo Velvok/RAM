@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildReversalMovimientos, evoActionFor, orderStatusAfterUndo, stockEffect, undoBlocker } from '../cut-reversal'
+import { buildCutMovimientos, buildReversalMovimientos, evoActionFor, orderStatusAfterUndo, stockEffect, undoBlocker } from '../cut-reversal'
 import type { CorteMovimiento } from '../ram-outbound'
 
 // Corte real: 2 chapas de 12 m → 2 piezas de 10 m (línea 3 del pedido) + 2 remanentes de 2 m
@@ -158,5 +158,39 @@ describe('orderStatusAfterUndo', () => {
       expect(orderStatusAfterUndo(s, true)).toBe(s)
       expect(orderStatusAfterUndo(s, false)).toBe(s)
     }
+  })
+})
+
+describe('buildCutMovimientos (varias piezas por chapa)', () => {
+  it('3 piezas de 4 m de una chapa de 12 m: baja 1, alta 3, sin sobrante', () => {
+    expect(buildCutMovimientos({ sheets: 1, sheetEvoId: 'CH12', pieces: 3, pieceEvoId: 'CH4', nroItem: 2, remnants: [] })).toEqual([
+      { tipo: 'BAJA', nro_item: 0, id_articulo: 'CH12', cantidad: 1 },
+      { tipo: 'ALTA', nro_item: 2, id_articulo: 'CH4', cantidad: 3 },
+    ])
+  })
+
+  it('con sobrantes: un alta por cada largo, sin nro_item de línea', () => {
+    const movs = buildCutMovimientos({
+      sheets: 3, sheetEvoId: 'CH12', pieces: 5, pieceEvoId: 'CH4,5', nroItem: 1,
+      remnants: [{ evoId: 'CH7,5', count: 1 }, { evoId: 'CH3', count: 2 }],
+    })
+    expect(movs.slice(2)).toEqual([
+      { tipo: 'ALTA', nro_item: 0, id_articulo: 'CH7,5', cantidad: 1 },
+      { tipo: 'ALTA', nro_item: 0, id_articulo: 'CH3', cantidad: 2 },
+    ])
+  })
+
+  it('un sobrante sin artículo en EVO no se manda', () => {
+    expect(buildCutMovimientos({ sheets: 1, sheetEvoId: 'CH12', pieces: 2, pieceEvoId: 'CH4,3', nroItem: 1, remnants: [{ evoId: null, count: 1 }] })).toHaveLength(2)
+  })
+
+  it('deshacerlo deja el stock de cada artículo como estaba', () => {
+    const movs = buildCutMovimientos({ sheets: 1, sheetEvoId: 'CH12', pieces: 2, pieceEvoId: 'CH4,5', nroItem: 1, remnants: [{ evoId: 'CH3', count: 1 }] })
+    expect(stockEffect(movs)).toEqual([
+      { id_articulo: 'CH12', delta: 1 },
+      { id_articulo: 'CH4,5', delta: -2 },
+      { id_articulo: 'CH3', delta: -1 },
+    ])
+    expect(buildReversalMovimientos(movs, 'negativo').map(m => m.cantidad)).toEqual([-1, -2, -1])
   })
 })

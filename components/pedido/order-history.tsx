@@ -27,6 +27,13 @@ const fmtM = (v: unknown) => `${(Number(v) || 0).toLocaleString('es-AR', { minim
 
 function cutDetail(metadata: any): string | null {
   if (!metadata || metadata.material_length == null) return null
+  // Cortes nuevos: chapas gastadas, piezas por chapa y trozos que sobraron
+  if (metadata.pieces_per_sheet != null) {
+    if (metadata.exact) return 'Chapa del largo exacto, sin corte'
+    const sheets = Number(metadata.sheets_used) || 0
+    const leftovers: Array<{ length: number; count: number }> = metadata.leftovers || []
+    return `${sheets} chapa${sheets !== 1 ? 's' : ''} de ${fmtM(metadata.material_length)} · ${metadata.pieces_per_sheet} por chapa · ${leftovers.length ? `sobra ${leftovers.map(l => `${l.count} de ${fmtM(l.length)}`).join(' y ')}` : 'sin sobrante'}`
+  }
   return Number(metadata.remnant_per_sheet) > 0
     ? `Chapa de ${fmtM(metadata.material_length)} · remanente ${fmtM(metadata.remnant_per_sheet)}`
     : 'Corte exacto, sin remanente'

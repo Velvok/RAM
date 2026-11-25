@@ -7,6 +7,7 @@ import { notifyCorteRealizado, notifyChapaPreparada, processOnePendingPrep, type
 import { buildReversalMovimientos, evoActionFor, orderStatusAfterUndo, stockEffect, undoBlocker, type EvoAction } from '@/lib/cut-reversal'
 import { updateOrderStatus } from './orders'
 import { UserError } from '@/lib/user-error'
+import { moveCutReservation } from '@/lib/cut-reservations'
 
 // Deshacer el último corte de una orden (corte registrado por error). Solo
 // admins, desde el historial del pedido. La orden vuelve a su cantidad
@@ -50,6 +51,7 @@ async function loadUndoContext(supabase: SupabaseAdmin, cutOrderId: string): Pro
     .from('cut_orders')
     .select(`
       id, order_id, status, quantity_requested, quantity_cut, quantity_delivered,
+      product_id, material_base_id, pieces_per_sheet, reassigned_quantity,
       reassigned_from_order_id, reassigned_from_cut_order_id,
       product:products!cut_orders_product_id_fkey(id, name, code),
       order:orders!cut_orders_order_id_fkey(id, order_number, status, status_before_modification)
@@ -263,6 +265,21 @@ export async function undoLastCut(cutOrderId: string, reason?: string) {
     throw new UserError('Se avisó a EVO pero no se pudo actualizar la orden de corte. Avisa a soporte.')
   }
   if (reversalEventId) await supabase.from('cut_lines').update({ reversal_event_id: reversalEventId }).eq('id', line.id)
+
+  // 3b. Reserva: las piezas dejan de estar cortadas y vuelven a hacer falta
+  //     chapas de la base para cortarlas (inverso de processCutOrder)
+  try {
+    const reservable = { ...cutOrder, product_id: cutOrder.product_id as string }
+    await moveCutReservation(
+      supabase,
+      { ...reservable, quantity_cut: cutBefore },
+      { ...reservable, quantity_cut: cutAfter },
+      `Corte deshecho: ${quantity} pieza${quantity !== 1 ? 's' : ''} (pedido ${order?.order_number || ''})`,
+      { orderId: cutOrder.order_id, userId },
+    )
+  } catch (reserveError) {
+    console.error('⚠️ Error moviendo la reserva al deshacer el corte (no bloqueante):', reserveError)
+  }
 
   // 4. Historial de movimientos: el corte y su remanente dejan de contar (y
   //    así el corte correcto que se haga después vuelve a registrarse)

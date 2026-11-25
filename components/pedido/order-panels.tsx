@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { extractSizeFromCode } from '@/lib/product-utils'
 import { cutPlan, formatMeters, productLength, sortByRemnant } from '@/lib/planta-tasks'
 import { userMessage } from '@/lib/user-error'
+import { cutOutcome, proposePlan, round2 } from '@/lib/sheet-plan'
 
 // Paneles laterales del detalle de pedido: asignar o cambiar la chapa/stock de
 // una línea y traer chapas cortadas de otro pedido. Sustituyen a los modales
@@ -105,8 +106,167 @@ const Pill = ({ children, tone = 'muted' }: { children: ReactNode; tone?: 'muted
   <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-semibold', tone === 'ok' ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground')}>{children}</span>
 )
 
+/** Dibujo de una chapa partida en sus piezas y lo que sobra. */
+function SheetBar({ sheetLength, pieceLength, pieces }: { sheetLength: number; pieceLength: number; pieces: number }) {
+  const rest = round2(sheetLength - pieces * pieceLength)
+  return (
+    <div className="flex h-5 overflow-hidden rounded border border-border text-[10px] font-semibold leading-none" aria-hidden>
+      {Array.from({ length: pieces }, (_, i) => (
+        <span key={i} style={{ flex: pieceLength }} className="flex min-w-0 items-center justify-center border-r border-card bg-primary/80 text-primary-foreground">{pieces <= 6 ? formatMeters(pieceLength) : ''}</span>
+      ))}
+      {rest > 0.009 && <span style={{ flex: rest }} className="flex min-w-0 items-center justify-center whitespace-nowrap bg-warning/20 px-1 text-warning">sobra {formatMeters(rest)}</span>}
+    </div>
+  )
+}
+
+/**
+ * Asignar o cambiar las chapas de una orden de corte. De cada chapa salen todas
+ * las piezas que caben; aquí se elige cuántas chapas de cada tipo se usan y se
+ * ve qué cubren y qué sobra (reglas en lib/sheet-plan.ts).
+ */
+function AssignSheetsPanel({ order, item, onClose, onDone }: { order: any; item: any; onClose: () => void; onDone: () => Promise<void> | void }) {
+  const code: string = item.product?.code || ''
+  const pieceLength = productLength(item.product)
+  const remaining = n(item.quantity_requested) - n(item.quantity_cut)
+  const currentProductId: string | null = item.material_base_id || null
+  const currentCode: string | null = item.material_base?.code || null
+
+  const [rows, setRows] = useState<any[] | null>(null)
+  const [use, setUse] = useState<Record<string, number>>({})
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    import('@/app/actions/get-available-stock')
+      .then(({ getAvailableStock }) => getAvailableStock(code))
+      .then(data => {
+        if (cancelled) return
+        const list = (data || [])
+          .map((r: any) => ({ ...r, code: r.product?.code || '', stock_disponible: n(r.stock_disponible), length: extractSizeFromCode(r.product?.code || '') }))
+          .filter((r: any) => cutPlan(r.length, pieceLength).piecesPerSheet > 0)
+        const sorted = sortByRemnant(list, pieceLength, remaining)
+        setRows(sorted)
+        // Propuesta del sistema: exactas primero y luego la que menos sobra
+        const plan = proposePlan(remaining, pieceLength, sorted.filter((r: any) => r.product_id !== currentProductId).map((r: any) => ({ id: r.id, length: r.length, available: r.stock_disponible })))
+        setUse(Object.fromEntries(plan.parts.map(p => [p.id, p.sheets])))
+      })
+      .catch(e => {
+        console.error('Error cargando stock:', e)
+        if (!cancelled) setRows([])
+      })
+    return () => { cancelled = true }
+  }, [code, pieceLength, remaining, currentProductId])
+
+  // Reparto: cada tipo de chapa cubre piezas en el orden de la lista
+  const alloc = useMemo(() => {
+    let left = remaining
+    const parts = (rows || []).map(r => {
+      const pps = cutPlan(r.length, pieceLength).piecesPerSheet
+      const sheets = r.product_id === currentProductId ? 0 : Math.min(use[r.id] || 0, Math.floor(r.stock_disponible))
+      const pieces = Math.min(left, sheets * pps)
+      left -= pieces
+      const out = cutOutcome(r.length, pieceLength, pieces)
+      return { row: r, pps, sheets: out.sheets, pieces, leftover: out.leftoverMeters }
+    })
+    return { parts, left }
+  }, [rows, use, remaining, pieceLength, currentProductId])
+
+  const chosen = alloc.parts.filter(p => p.pieces > 0)
+  const covered = remaining - alloc.left
+  const totalLeftover = round2(chosen.reduce((s, p) => s + p.leftover, 0))
+  const pending = unassignedLines(order).filter(l => l.id !== item.id)
+  if (!currentProductId && alloc.left > 0) pending.push({ id: item.id, code })
+  const willActivate = order.status === 'aprobado_en_pausa' && !currentProductId && alloc.left === 0 && pending.length === 0
+
+  async function submit() {
+    if (!chosen.length) return
+    setBusy(true)
+    try {
+      const { reassignStock } = await import('@/app/actions/reassign-stock')
+      for (const p of chosen) {
+        const res = await reassignStock(item.id, p.row.id, p.row.product_id, p.row.length, p.pieces)
+        if (!res?.success) throw new Error('No se pudo asignar la chapa')
+      }
+      toast.success(`${covered} × ${code}: ${chosen.map(p => `${p.sheets} × ${p.row.code}`).join(' + ')}`)
+      await onDone()
+    } catch (e: any) {
+      toast.error(userMessage(e, 'No se pudo asignar la chapa'))
+      await onDone()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const summary: { label: string; value: ReactNode; tone?: 'ok' | 'warn' }[] = []
+  if (chosen.length) {
+    summary.push({ label: 'Piezas cubiertas', value: `${covered} de ${remaining}`, tone: alloc.left === 0 ? 'ok' : 'warn' })
+    summary.push({ label: 'Chapas que se reservan', value: chosen.map(p => `${p.sheets} × ${p.row.code}`).join(' + ') })
+    summary.push({ label: 'Sobrante previsto', value: totalLeftover > 0 ? `${formatMeters(totalLeftover)} (vuelve al stock)` : 'ninguno', tone: totalLeftover > 0 ? undefined : 'ok' })
+    if (alloc.left > 0) summary.push({ label: 'El resto', value: `${alloc.left} ${currentCode ? `siguen con ${currentCode}` : 'quedan sin asignar'}`, tone: 'warn' })
+    if (order.status === 'aprobado_en_pausa') {
+      summary.push(willActivate
+        ? { label: 'Estado del pedido', value: 'sale de la pausa: la planta puede empezar', tone: 'ok' }
+        : { label: 'Estado del pedido', value: `sigue en pausa${pending.length ? `: falta ${pending.map(p => p.code).join(', ')}` : ''}`, tone: 'warn' })
+    }
+  }
+
+  return (
+    <PanelShell
+      eyebrow={currentProductId ? 'Cambiar chapa' : 'Asignar chapa'}
+      title={`${code} × ${remaining}`}
+      subtitle={`${currentCode ? `Ahora se corta de ${currentCode}; solo cambia lo que falta por cortar. ` : ''}Elige cuántas chapas de cada tipo se usan${pieceLength ? ` para piezas de ${formatMeters(pieceLength)}` : ''}.`}
+      onClose={onClose}
+      footer={
+        <Button onClick={submit} disabled={!chosen.length || busy || remaining <= 0} className="w-full">
+          {busy ? 'Guardando…' : !chosen.length ? 'Elige las chapas' : `Asignar ${chosen.reduce((s, p) => s + p.sheets, 0)} chapa${chosen.reduce((s, p) => s + p.sheets, 0) !== 1 ? 's' : ''} para ${covered} pieza${covered !== 1 ? 's' : ''}`}
+        </Button>
+      }
+    >
+      <div className="flex max-h-[360px] flex-col gap-2 overflow-y-auto pr-1">
+        {rows === null && <div className="py-6 text-center text-sm text-muted-foreground">Buscando stock…</div>}
+        {rows?.length === 0 && (
+          <div className="rounded-lg border border-warning/40 bg-warning/10 px-3.5 py-3 text-sm text-warning">
+            No hay chapa disponible de esta familia. Si hay chapas cortadas en otro pedido, usa «Reasignar»; si no, el pedido sigue en pausa hasta que EVO actualice el stock.
+          </div>
+        )}
+        {alloc.parts.map(p => {
+          const r = p.row
+          const plan = cutPlan(r.length, pieceLength)
+          const isCurrent = r.product_id === currentProductId
+          const coveredByOthers = covered - p.pieces
+          const max = isCurrent ? 0 : Math.max(0, Math.min(Math.floor(r.stock_disponible), Math.ceil(Math.max(0, remaining - coveredByOthers) / p.pps)))
+          const sheets = use[r.id] || 0
+          return (
+            <div key={r.id} className={cn('flex flex-col gap-2 rounded-lg border bg-card px-3.5 py-3', p.pieces > 0 ? 'border-primary shadow-[0_0_0_2px_hsl(var(--primary)/0.15)]' : 'border-border')}>
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-foreground">{r.code}{isCurrent ? <Pill>actual</Pill> : plan.exact ? <Pill tone="ok">exacta</Pill> : null}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {new Intl.NumberFormat('es-AR').format(Math.floor(r.stock_disponible))} disponibles · {plan.exact ? 'no hay que cortar' : `salen ${p.pps} por chapa · ${plan.remnant > 0 ? `sobra ${formatMeters(plan.remnant)}` : 'sin sobrante'}`}
+                  </div>
+                </div>
+                {!isCurrent && <Stepper value={Math.min(sheets, Math.max(max, 0))} onChange={v => setUse(u => ({ ...u, [r.id]: v }))} min={0} max={max} />}
+              </div>
+              {!plan.exact && <SheetBar sheetLength={r.length} pieceLength={pieceLength} pieces={p.pps} />}
+              {p.pieces > 0 && <div className="text-xs font-medium text-foreground">{p.sheets} chapa{p.sheets !== 1 ? 's' : ''} → {p.pieces} pieza{p.pieces !== 1 ? 's' : ''}{p.leftover > 0 ? ` · sobran ${formatMeters(p.leftover)}` : ''}</div>}
+            </div>
+          )
+        })}
+      </div>
+
+      {summary.length > 0 && <Summary rows={summary} />}
+    </PanelShell>
+  )
+}
+
 /** Asignar o cambiar el stock de una orden de corte o de un artículo a preparar. */
-export function AssignStockPanel({ order, line, onClose, onDone }: { order: any; line: PanelLine; onClose: () => void; onDone: () => Promise<void> | void }) {
+export function AssignStockPanel(props: { order: any; line: PanelLine; onClose: () => void; onDone: () => Promise<void> | void }) {
+  return props.line.kind === 'cut'
+    ? <AssignSheetsPanel order={props.order} item={props.line.item} onClose={props.onClose} onDone={props.onDone} />
+    : <AssignUnitsPanel {...props} />
+}
+
+function AssignUnitsPanel({ order, line, onClose, onDone }: { order: any; line: PanelLine; onClose: () => void; onDone: () => Promise<void> | void }) {
   const isCut = line.kind === 'cut'
   const item = line.item
   const code: string = item.product?.code || ''

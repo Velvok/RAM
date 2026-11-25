@@ -340,7 +340,7 @@ function ProductSheet({ row, rows, onClose }: { row: Row; rows: Row[]; onClose: 
           {sources.map(({ r, plan }) => (
             <div key={r.id} className="flex justify-between gap-3 text-[13px]">
               <span><strong>{r.code}</strong> <span className="text-muted-foreground">· {fmt(r.available)} disp.</span></span>
-              <span className="text-muted-foreground">sobrante {formatMeters(plan.remnant)}</span>
+              <span className="text-muted-foreground">salen {plan.piecesPerSheet} · {plan.remnant > 0 ? `sobra ${formatMeters(plan.remnant)}` : 'sin sobrante'}</span>
             </div>
           ))}
         </div>

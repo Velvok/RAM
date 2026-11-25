@@ -5,7 +5,18 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { checkAndActivateOrderOnHold } from './stock-management'
 import { UserError } from '@/lib/user-error'
+import { extractSizeFromCode } from '@/lib/product-utils'
+import { isExactLength, piecesPerSheet, sheetsFor } from '@/lib/sheet-plan'
+import { moveCutReservation } from '@/lib/cut-reservations'
 
+/**
+ * Asigna o cambia la chapa de una orden de corte (oficina y tablet).
+ *
+ * `quantityForNewMaterial` son PIEZAS que pasan a cortarse con la chapa nueva;
+ * el servidor calcula cuántas salen de cada chapa y reserva las CHAPAS que
+ * hacen falta (ver lib/sheet-plan.ts). `quantity` es el largo de la chapa que
+ * manda el cliente y solo se usa si el producto no tiene largo conocido.
+ */
 export async function reassignStock(
   cutOrderId: string,
   inventoryId: string,
@@ -13,14 +24,13 @@ export async function reassignStock(
   quantity: number,
   quantityForNewMaterial: number
 ) {
-  await requireStaff()
+  const actor = await requireStaff()
 
   const supabase = createAdminClient()
 
-  // Obtener la cut_order actual
   const { data: cutOrder, error: fetchError } = await supabase
     .from('cut_orders')
-    .select('*')
+    .select('*, product:products!cut_orders_product_id_fkey(code, length_meters)')
     .eq('id', cutOrderId)
     .single()
 
@@ -31,9 +41,8 @@ export async function reassignStock(
     throw new UserError('No se puede cambiar el material de una orden de corte ya completada')
   }
 
-  // Guard: la cantidad a reasignar debe ser válida y no superar lo que falta
-  // por cortar (no lo solicitado originalmente) — si ya se cortaron unidades
-  // con el material anterior, esas no se pueden "reasignar" retroactivamente.
+  // Guard: la cantidad debe ser válida y no superar lo que falta por cortar
+  // (lo ya cortado con el material anterior no se puede cambiar después).
   const remainingToCut = cutOrder.quantity_requested - (cutOrder.quantity_cut || 0)
   if (!Number.isFinite(quantityForNewMaterial) || quantityForNewMaterial <= 0) {
     throw new UserError('La cantidad debe ser mayor que 0')
@@ -44,69 +53,49 @@ export async function reassignStock(
     )
   }
 
-  // Producto del nuevo material e inventario del material original, en paralelo
-  const [productRes, oldInventoryRes, { unreserveStock }] = await Promise.all([
-    supabase
-      .from('products')
-      .select('name')
-      .eq('id', productId)
-      .single(),
-    supabase
-      .from('inventory')
-      .select('id')
-      .eq('product_id', cutOrder.material_base_id)
-      .single(),
-    import('./stock-management'),
+  const [productRes, inventoryRes] = await Promise.all([
+    supabase.from('products').select('name, code, length_meters').eq('id', productId).single(),
+    supabase.from('inventory').select('id, product_id, stock_disponible').eq('id', inventoryId).maybeSingle(),
   ])
-
   const { data: product, error: productError } = productRes
   if (productError) throw productError
-  const { data: oldInventory } = oldInventoryRes
+  const newInventory = inventoryRes.data
+  if (!newInventory || newInventory.product_id !== productId) throw new UserError('Esa chapa ya no está en el stock. Vuelve a abrir la lista.')
 
-  // CASO 1: Reasignación COMPLETA — solo tiene sentido como swap en sitio
-  // cuando todavía no se ha cortado nada; si ya hay quantity_cut > 0, cambiar
-  // material_base_id para toda la orden mentiría sobre con qué material se
-  // cortaron esas unidades ya hechas, así que cae al CASO 2 (crea una orden
-  // hija para lo que falta y deja la original intacta para lo ya cortado).
+  // Cuántas piezas salen de cada chapa nueva y cuántas chapas hacen falta
+  const pieceProduct = Array.isArray(cutOrder.product) ? cutOrder.product[0] : cutOrder.product
+  const pieceLength = Number(pieceProduct?.length_meters) || extractSizeFromCode(pieceProduct?.code || '')
+  const sheetLength = Number(product.length_meters) || extractSizeFromCode(product.code || '') || Number(quantity) || 0
+  // Sin largo conocido de la pieza se trata como una pieza por chapa (como antes)
+  const pps = pieceLength > 0 ? (isExactLength(sheetLength, pieceLength) ? 1 : piecesPerSheet(sheetLength, pieceLength)) : 1
+  if (pps < 1) throw new UserError('Esa chapa es más corta que la pieza que hay que cortar')
+  const sheetsNeeded = sheetsFor(quantityForNewMaterial, pps)
+
+  // Si es la misma chapa que ya tenía, sus chapas reservadas cuentan como disponibles
+  const sameSheet = cutOrder.material_base_id === productId
+  if (!sameSheet && Math.floor(Number(newInventory.stock_disponible) || 0) < sheetsNeeded) {
+    throw new UserError(`No hay chapas suficientes: hacen falta ${sheetsNeeded} y quedan ${Math.max(0, Math.floor(Number(newInventory.stock_disponible) || 0))} disponibles`)
+  }
+
+  const ref = { orderId: cutOrder.order_id, userId: actor.kind === 'admin' ? actor.userId : null }
+  const before = { ...cutOrder }
+  const piezas = `${quantityForNewMaterial} pieza${quantityForNewMaterial !== 1 ? 's' : ''}`
+  const chapas = `${sheetsNeeded} chapa${sheetsNeeded !== 1 ? 's' : ''}`
+
+  // CASO 1: toda la orden cambia de chapa y aún no se ha cortado nada: se
+  // cambia en sitio. Si ya hay piezas cortadas, cambiar material_base_id
+  // mentiría sobre con qué se cortaron, así que cae al caso 2.
   if (quantityForNewMaterial === cutOrder.quantity_requested && (cutOrder.quantity_cut || 0) === 0) {
-    // Liberar stock del material anterior
-    if (oldInventory) {
-      await unreserveStock(oldInventory.id, quantityForNewMaterial)
-    }
+    const after = { ...cutOrder, material_base_id: productId, pieces_per_sheet: pps }
+    await moveCutReservation(supabase, before, after, `Reserva de ${chapas} de ${product.code} para ${piezas} (cambio de chapa)`, ref)
 
-    // Reservar stock del nuevo material (optimizado - una sola query)
-    const { data: currentStock } = await supabase
-      .from('inventory')
-      .select('stock_reservado')
-      .eq('id', inventoryId)
-      .single()
-
-    const newReservado = (currentStock?.stock_reservado || 0) + quantityForNewMaterial
-
-    await supabase
-      .from('inventory')
-      .update({ stock_reservado: newReservado })
-      .eq('id', inventoryId)
-
-    // Registrar movimiento único
-    const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('stock_movements').insert({
-      product_id: productId,
-      movement_type: 'reserva',
-      quantity: quantityForNewMaterial,
-      stock_before: currentStock?.stock_reservado || 0,
-      stock_after: newReservado,
-      user_id: user?.id,
-      notes: `Reserva de ${quantityForNewMaterial} unidades al reasignar stock`,
-    })
-
-    // Actualizar la orden existente con el nuevo material
     await supabase
       .from('cut_orders')
       .update({
         material_base_id: productId,
-        material_base_quantity: quantity,  // Usar el parámetro quantity que ya tiene el tamaño correcto
-        material_quantity: 1
+        material_base_quantity: sheetLength,
+        pieces_per_sheet: pps,
+        material_quantity: sheetsNeeded,
       })
       .eq('id', cutOrderId)
 
@@ -115,95 +104,72 @@ export async function reassignStock(
 
     return {
       success: true,
-      message: `✅ Material actualizado\n\n${quantityForNewMaterial} unidades ahora con ${product.name}`
+      message: `✅ Material actualizado\n\n${piezas} con ${chapas} de ${product.name}`
     }
   }
-  // CASO 2: Reasignación PARCIAL (solo algunas unidades)
-  else {
-    // Liberar stock del material anterior (solo las unidades que se mueven)
-    if (oldInventory) {
-      await unreserveStock(oldInventory.id, quantityForNewMaterial)
-    }
 
-    // Reservar stock del nuevo material (optimizado - una sola query)
-    const { data: currentStock } = await supabase
-      .from('inventory')
-      .select('stock_reservado')
-      .eq('id', inventoryId)
-      .single()
+  // CASO 2: solo parte de las piezas pasan a la chapa nueva: orden hija para
+  // ellas y la original se queda con el resto.
+  const newQuantityOriginal = cutOrder.quantity_requested - quantityForNewMaterial
+  const originalAfter = { ...cutOrder, quantity_requested: newQuantityOriginal }
+  const child = {
+    product_id: cutOrder.product_id,
+    quantity_requested: quantityForNewMaterial,
+    quantity_cut: 0,
+    quantity_delivered: 0,
+    material_base_id: productId,
+    pieces_per_sheet: pps,
+  }
+  await moveCutReservation(supabase, before, originalAfter, `Reserva liberada de ${piezas} que pasan a otra chapa`, ref)
+  await moveCutReservation(supabase, null, child, `Reserva de ${chapas} de ${product.code} para ${piezas} (cambio de chapa parcial)`, ref)
 
-    const newReservado = (currentStock?.stock_reservado || 0) + quantityForNewMaterial
+  const newCutNumber = `CUT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
 
-    await supabase
-      .from('inventory')
-      .update({ stock_reservado: newReservado })
-      .eq('id', inventoryId)
-
-    // Registrar movimiento único
-    const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('stock_movements').insert({
-      product_id: productId,
-      movement_type: 'reserva',
-      quantity: quantityForNewMaterial,
-      stock_before: currentStock?.stock_reservado || 0,
-      stock_after: newReservado,
-      user_id: user?.id,
-      notes: `Reserva de ${quantityForNewMaterial} unidades al reasignar stock (parcial)`,
+  const { error: newCutError } = await supabase
+    .from('cut_orders')
+    .insert({
+      cut_number: newCutNumber,
+      order_id: cutOrder.order_id,
+      order_line_id: cutOrder.order_line_id,
+      product_id: cutOrder.product_id,
+      quantity_requested: quantityForNewMaterial,
+      quantity_cut: 0,
+      status: 'pendiente',
+      material_base_id: productId,
+      material_base_quantity: sheetLength,
+      pieces_per_sheet: pps,
+      material_quantity: sheetsNeeded,
+      evo_item_number: cutOrder.evo_item_number || null,
+      parent_cut_order_id: cutOrderId,
     })
 
-    // Crear nueva orden de corte para las unidades que se mueven
-    const newCutNumber = `CUT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+  if (newCutError) throw newCutError
 
-    const { data: newCutOrder, error: newCutError } = await supabase
-      .from('cut_orders')
-      .insert({
-        cut_number: newCutNumber,
-        order_id: cutOrder.order_id,
-        order_line_id: cutOrder.order_line_id,
-        product_id: cutOrder.product_id,
-        quantity_requested: quantityForNewMaterial,
-        quantity_cut: 0,
-        status: 'pendiente',
-        material_base_id: productId,
-        material_base_quantity: quantity,
-        material_quantity: 1,
-        evo_item_number: cutOrder.evo_item_number || null,
-        parent_cut_order_id: cutOrderId,
-      })
-      .select()
-      .single()
+  // Si lo ya cortado cubre lo que queda de la orden original (se movió todo lo
+  // pendiente), se marca completada para no dejarla «pendiente» con 0 por cortar.
+  const originalNowComplete = (cutOrder.quantity_cut || 0) >= newQuantityOriginal
 
-    if (newCutError) throw newCutError
+  await supabase
+    .from('cut_orders')
+    .update({
+      quantity_requested: newQuantityOriginal,
+      material_quantity: sheetsFor(Math.max(0, newQuantityOriginal - (cutOrder.quantity_cut || 0)), Number(cutOrder.pieces_per_sheet) || 1),
+      status: originalNowComplete ? 'completada' : cutOrder.status,
+      finished_at: originalNowComplete ? new Date().toISOString() : cutOrder.finished_at,
+    })
+    .eq('id', cutOrderId)
 
-    // Actualizar la orden original reduciendo la cantidad. Si lo ya cortado
-    // cubre exactamente lo que queda de la orden original (se reasignó todo
-    // lo restante), se marca como completada para no dejarla "pendiente"
-    // con 0 unidades por cortar.
-    const newQuantityOriginal = cutOrder.quantity_requested - quantityForNewMaterial
-    const originalNowComplete = (cutOrder.quantity_cut || 0) >= newQuantityOriginal
+  // Recalcular el estado del pedido (puede pasar a en_corte/finalizado si la
+  // orden original quedó completada)
+  const { updateOrderStatus } = await import('./orders')
+  await updateOrderStatus(cutOrder.order_id)
+  await checkAndActivateOrderOnHold(cutOrder.order_id)
 
-    await supabase
-      .from('cut_orders')
-      .update({
-        quantity_requested: newQuantityOriginal,
-        status: originalNowComplete ? 'completada' : cutOrder.status,
-        finished_at: originalNowComplete ? new Date().toISOString() : cutOrder.finished_at,
-      })
-      .eq('id', cutOrderId)
+  revalidatePath('/admin/pedidos', 'layout')
+  revalidatePath('/admin/pedidos/[id]', 'page')
 
-    // Recalcular el estado agregado del pedido (puede pasar a en_corte/finalizado
-    // si la orden original quedó completada)
-    const { updateOrderStatus } = await import('./orders')
-    await updateOrderStatus(cutOrder.order_id)
-    await checkAndActivateOrderOnHold(cutOrder.order_id)
-
-    // Revalidar rutas
-    revalidatePath('/admin/pedidos', 'layout')
-    revalidatePath('/admin/pedidos/[id]', 'page')
-
-    return {
-      success: true,
-      message: `✅ Stock reasignado\n\nNueva orden creada: ${quantityForNewMaterial} unidades de ${product.name}\nOrden original reducida a ${newQuantityOriginal} unidades`
-    }
+  return {
+    success: true,
+    message: `✅ Stock reasignado\n\n${piezas} con ${chapas} de ${product.name}\nLa orden original queda en ${newQuantityOriginal} unidades`
   }
 }

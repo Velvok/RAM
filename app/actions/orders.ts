@@ -10,6 +10,8 @@ import { notifyPedidoCompletado } from '@/lib/ram-outbound'
 import { extractSizeFromCode } from '@/lib/product-utils'
 import { lineUnits, lineUnitsUpdate } from '@/lib/order-modification'
 import { UserError, userMessage } from '@/lib/user-error'
+import { proposePlan } from '@/lib/sheet-plan'
+import { changeReservation } from '@/lib/cut-reservations'
 
 export async function getOrders() {
   await requireAdmin()
@@ -83,7 +85,7 @@ export async function cancelOrder(orderId: string) {
     .from('orders')
     .select(`
       id, order_number, evo_order_id, status,
-      cut_orders:cut_orders!cut_orders_order_id_fkey(id, material_base_id, quantity_requested, quantity_delivered, reassigned_from_order_id, reassigned_quantity),
+      cut_orders:cut_orders!cut_orders_order_id_fkey(id, product_id, material_base_id, quantity_requested, quantity_cut, quantity_delivered, pieces_per_sheet, reassigned_from_order_id, reassigned_quantity),
       preparation_items(id, assigned_inventory_id, quantity_requested, quantity_delivered)
     `)
     .eq('id', orderId)
@@ -110,7 +112,8 @@ export async function cancelOrder(orderId: string) {
   if (!changed?.length) throw new UserError('El pedido acaba de cambiar. Recarga la página y vuelve a intentarlo.')
 
   // 2. Liberar la reserva
-  const materialIds = [...new Set(cuts.map(c => c.material_base_id).filter(Boolean))]
+  // Chapa base (lo pendiente de cortar) y producto pedido (lo ya cortado)
+  const materialIds = [...new Set(cuts.flatMap(c => [c.material_base_id, c.product_id]).filter(Boolean))]
   const inventoryByProduct = new Map<string, string>()
   if (materialIds.length > 0) {
     const { data: inv } = await supabase.from('inventory').select('id, product_id').in('product_id', materialIds)
@@ -119,17 +122,18 @@ export async function cancelOrder(orderId: string) {
   // Lo cedido a otros pedidos por reasignación sigue reservado para ellos
   const { data: given } = await supabase
     .from('cut_orders')
-    .select('material_base_id, reassigned_quantity')
+    .select('product_id, reassigned_quantity')
     .eq('reassigned_from_order_id', orderId)
     .neq('order_id', orderId)
-  const givenIds = [...new Set((given || []).map(g => g.material_base_id).filter(id => id && !inventoryByProduct.has(id)))]
+  // Son piezas ya cortadas: están reservadas en el producto de la pieza
+  const givenIds = [...new Set((given || []).map(g => g.product_id).filter(id => id && !inventoryByProduct.has(id)))]
   if (givenIds.length > 0) {
     const { data: inv } = await supabase.from('inventory').select('id, product_id').in('product_id', givenIds)
     for (const i of inv || []) inventoryByProduct.set(i.product_id, i.id)
   }
   const outgoing = new Map<string, number>()
   for (const g of given || []) {
-    const invId = g.material_base_id ? inventoryByProduct.get(g.material_base_id) : null
+    const invId = g.product_id ? inventoryByProduct.get(g.product_id) : null
     if (invId) outgoing.set(invId, (outgoing.get(invId) || 0) + (Number(g.reassigned_quantity) || 0))
   }
   const releases = reservationsToRelease(cuts, preps, inventoryByProduct, outgoing)
@@ -279,11 +283,37 @@ async function createLineFulfillmentWhereStock(
   userId: string | undefined,
   errors: string[]
 ): Promise<boolean> {
+  // Chapas: se asigna lo que se pueda cubrir y el resto queda sin chapa
+  const { isChapaProduct } = await import('@/lib/product-utils')
+  if (isChapaProduct(line.product?.code || '', line.product?.category, line.product?.name)) {
+    return createLineFulfillment(supabase, orderId, line, units, userId, errors, true)
+  }
   const noStock: string[] = []
   await checkLineStock(supabase, line, units, noStock)
   return noStock.length > 0
     ? createLineFulfillmentOnHold(supabase, orderId, line, units, errors)
     : createLineFulfillment(supabase, orderId, line, units, userId, errors)
+}
+
+// Chapas disponibles para una línea y la propuesta del sistema para cortarla
+// (lib/sheet-plan.ts). `byId` da el inventario y el producto de cada tramo.
+async function planChapaLine(line: any, units: number) {
+  const { getAvailableStock } = await import('./get-available-stock')
+  const code: string = line.product?.code || ''
+  const pieceLength = extractSizeFromCode(code) || Number(line.product?.length_meters) || Number(line.length_meters) || 0
+  const stock = await getAvailableStock(code)
+  const byId = new Map(stock.map(item => [item.id as string, {
+    id: item.id as string,
+    product_id: item.product_id as string,
+    code: item.product?.code || '',
+    length: extractSizeFromCode(item.product?.code || ''),
+    available: Number(item.stock_disponible) || 0,
+  }]))
+  // Sin largo conocido solo sirve el mismo producto, una pieza por chapa
+  const candidates = pieceLength > 0
+    ? [...byId.values()]
+    : [...byId.values()].filter(c => c.product_id === line.product_id).map(c => ({ ...c, length: 1 }))
+  return { plan: proposePlan(units, pieceLength > 0 ? pieceLength : 1, candidates), byId, pieceLength }
 }
 
 // Crea la orden de corte (chapas) o el preparation_item (artículos normales)
@@ -386,18 +416,11 @@ async function checkLineStock(
   )
 
   if (isChapa) {
-    // Para chapas, verificar que hay stock disponible del producto exacto
-    const { data: inventory } = await supabase
-      .from('inventory')
-      .select('stock_total, stock_reservado, stock_en_proceso')
-      .eq('product_id', line.product_id)
-      .limit(1)
-      .maybeSingle()
-
-    const stockDisponible = inventory ? (inventory.stock_total || 0) - (inventory.stock_reservado || 0) - (inventory.stock_en_proceso || 0) : 0
-    
-    if (!inventory || stockDisponible < units) {
-      errors.push(`No hay stock suficiente para ${line.product?.name} (${line.product?.code}). Disponible: ${stockDisponible}, Solicitado: ${units}. Sugiero aprobar el pedido en pausa.`)
+    // Chapas: sirve cualquier chapa de la familia de la que salgan las piezas
+    // (del largo exacto o más larga, varias piezas por chapa)
+    const { plan } = await planChapaLine(line, units)
+    if (plan.uncovered > 0) {
+      errors.push(`No hay stock suficiente para ${line.product?.name} (${line.product?.code}). Faltan chapas para ${plan.uncovered} de ${units}. Sugiero aprobar el pedido en pausa.`)
     }
   } else {
     // Para artículos normales, verificar que hay stock disponible del producto exacto
@@ -426,7 +449,9 @@ async function createLineFulfillment(
   line: any,
   units: number,
   userId: string | undefined,
-  errors: string[]
+  errors: string[],
+  /** Aprobación en pausa: las piezas sin chapa no son un error, se asignan después */
+  allowUncovered = false
 ): Promise<boolean> {
   // Identificar si es chapa usando la tabla de productos de corte (isChapaProduct)
   const { isChapaProduct } = await import('@/lib/product-utils')
@@ -454,92 +479,66 @@ async function createLineFulfillment(
                        line.length_meters ||
                        0 // sin largo conocido (line.quantity son unidades, no metros)
     
-    // Crear UNA orden de corte agrupada para todas las unidades
-    const cutNumber = `CUT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-    
-    // Crear la orden de corte AGRUPADA
-    const { data: cutOrderData, error: cutError } = await supabase
-      .from('cut_orders')
-      .insert({
-        cut_number: cutNumber,
-        order_id: orderId,
-        order_line_id: line.id,
-        product_id: line.product_id,
-        quantity_requested: units,
-        quantity_cut: 0,
-        status: 'pendiente',
-        evo_item_number: line.evo_item_number || null,
-      })
-      .select()
-    
-    if (cutError) {
-      console.error('Error creando orden de corte:', cutError)
-      { console.error('Error creando orden de corte:', cutError.message); errors.push(`No se pudo crear la orden de corte de ${line.product?.name || 'una línea'}`) }
-      return false
-    }
-
-    if (!cutOrderData || cutOrderData.length === 0) {
-      console.error('No se devolvió ninguna orden de corte después del insert')
-      errors.push(`No se pudo crear la orden de corte de ${line.product?.name || 'una línea'}`)
-      return false
-    }
-
-    const cutOrder = cutOrderData[0]
-
-    console.log(`✅ Orden de corte creada: ${cutNumber} - ${units} unidades de ${productSize}m`)
-    
-    // ASIGNACIÓN AUTOMÁTICA DE STOCK
-    // Buscar stock disponible del tamaño exacto o mayor
-    try {
-      const { findBestStockMatch, assignStockToCutOrder, reserveStock } = await import('./stock-management')
-      
-      // Buscar stock para el tamaño del producto
-      const bestMatch = await findBestStockMatch(line.product_id, productSize)
-      
-      if (bestMatch) {
-        // Asignar el stock a la orden de corte
-        await assignStockToCutOrder(
-          cutOrder.id, 
-          bestMatch.inventory_id,
-          bestMatch.product_id,  // ID del producto de la pieza asignada
-          bestMatch.quantity     // Tamaño de la pieza
-        )
-        
-        // Reservar stock (optimizado - una sola query)
-        const { data: currentStock } = await supabase
-          .from('inventory')
-          .select('stock_reservado')
-          .eq('id', bestMatch.inventory_id)
-          .single()
-
-        const newReservado = (currentStock?.stock_reservado || 0) + units
-
-        await supabase
-          .from('inventory')
-          .update({ stock_reservado: newReservado })
-          .eq('id', bestMatch.inventory_id)
-
-        // Registrar movimiento único
-        await supabase.from('stock_movements').insert({
-          product_id: bestMatch.product_id,
-          movement_type: 'reserva',
-          quantity: units,
-          stock_before: currentStock?.stock_reservado || 0,
-          stock_after: newReservado,
-          user_id: userId,
-          notes: `Reserva de ${units} unidades de ${bestMatch.product_code}`,
+    // Propuesta del sistema: chapas del largo exacto primero y, si no, las que
+    // dejan menos sobrante, sacando de cada chapa todas las piezas que caben.
+    // Una orden de corte por tipo de chapa; lo que no se pueda cubrir queda sin
+    // chapa para asignarlo a mano (el pedido queda en pausa).
+    const { plan, byId } = await planChapaLine(line, units)
+    let parentId: string | null = null
+    const tramos: Array<{ pieces: number; part: (typeof plan.parts)[number] | null }> = [
+      ...plan.parts.map(part => ({ pieces: part.pieces, part })),
+      ...(plan.uncovered > 0 ? [{ pieces: plan.uncovered, part: null }] : []),
+    ]
+    for (const tramo of tramos) {
+      const stock = tramo.part ? byId.get(tramo.part.id) : null
+      const cutNumber = `CUT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+      const { data: created, error: cutError }: { data: { id: string } | null; error: { message: string } | null } = await supabase
+        .from('cut_orders')
+        .insert({
+          cut_number: cutNumber,
+          order_id: orderId,
+          order_line_id: line.id,
+          product_id: line.product_id,
+          quantity_requested: tramo.pieces,
+          quantity_cut: 0,
+          status: 'pendiente',
+          evo_item_number: line.evo_item_number || null,
+          parent_cut_order_id: parentId,
+          ...(tramo.part && stock ? {
+            material_base_id: stock.product_id,
+            material_base_quantity: tramo.part.length,
+            pieces_per_sheet: tramo.part.piecesPerSheet,
+            material_quantity: tramo.part.sheets,
+          } : {}),
         })
-        
-        console.log(`✅ Stock asignado: ${bestMatch.product_code} ${bestMatch.quantity}m × ${units} unidades (${bestMatch.isExact ? 'exacto' : 'aproximado'})`)
-      } else {
-        errors.push(`⚠️ No hay stock disponible para ${line.product?.name} (${productSize}m × ${units})`)
-        console.warn(`⚠️ No hay stock disponible para ${cutNumber}`)
+        .select('id')
+        .maybeSingle()
+
+      if (cutError || !created) {
+        console.error('Error creando orden de corte:', cutError?.message)
+        errors.push(`No se pudo crear la orden de corte de ${line.product?.name || 'una línea'}`)
+        return false
       }
-    } catch (stockError: any) {
-      { console.error(`Error asignando stock a ${cutNumber}:`, stockError.message); errors.push(userMessage(stockError, `No se pudo asignar stock a ${line.product?.name || 'una línea'}`)) }
-      console.error('Error asignando stock:', stockError)
+      parentId = parentId || created.id
+
+      if (tramo.part && stock) {
+        try {
+          await changeReservation(
+            supabase, stock.id, tramo.part.sheets,
+            `Reserva de ${tramo.part.sheets} chapa${tramo.part.sheets !== 1 ? 's' : ''} de ${stock.code} para ${tramo.pieces} pieza${tramo.pieces !== 1 ? 's' : ''}`,
+            { orderId, userId },
+          )
+          console.log(`✅ ${cutNumber}: ${tramo.pieces} piezas de ${productSize}m con ${tramo.part.sheets} × ${stock.code} (${tramo.part.piecesPerSheet} por chapa)`)
+        } catch (stockError: any) {
+          console.error(`Error reservando stock para ${cutNumber}:`, stockError.message)
+          errors.push(`No se pudo reservar stock para ${line.product?.name || 'una línea'}`)
+        }
+      } else {
+        console.warn(`⚠️ ${cutNumber}: ${tramo.pieces} piezas de ${line.product?.code} sin chapa disponible`)
+        if (!allowUncovered) errors.push(`⚠️ No hay stock disponible para ${line.product?.name} (${productSize}m × ${tramo.pieces})`)
+      }
     }
-    
+
   } else {
     // ========== ARTÍCULOS NORMALES: Crear preparation_item ==========
     console.log(`📦 Línea (ARTÍCULO NORMAL): ${line.product?.name}, Unidades: ${units}`)
@@ -629,15 +628,17 @@ export async function approveOrder(orderId: string) {
     .from('orders')
     .select(`
       order_lines(id),
-      cut_orders(id),
-      preparation_items(id)
+      cut_orders(id, order_line_id),
+      preparation_items(id, order_line_id)
     `)
     .eq('id', orderId)
     .maybeSingle()
 
   if (validation) {
     const totalLines = validation.order_lines?.length || 0
-    const totalGenerated = (validation.cut_orders?.length || 0) + (validation.preparation_items?.length || 0)
+    // Una línea puede tener varias órdenes de corte (una por tipo de chapa):
+    // se cuentan las líneas que han generado algo, no las órdenes
+    const totalGenerated = new Set([...(validation.cut_orders || []), ...(validation.preparation_items || [])].map((x: any) => x.order_line_id || x.id)).size
     
     if (totalLines !== totalGenerated) {
       const warning = `⚠️ DISCREPANCIA: ${totalLines} items vs ${totalGenerated} generados (${validation.cut_orders?.length || 0} cortes + ${validation.preparation_items?.length || 0} preparaciones)`

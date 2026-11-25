@@ -14,6 +14,8 @@ import { extractSizeFromCode } from '@/lib/product-utils'
 import { getOrderStatusConfig } from '@/lib/order-status'
 import { cn } from '@/lib/utils'
 import { userMessage } from '@/lib/user-error'
+import { sinOrdenDeCorte } from '@/lib/planta-texto'
+import { cutOutcome, describeLeftovers, sheetsFor } from '@/lib/sheet-plan'
 
 // Respuestas de la tablet a las notas del admin: acuse, confirmación o duda
 const QUICK_REPLIES = ['Recibido', 'Confirmado', 'Tengo una duda']
@@ -161,13 +163,13 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
     try {
       await enqueue('cut', pedidoId, { cutOrderId: cut.id, selectedMaterialId: assigned?.id || cut.material_base_id, materialLength, quantity }, `Corte ${quantity} × ${cut.product?.code || 'chapa'} de ${cut.material_product?.code || 'chapa asignada'}`)
       await refreshPending()
-      const plan = cutPlan(materialLength, productLength(cut.product))
+      const out = cutOutcome(materialLength, productLength(cut.product), quantity)
       setDone({
         title: 'Corte registrado',
         lines: [
           `${quantity} × ${cut.product?.code || cut.product?.name}`,
-          `De ${cut.material_product?.code || 'chapa asignada'} (${formatMeters(materialLength)})`,
-          plan.exact ? 'Chapa exacta, sin sobrante' : `Sobrante: ${quantity} × ${formatMeters(plan.remnant)} al estante de remanentes`,
+          `De ${out.sheets || quantity} × ${cut.material_product?.code || 'chapa asignada'} (${formatMeters(materialLength)})`,
+          out.exact ? 'Chapa exacta, sin sobrante' : out.leftovers.length ? `Sobrante: ${describeLeftovers(out.leftovers)} al estante de remanentes` : 'Sin sobrante: se aprovecha toda la chapa',
           savedLine(),
         ],
       })
@@ -224,15 +226,27 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
       setStockByCut(prev => ({ ...prev, [cut.id]: rows }))
     }
     const remaining = n(cut.quantity_requested) - n(cut.quantity_cut)
+    const best = sortByRemnant(
+      rows.filter(r => r.product_id !== cut.material_base_id).map(r => ({ ...r, code: r.product?.code || '', stock_disponible: n(r.stock_disponible) })),
+      productLength(cut.product),
+      remaining,
+    )[0]
     setChangeFor(cut)
-    setChangeRow(rows.find(r => r.product_id !== cut.material_base_id) || null)
-    setChangeQty(remaining)
+    setChangeRow(best ? rows.find(r => r.id === best.id) || null : null)
+    setChangeQty(ALL_SHEETS)
   }
 
   async function handleChange() {
     if (!changeFor || !changeRow) return
     const remaining = n(changeFor.quantity_requested) - n(changeFor.quantity_cut)
-    const quantity = Math.max(1, Math.min(changeQty, remaining, Math.floor(n(changeRow.stock_disponible))))
+    // changeQty son CHAPAS de la nueva; de cada una salen varias piezas
+    const { maxSheets, pps } = sheetChoice(changeRow, changeFor)
+    if (maxSheets < 1) {
+      toast.error('Esa chapa no sirve para esta pieza o no queda ninguna disponible')
+      return
+    }
+    const sheets = Math.max(1, Math.min(changeQty, maxSheets))
+    const quantity = Math.min(remaining, sheets * pps)
     // Cambiar solo una parte parte la línea en dos en el servidor: sin red no se puede pintar bien
     if (!sync.online && quantity < remaining) {
       toast.error('Sin conexión solo se puede cambiar la chapa de todas las piezas que faltan')
@@ -349,7 +363,7 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
                 onSelect={() => setActiveCutId(cut.id)}
                 onConfirm={() => handleConfirmPickup(cut)}
                 onAssign={() => openChange(cut)}
-                onNotify={() => sendNote(`Falta chapa para ${cut.product?.code || cut.product?.name} (${cut.cut_number || 'corte'}). Avisad cuando esté asignada.`, 'Aviso enviado al admin')}
+                onNotify={() => sendNote(`Falta chapa para ${cut.product?.code || cut.product?.name}. Avisad cuando esté asignada.`, 'Aviso enviado al admin')}
               />
             )
           })}
@@ -397,11 +411,11 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
                 {/* Un corte que el admin deshizo: tachado, para que no se cuente como hecho */}
                 {a.activity_type === 'cut_completed' && a.metadata?.reverted_at ? (
                   <span className="flex min-w-0 flex-col gap-1">
-                    <span className={cn('line-through', P.muted)}>{a.description}</span>
+                    <span className={cn('line-through', P.muted)}>{sinOrdenDeCorte(a.description)}</span>
                     <span className="self-start rounded bg-[#f59e0b]/15 px-1.5 py-0.5 text-[12px] font-semibold uppercase tracking-wide text-[#fbbf24]">Deshecho por la oficina</span>
                   </span>
                 ) : (
-                  <span className={P.soft}>{a.description}</span>
+                  <span className={P.soft}>{sinOrdenDeCorte(a.description)}</span>
                 )}
               </div>
             ))}
@@ -440,7 +454,7 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
           cut={changeFor}
           rows={stockByCut[changeFor.id] || []}
           selected={changeRow}
-          onSelect={setChangeRow}
+          onSelect={r => { setChangeRow(r); setChangeQty(ALL_SHEETS) }}
           qty={changeQty}
           onQty={setChangeQty}
           busy={busy === changeFor.id}
@@ -503,6 +517,9 @@ function ActiveCutCard({ cut, rows, qty, onQty, busy, onCut, onChange }: {
   const materialLength = productLength(cut.material_product)
   const pieceLength = productLength(cut.product)
   const plan = cutPlan(materialLength, pieceLength)
+  // Lo que pasa si corta `value` piezas ahora: chapas que gasta y trozos que sobran
+  const out = cutOutcome(materialLength, pieceLength, value)
+  const sheetsNeeded = out.sheets || value
   const assigned = rows?.find(r => r.product_id === cut.material_base_id)
   const otherOptions = (rows || []).filter(r => r.product_id !== cut.material_base_id).length
 
@@ -511,7 +528,7 @@ function ActiveCutCard({ cut, rows, qty, onQty, busy, onCut, onChange }: {
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className={cn('text-[30px] font-extrabold leading-tight', P.text)}>{cut.product?.name || cut.product?.code}</div>
-          <div className={cn('text-lg', P.muted)}>{cut.product?.code}{cut.cut_number ? ` · ${cut.cut_number}` : ''}</div>
+          <div className={cn('text-lg', P.muted)}>{cut.product?.code}</div>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           <Label tone="amber">{doneQ > 0 ? 'Cortando' : 'Por empezar'}</Label>
@@ -520,14 +537,24 @@ function ActiveCutCard({ cut, rows, qty, onQty, busy, onCut, onChange }: {
       </div>
 
       <div className="grid grid-cols-3 gap-3">
-        <Box label="Chapa asignada" value={cut.material_product?.code || '—'} hint={materialLength ? `Chapa de ${formatMeters(materialLength)}${assigned ? ` · ${n(assigned.stock_disponible)} disponibles` : rows ? ' · sin stock en el sistema' : ''}` : 'Sin largo conocido'} warn={!!rows && !assigned} />
-        <Box label="Cortar a" value={pieceLength ? formatMeters(pieceLength) : '—'} hint={`${value} ${value === 1 ? 'pieza' : 'piezas'}, una por chapa`} />
-        <Box label="Sobrante" value={plan.exact ? 'Ninguno' : materialLength ? formatMeters(plan.remnant) : '—'} hint={plan.exact ? 'Chapa exacta' : `por chapa · ${value} × ${formatMeters(plan.remnant)} al estante`} tone={plan.exact ? 'green' : 'default'} />
+        <Box label="Chapa asignada" value={cut.material_product?.code || '—'} hint={materialLength ? `${sheetsNeeded} ${sheetsNeeded === 1 ? 'chapa' : 'chapas'} de ${formatMeters(materialLength)}${assigned ? ` · ${n(assigned.stock_disponible)} más disponibles` : ''}` : 'Sin largo conocido'} />
+        <Box
+          label={plan.exact ? 'Largo' : 'De cada chapa salen'}
+          value={plan.exact ? formatMeters(pieceLength) : plan.piecesPerSheet ? `${plan.piecesPerSheet} ${plan.piecesPerSheet === 1 ? 'pieza' : 'piezas'}` : '—'}
+          hint={plan.exact ? 'Chapa exacta: no hay que cortar' : pieceLength ? `de ${formatMeters(pieceLength)}` : undefined}
+        />
+        <Box
+          label="Sobrante"
+          value={out.leftovers.length ? describeLeftovers(out.leftovers) : 'Ninguno'}
+          hint={plan.exact ? 'Chapa exacta' : out.leftovers.length ? 'va al estante de remanentes' : 'se aprovecha toda la chapa'}
+          tone={out.leftovers.length ? 'default' : 'green'}
+        />
       </div>
 
-      {rows && !assigned && (
-        <div className="rounded-xl border border-[#f59e0b]/60 bg-[#f59e0b]/10 px-4 py-3 text-base text-[#fbbf24]">
-          Esta chapa no aparece con stock en el sistema. Si la tienes en el estante, corta igual; si no, elige otra o avisa al admin.
+      {!plan.exact && out.sheets > 0 && (
+        <div className={cn('rounded-xl border px-4 py-3 text-base', P.border, P.text)}>
+          Gastas <strong>{out.sheets} {out.sheets === 1 ? 'chapa' : 'chapas'} de {formatMeters(materialLength)}</strong> y salen <strong>{value} {value === 1 ? 'pieza' : 'piezas'} de {formatMeters(pieceLength)}</strong>.
+          {out.leftovers.length > 0 && <span className="text-[#fbbf24]"> Sobra {describeLeftovers(out.leftovers)}: va al estante{remaining - value > 0 ? ` y quedan ${remaining - value} por cortar` : ''}.</span>}
         </div>
       )}
 
@@ -618,6 +645,18 @@ function CutRow({ cut, state, busy, onSelect, onConfirm, onAssign, onNotify }: {
   )
 }
 
+/** «Todas las chapas que hagan falta»: el selector lo ajusta al máximo real. */
+const ALL_SHEETS = 9999
+
+/** Cuántas chapas de `row` se pueden usar para lo que falta de `cut` y cuántas piezas da cada una. */
+function sheetChoice(row: any, cut: any): { maxSheets: number; pps: number; length: number } {
+  const length = extractSizeFromCode(row.product?.code || row.code || '')
+  const pps = cutPlan(length, productLength(cut.product)).piecesPerSheet
+  const remaining = n(cut.quantity_requested) - n(cut.quantity_cut)
+  if (pps < 1) return { maxSheets: 0, pps: 0, length }
+  return { maxSheets: Math.min(Math.floor(n(row.stock_disponible)), sheetsFor(remaining, pps)), pps, length }
+}
+
 function ChangeSheetModal({ cut, rows, selected, onSelect, qty, onQty, busy, onClose, onConfirm }: {
   cut: any
   rows: any[]
@@ -631,12 +670,17 @@ function ChangeSheetModal({ cut, rows, selected, onSelect, qty, onQty, busy, onC
 }) {
   const pieceLength = productLength(cut.product)
   const remaining = n(cut.quantity_requested) - n(cut.quantity_cut)
-  // No más piezas que chapas libres de la elegida
-  const max = Math.max(1, Math.min(remaining, selected ? Math.floor(n(selected.stock_disponible)) : remaining))
   const options = sortByRemnant(
     rows.filter(r => r.product_id !== cut.material_base_id).map(r => ({ ...r, code: r.product?.code || '', stock_disponible: n(r.stock_disponible) })),
     pieceLength,
-  )
+    remaining,
+  ).filter(r => cutPlan(extractSizeFromCode(r.code), pieceLength).piecesPerSheet > 0)
+  // Se eligen CHAPAS de la nueva: las justas para lo que falta, sin pasar de las libres
+  const choice = selected ? sheetChoice(selected, cut) : { maxSheets: 1, pps: 1, length: 0 }
+  const max = Math.max(1, choice.maxSheets)
+  const sheets = Math.max(1, Math.min(qty, max))
+  const pieces = Math.min(remaining, sheets * choice.pps)
+  const result = selected ? cutOutcome(choice.length, pieceLength, pieces) : null
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0b1220]/85 p-6" onClick={onClose}>
       <div className={cn('flex max-h-[90vh] w-full max-w-[760px] flex-col rounded-3xl border', P.panel, P.border)} onClick={e => e.stopPropagation()}>
@@ -657,11 +701,11 @@ function ChangeSheetModal({ cut, rows, selected, onSelect, qty, onQty, busy, onC
               <button key={r.id} type="button" onClick={() => onSelect(r)} className={cn('flex w-full items-center justify-between gap-4 rounded-2xl border p-4 text-left', active ? 'border-[#f59e0b] bg-[#f59e0b]/10' : cn(P.border, P.card))}>
                 <div>
                   <div className={cn('text-xl font-bold', P.text)}>{r.code}</div>
-                  <div className={cn('text-[15px]', P.muted)}>Chapa de {formatMeters(len)} · {r.stock_disponible} disponibles</div>
+                  <div className={cn('text-[15px]', P.muted)}>Chapa de {formatMeters(len)} · {Math.floor(r.stock_disponible)} disponibles · {plan.exact ? 'no hay que cortar' : `salen ${plan.piecesPerSheet} por chapa`}</div>
                 </div>
                 <div className="text-right">
-                  <Label tone={plan.exact ? 'green' : 'muted'}>Sobrante</Label>
-                  <div className={cn('text-xl font-extrabold', plan.exact ? 'text-[#4ade80]' : P.text)}>{plan.exact ? 'Ninguno' : formatMeters(plan.remnant)}</div>
+                  <Label tone={plan.remnant === 0 ? 'green' : 'muted'}>Sobra por chapa</Label>
+                  <div className={cn('text-xl font-extrabold', plan.remnant === 0 ? 'text-[#4ade80]' : P.text)}>{plan.remnant === 0 ? 'Nada' : formatMeters(plan.remnant)}</div>
                 </div>
               </button>
             )
@@ -669,8 +713,9 @@ function ChangeSheetModal({ cut, rows, selected, onSelect, qty, onQty, busy, onC
         </div>
         <div className="flex items-center justify-between gap-4 border-t border-[#1e293b] px-6 py-5">
           <div className="flex flex-col gap-1.5">
-            <Label>Piezas con la chapa nueva</Label>
-            <PlantaStepper size="md" value={Math.min(qty, max) || 1} onChange={onQty} min={1} max={max} />
+            <Label>Chapas a usar</Label>
+            <PlantaStepper size="md" value={sheets} onChange={onQty} min={1} max={max} />
+            {result && <span className={cn('text-[14px]', P.muted)}>{pieces} de {remaining} {remaining === 1 ? 'pieza' : 'piezas'}{result.leftovers.length ? ` · sobra ${describeLeftovers(result.leftovers)}` : ' · sin sobrante'}</span>}
           </div>
           <BigButton tone="green" className="h-16 flex-1 text-xl" disabled={!selected || busy} onClick={onConfirm}>
             {busy ? 'Cambiando...' : selected ? `Cambiar a ${selected.product?.code}` : 'Elige una chapa'}

@@ -2,6 +2,7 @@
 
 import { requireAdmin } from '@/lib/auth/guards'
 import { createAdminClient } from '@/lib/supabase/server'
+import { sheetsFor } from '@/lib/sheet-plan'
 
 // El stock es de solo lectura en RAM: el saldo lo fija EVO (webhook
 // stock_actualizado) y aquí solo se consulta junto con lo que reservan los
@@ -71,7 +72,7 @@ export async function getStockOverview() {
     getInventory(),
     supabase
       .from('cut_orders')
-      .select('product_id, material_base_id, quantity_requested, quantity_cut, status, product:products!cut_orders_product_id_fkey(code), order:orders!cut_orders_order_id_fkey!inner(id, order_number, status, client:clients(business_name))')
+      .select('product_id, material_base_id, quantity_requested, quantity_cut, pieces_per_sheet, status, product:products!cut_orders_product_id_fkey(code), order:orders!cut_orders_order_id_fkey!inner(id, order_number, status, client:clients(business_name))')
       .in('status', ['pendiente', 'pendiente_confirmacion'])
       .in('order.status', ACTIVE_ORDER_STATUSES),
     supabase
@@ -104,7 +105,8 @@ export async function getStockOverview() {
     const base = { orderId: order.id, orderNumber: order.order_number, orderStatus: order.status, client: one(order.client)?.business_name || 'Sin cliente' }
     add(c.product_id, { ...base, units: left, unassigned: c.material_base_id ? 0 : left })
     if (c.material_base_id && c.material_base_id !== c.product_id) {
-      add(c.material_base_id, { ...base, units: left, unassigned: 0, asMaterialFor: one(c.product)?.code })
+      // Como chapa base se cuentan chapas: de cada una salen varias piezas
+      add(c.material_base_id, { ...base, units: sheetsFor(left, Number(c.pieces_per_sheet) || 1), unassigned: 0, asMaterialFor: one(c.product)?.code })
     }
   }
   for (const p of prepsRes.data || []) {

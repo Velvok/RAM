@@ -19,11 +19,22 @@ describe('reservationsToRelease', () => {
 
   it('también libera lo ya cortado o preparado, pero no lo entregado', () => {
     const out = reservationsToRelease(
-      [{ material_base_id: 'p10', quantity_requested: 6, quantity_delivered: 2 }],
+      // 6 pedidas con chapa p13: 4 cortadas (2 ya entregadas) y 2 por cortar
+      [{ product_id: 'p10', material_base_id: 'p13', quantity_requested: 6, quantity_cut: 4, quantity_delivered: 2 }],
       [{ assigned_inventory_id: 'invTH2', quantity_requested: 3, quantity_delivered: 3 }],
       inv,
     )
-    expect(Object.fromEntries(out)).toEqual({ inv10: 4 })
+    // 2 chapas de lo pendiente en la base + 2 piezas cortadas sin entregar en el producto pedido
+    expect(Object.fromEntries(out)).toEqual({ inv13: 2, inv10: 2 })
+  })
+
+  it('varias piezas por chapa: lo pendiente se libera en chapas', () => {
+    const out = reservationsToRelease(
+      [{ product_id: 'p10', material_base_id: 'p13', pieces_per_sheet: 3, quantity_requested: 5, quantity_cut: 0 }],
+      [],
+      inv,
+    )
+    expect(Object.fromEntries(out)).toEqual({ inv13: 2 })
   })
 
   it('no libera lo que no tiene stock asignado (aprobado en pausa)', () => {

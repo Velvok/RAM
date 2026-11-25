@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/server'
+import { moveCutReservation, type CutForReservation } from '@/lib/cut-reservations'
 
 type SupabaseAdmin = ReturnType<typeof createAdminClient>
 
@@ -20,6 +21,8 @@ interface FulfillmentItem {
   requested: number
   done: number
   inventoryId: string | null
+  /** Solo cortes: datos para calcular su reserva (chapas de lo pendiente + piezas cortadas) */
+  cut?: CutForReservation
 }
 
 // Unidades aprobadas de una línea (mismo criterio que approveOrder)
@@ -77,17 +80,18 @@ async function reduceFulfillmentItem(
   amount: number,
   evoOrderId: string
 ) {
-  if (item.inventoryId) {
-    await releaseReservation(
-      supabase,
-      item.inventoryId,
-      amount,
-      `Reserva liberada por modificación del pedido ${evoOrderId} desde EVO`
-    )
-  }
-
   const newRequested = item.requested - amount
   const newDone = Math.min(item.done, newRequested)
+  const note = `Reserva liberada por modificación del pedido ${evoOrderId} desde EVO`
+  if (item.cut) {
+    // Corte: la reserva son chapas (lo pendiente) y piezas (lo cortado); se
+    // lleva de como estaba a como queda con la cantidad nueva
+    const before = { ...item.cut, quantity_requested: item.requested, quantity_cut: item.done }
+    const after = { ...item.cut, quantity_requested: newRequested, quantity_cut: newDone }
+    await moveCutReservation(supabase, before, newRequested > 0 ? after : null, note)
+  } else if (item.inventoryId) {
+    await releaseReservation(supabase, item.inventoryId, amount, note)
+  }
   if (newRequested === 0) {
     const { error } = await supabase.from(item.table).delete().eq('id', item.id)
     if (!error) return
@@ -145,7 +149,7 @@ export async function applyOrderModification(
       .order('created_at', { ascending: true }),
     supabase
       .from('cut_orders')
-      .select('id, order_line_id, quantity_requested, quantity_cut, material_base_id, created_at')
+      .select('id, order_line_id, product_id, quantity_requested, quantity_cut, quantity_delivered, pieces_per_sheet, material_base_id, reassigned_from_order_id, reassigned_quantity, created_at')
       .eq('order_id', order.id)
       .order('created_at', { ascending: true }),
     supabase
@@ -182,6 +186,7 @@ export async function applyOrderModification(
       requested: c.quantity_requested,
       done: c.quantity_cut || 0,
       inventoryId: c.material_base_id ? inventoryByProduct.get(c.material_base_id) || null : null,
+      cut: c,
     })
   }
   for (const p of prepsRes.data || []) {

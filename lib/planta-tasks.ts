@@ -1,4 +1,5 @@
 import { extractSizeFromCode } from '@/lib/product-utils'
+import { cutOutcome, isExactLength, piecesPerSheet, round2 } from '@/lib/sheet-plan'
 
 // Lógica pura de la pantalla de planta: qué tarea hay en cada pedido, en qué
 // estado está cada tarjeta de corte y qué chapa usar. Sin dependencias de UI
@@ -87,23 +88,34 @@ export function productLength(product: { length_meters?: number | string | null;
   return Number(product.length_meters) || extractSizeFromCode(product.code || '') || 0
 }
 
-/** Qué pasa con una chapa de `materialLength` al cortar piezas de `pieceLength`. */
+/**
+ * Qué da una chapa de `materialLength` para piezas de `pieceLength`: cuántas
+ * salen y qué sobra de una chapa aprovechada entera (reglas en lib/sheet-plan.ts).
+ */
 export function cutPlan(materialLength: number, pieceLength: number): { exact: boolean; remnant: number; piecesPerSheet: number } {
   if (materialLength <= 0 || pieceLength <= 0) return { exact: false, remnant: 0, piecesPerSheet: 0 }
-  const exact = Math.abs(materialLength - pieceLength) < 0.01
+  const exact = isExactLength(materialLength, pieceLength)
+  const pps = exact ? 1 : piecesPerSheet(materialLength, pieceLength)
   return {
     exact,
-    remnant: exact ? 0 : Math.max(0, Math.round((materialLength - pieceLength) * 100) / 100),
-    piecesPerSheet: 1, // el flujo actual corta una pieza por chapa; el resto es sobrante
+    remnant: exact || pps === 0 ? 0 : round2(Math.max(0, materialLength - pps * pieceLength)),
+    piecesPerSheet: pps,
   }
 }
 
-/** Ordena las chapas candidatas: primero las que dejan menos sobrante, luego por más stock. */
-export function sortByRemnant<T extends { code: string; stock_disponible: number | string }>(options: T[], pieceLength: number): T[] {
+/**
+ * Ordena las chapas candidatas para cortar `pieces` piezas: primero las que
+ * dejan menos sobrante en total, luego las que gastan menos chapas y luego por
+ * más stock. Las que son más cortas que la pieza van al final.
+ */
+export function sortByRemnant<T extends { code: string; stock_disponible: number | string }>(options: T[], pieceLength: number, pieces = 1): T[] {
+  const score = (o: T) => {
+    const out = cutOutcome(extractSizeFromCode(o.code), pieceLength, Math.max(1, pieces))
+    return out.sheets === 0 ? { leftover: Infinity, sheets: Infinity } : { leftover: out.leftoverMeters, sheets: out.sheets }
+  }
   return [...options].sort((a, b) => {
-    const ra = cutPlan(extractSizeFromCode(a.code), pieceLength).remnant
-    const rb = cutPlan(extractSizeFromCode(b.code), pieceLength).remnant
-    return ra - rb || n(b.stock_disponible) - n(a.stock_disponible)
+    const sa = score(a), sb = score(b)
+    return (sa.leftover - sb.leftover || 0) || (sa.sheets - sb.sheets || 0) || n(b.stock_disponible) - n(a.stock_disponible)
   })
 }
 

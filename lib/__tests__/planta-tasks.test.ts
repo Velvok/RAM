@@ -44,9 +44,22 @@ describe('orderProgress', () => {
 
 describe('cutPlan y sortByRemnant', () => {
   it('calcula sobrante y detecta chapa exacta', () => {
-    expect(cutPlan(9.5, 4.5)).toEqual({ exact: false, remnant: 5, piecesPerSheet: 1 })
+    // De 9,5 m salen 2 piezas de 4,5 m y sobran 0,5 m
+    expect(cutPlan(9.5, 4.5)).toEqual({ exact: false, remnant: 0.5, piecesPerSheet: 2 })
+    expect(cutPlan(12, 4)).toEqual({ exact: false, remnant: 0, piecesPerSheet: 3 })
+    expect(cutPlan(9.5, 5)).toEqual({ exact: false, remnant: 4.5, piecesPerSheet: 1 })
     expect(cutPlan(10, 10)).toEqual({ exact: true, remnant: 0, piecesPerSheet: 1 })
     expect(cutPlan(0, 4.5).piecesPerSheet).toBe(0)
+    expect(cutPlan(3, 4.5).piecesPerSheet).toBe(0)
+  })
+
+  it('para varias piezas prefiere la chapa de la que salen todas', () => {
+    const sorted = sortByRemnant([
+      { code: 'AC25110.9,5', stock_disponible: 6 },
+      { code: 'AC25110.12,0', stock_disponible: 2 },
+      { code: 'AC25110.3,0', stock_disponible: 50 },
+    ], 4, 3).map(o => o.code)
+    expect(sorted).toEqual(['AC25110.12,0', 'AC25110.9,5', 'AC25110.3,0'])
   })
 
   it('ordena por menos sobrante y luego por más stock', () => {

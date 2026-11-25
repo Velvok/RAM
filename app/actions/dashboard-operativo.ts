@@ -402,7 +402,9 @@ export async function getOperationalDashboard(): Promise<OperationalDashboard> {
   for (const a of weekActivity.filter(x => x.activity_type === 'cut_completed')) {
     const m = a.metadata || {}
     sheetsCut += Number(m.quantity_cut || 0)
-    if (Number(m.remnant_per_sheet || 0) > 0) remnantSheets += Number(m.sheets_used || 0)
+    // Cortes nuevos guardan los trozos que sobraron; los antiguos, un remanente por chapa
+    if (Array.isArray(m.leftovers)) remnantSheets += m.leftovers.reduce((t: number, l: any) => t + Number(l.count || 0), 0)
+    else if (Number(m.remnant_per_sheet || 0) > 0) remnantSheets += Number(m.sheets_used || 0)
   }
   const { count: sizeChanges } = await supabase.from('cut_orders').select('id', { count: 'exact', head: true }).not('parent_cut_order_id', 'is', null).gte('created_at', weekStart.toISOString())
 
