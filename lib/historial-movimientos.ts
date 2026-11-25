@@ -19,15 +19,15 @@ export interface MovementInput {
 
 // Registra movimientos en product_movements (base del Historial anual).
 // Nunca lanza: un fallo aquí no debe romper el flujo que lo llama.
-// Metros = unidades × largo del producto; kilos = metros × peso por metro
-// (weight_per_unit) cuando el producto lo tiene.
+// Todo en unidades; los metros (unidades × largo) quedan como dato auxiliar.
+// La columna kg es del histórico antiguo y ya no se rellena.
 export async function recordMovements(supabase: SupabaseAdmin, inputs: MovementInput[]) {
   const valid = inputs.filter(i => i.productId && i.units > 0)
   if (!valid.length) return
   try {
     const { data: products } = await supabase
       .from('products')
-      .select('id, code, length_meters, weight_per_unit')
+      .select('id, code, length_meters')
       .in('id', [...new Set(valid.map(i => i.productId))])
     const byId = new Map((products || []).map(p => [p.id, p]))
     const rows = valid.flatMap(i => {
@@ -35,7 +35,6 @@ export async function recordMovements(supabase: SupabaseAdmin, inputs: MovementI
       if (!p) return []
       const length = Number(p.length_meters) || extractSizeFromCode(p.code) || 0
       const meters = i.units * length
-      const kg = Number(p.weight_per_unit) ? i.units * Number(p.weight_per_unit) : 0
       return [{
         product_id: i.productId,
         family_code: extractFamilyCode(p.code),
@@ -43,7 +42,6 @@ export async function recordMovements(supabase: SupabaseAdmin, inputs: MovementI
         movement_type: i.type,
         units: i.units,
         meters,
-        kg,
         client_id: i.clientId ?? null,
         order_id: i.orderId ?? null,
         order_number: i.orderNumber ?? null,

@@ -201,7 +201,7 @@ async function processStockUpdate(payload: StockActualizadoPayload) {
           evo_product_id: item.id_articulo,
           name: item.nombre || `Producto ${item.id_articulo}`,
           category: 'chapa',
-          unit: 'kg',
+          unit: 'ud',
           is_active: true
         })
       }

@@ -1116,7 +1116,7 @@ export async function markOrderAsDelivered(orderId: string) {
           product_code: product?.code,
           evo_product_id: product?.evo_product_id,
           quantity: line.quantity,
-          unit: product?.unit || 'm',
+          unit: 'ud', // RAM cuenta siempre en unidades
         }
       })
 
