@@ -4,7 +4,8 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
 import { createWebhookVerifier } from '@/lib/webhook-security'
 import { applyOrderModification, MODIFIABLE_APPROVED_STATUSES } from '@/lib/order-modification'
-import { updateOrderStatus } from '@/app/actions/orders'
+import { approveOrderOnHold, updateOrderStatus } from '@/app/actions/orders'
+import { isMostrador, shouldAutoApprove } from '@/lib/mostrador'
 import { runAsSystem } from '@/lib/auth/guards'
 
 export const dynamic = 'force-dynamic'
@@ -532,11 +533,17 @@ async function processPedidoNuevo(payload: PedidoNuevoPayload, eventKey: string)
       console.log(`✅ Created ${orderLines.length} order lines`)
     }
 
+    // Mostrador: se aprueba al entrar (ver lib/mostrador.ts). En ese caso no se
+    // crean aquí las preparaciones provisionales: las crea la aprobación con su
+    // línea y su stock, y si no quedarían duplicadas.
+    const missingProducts = payload.items.filter(i => !productIds.has(i.id_articulo)).length
+    const autoApprove = shouldAutoApprove({ refEvo: ref_evo, missingProducts })
+
     // NOTA: Las cut_orders se crean solo cuando se acepta el pedido, no al recibirlo
     // Crear preparation_items en bulk (para accesorios)
     const preparationItems: any[] = []
 
-    for (const item of payload.items) {
+    for (const item of autoApprove ? [] : payload.items) {
       const product = productIds.get(item.id_articulo)
       if (!product) continue
 
@@ -566,6 +573,12 @@ async function processPedidoNuevo(payload: PedidoNuevoPayload, eventKey: string)
       }
     }
 
+    if (autoApprove) {
+      await autoApproveMostrador(supabase, order.id, errors)
+    } else if (missingProducts > 0 && isMostrador(ref_evo)) {
+      errors.push('Pedido de Mostrador sin aprobar automáticamente: hay artículos que no existen en RAM')
+    }
+
     console.log(`\n✅ Pedido ${payload.id_pedido} processed: ${errors.length} errors`)
 
     await updateEventStatus(
@@ -584,6 +597,33 @@ async function processPedidoNuevo(payload: PedidoNuevoPayload, eventKey: string)
       false,
       [error instanceof Error ? error.message : 'Unknown error']
     )
+  }
+}
+
+// Aprueba en pausa un pedido de Mostrador: se asigna lo que tiene stock y, si
+// todo lo tenía, approveOrderOnHold lo deja ya en 'aprobado'. Si falla, el
+// pedido se queda en 'nuevo' para aprobarlo a mano.
+async function autoApproveMostrador(
+  supabase: ReturnType<typeof createAdminClient>,
+  orderId: string,
+  errors: string[]
+) {
+  try {
+    await approveOrderOnHold(orderId)
+    const { data: o } = await supabase.from('orders').select('status').eq('id', orderId).single()
+    const enPausa = o?.status === 'aprobado_en_pausa'
+    await supabase.from('order_activity_log').insert({
+      order_id: orderId,
+      activity_type: 'auto_approved',
+      description: enPausa
+        ? 'Pedido de Mostrador aprobado automáticamente en pausa: falta asignar stock a alguna línea'
+        : 'Pedido de Mostrador aprobado automáticamente: había stock de todo',
+      metadata: { status: o?.status, origen: 'mostrador' },
+    })
+    console.log(`✅ Pedido de Mostrador ${orderId} aprobado automáticamente (${o?.status})`)
+  } catch (error) {
+    console.error('Error aprobando automáticamente el pedido de Mostrador:', error)
+    errors.push('No se pudo aprobar automáticamente el pedido de Mostrador: queda pendiente de aprobar')
   }
 }
 
