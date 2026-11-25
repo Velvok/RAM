@@ -146,8 +146,11 @@ function AssignSheetsPanel({ order, item, onClose, onDone }: { order: any; item:
           .filter((r: any) => cutPlan(r.length, pieceLength).piecesPerSheet > 0)
         const sorted = sortByRemnant(list, pieceLength, remaining)
         setRows(sorted)
-        // Propuesta del sistema: exactas primero y luego la que menos sobra
-        const plan = proposePlan(remaining, pieceLength, sorted.filter((r: any) => r.product_id !== currentProductId).map((r: any) => ({ id: r.id, length: r.length, available: r.stock_disponible })))
+        // Sin chapa: propuesta del sistema (exactas primero y luego la que menos
+        // sobra). Si ya tiene una, no se propone nada: la asignada ya era la mejor.
+        const plan = currentProductId
+          ? { parts: [] }
+          : proposePlan(remaining, pieceLength, sorted.map((r: any) => ({ id: r.id, length: r.length, available: r.stock_disponible })))
         setUse(Object.fromEntries(plan.parts.map(p => [p.id, p.sheets])))
       })
       .catch(e => {
