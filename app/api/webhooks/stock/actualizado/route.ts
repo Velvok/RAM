@@ -290,6 +290,13 @@ async function processStockUpdate(payload: StockActualizadoPayload) {
           .in('movement_type', ['corte', 'remanente'])
           .gte('occurred_at', weekAgo)
         const skip = new Set((ours || []).map(o => o.product_id))
+        // Tampoco es una compra la chapa que vuelve al stock al deshacer un corte
+        const { data: undone } = await supabase
+          .from('cut_lines')
+          .select('material_used_id')
+          .in('material_used_id', increased.map(u => u.product_id))
+          .gte('reverted_at', weekAgo)
+        for (const u of undone || []) skip.add(u.material_used_id)
         await recordMovements(supabase, increased.filter(u => !skip.has(u.product_id)).map(u => ({
           productId: u.product_id, type: 'compra' as const, units: Number(u.stock_total) - before.get(u.product_id)!,
           source: 'stock_actualizado', sourceRef: payload.id_evento,

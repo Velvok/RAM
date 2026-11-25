@@ -180,8 +180,8 @@ export async function processCutOrder(params: {
 
   console.log(`✅ Cut_order actualizada: status=${isFullyCompleted ? 'completada' : 'pendiente'}, quantity_cut=${newQuantityCut}`)
   
-  // Registrar cut_line
-  await supabase
+  // Registrar cut_line (es la unidad que luego se puede deshacer: undoLastCut)
+  const { data: cutLine } = await supabase
     .from('cut_lines')
     .insert({
       cut_order_id: cutOrderId,
@@ -191,6 +191,10 @@ export async function processCutOrder(params: {
       remnant_generated: remnantPerSheet * sheetsUsed,
       is_scrap: false,
     })
+    .select('id')
+    .maybeSingle()
+  // Evento que se manda a EVO por este corte (si se manda)
+  let outboundEventId: string | null = null
   
   // Actualizar estado del pedido
   await updateOrderStatus(cutOrder.order_id)
@@ -237,7 +241,7 @@ export async function processCutOrder(params: {
           movimientos,
         })
 
-        await notifyChapaPreparada({
+        outboundEventId = await notifyChapaPreparada({
           cutOrderId,
           orderId: cutOrder.order_id,
           idPedido: evoOrderId,
@@ -374,7 +378,7 @@ export async function processCutOrder(params: {
             movimientos,
           })
 
-          await notifyCorteRealizado({
+          outboundEventId = await notifyCorteRealizado({
             cutOrderId,
             orderId: cutOrder.order_id,
             idPedido: evoOrderId,
@@ -401,6 +405,11 @@ export async function processCutOrder(params: {
     }])
   }
   
+  // Enlazar el corte con su evento a EVO: al deshacerlo hay que saber qué se envió
+  if (cutLine?.id && outboundEventId) {
+    await supabase.from('cut_lines').update({ outbound_event_id: outboundEventId }).eq('id', cutLine.id)
+  }
+
   // Registrar actividad en el historial
   const { data: operatorRow } = await operatorPromise
   const operator = operatorRow ? { name: operatorRow.full_name } : null
@@ -428,6 +437,7 @@ export async function processCutOrder(params: {
       sheets_used: sheetsUsed,
       is_completed: isFullyCompleted,
       occurred_at: params.occurredAt ?? null,
+      cut_line_id: cutLine?.id ?? null,
     }
   })
   

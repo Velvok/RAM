@@ -15,6 +15,7 @@ import { AssignStockPanel, ReassignPanel, Summary, unassignedLines, type PanelLi
 import OrderActions from './order-actions'
 import { PlantaSyncBanner } from '@/components/pedido/planta-sync-banner'
 import { DeleteOrderButton } from '@/components/pedido/delete-order-button'
+import { OrderHistory } from '@/components/pedido/order-history'
 
 const n = (v: unknown) => Number(v) || 0
 
@@ -469,23 +470,7 @@ export default function OrderDetailClient({ initialOrder, canDelete }: { initial
 
           <OrderNotesAdmin orderId={order.id} />
 
-          <section className={cn(card, 'flex flex-col gap-3 p-5')}>
-            <h2 className="text-base font-semibold text-foreground">Historial</h2>
-            {activityLog.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Todavía no hay movimientos.</p>
-            ) : (
-              <ol className="flex max-h-[420px] flex-col gap-2.5 overflow-y-auto pr-1">
-                {activityLog.map(a => (
-                  <li key={a.id} className="flex gap-3 text-[13px]">
-                    <span className="w-[74px] shrink-0 tabular-nums text-muted-foreground">
-                      {new Date(a.created_at).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}
-                    </span>
-                    <span className="text-foreground">{a.description}</span>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </section>
+          <OrderHistory orderId={order.id} orderNumber={order.order_number} activityLog={activityLog} onChanged={reloadOrder} className={card} />
         </aside>
       </div>
     </div>
