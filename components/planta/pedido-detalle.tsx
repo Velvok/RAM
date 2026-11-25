@@ -31,8 +31,13 @@ type Done = { title: string; lines: string[] }
 
 const n = (v: unknown) => Number(v) || 0
 
+const TZ = 'America/Argentina/Buenos_Aires'
+/** Hora de Argentina; si no es de hoy (en Argentina), con el día delante: «23/11 19:00». */
 function hora(iso: string) {
-  return new Date(iso).toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+  const d = new Date(iso)
+  const time = d.toLocaleTimeString('es-AR', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+  const day = (x: Date) => x.toLocaleDateString('es-AR', { timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric' })
+  return day(d) === day(new Date()) ? time : `${d.toLocaleDateString('es-AR', { timeZone: TZ, day: '2-digit', month: '2-digit' })} ${time}`
 }
 
 
