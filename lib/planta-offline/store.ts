@@ -260,14 +260,30 @@ export function startPlantaSync() {
   try { void navigator.storage?.persist?.() } catch {}
 }
 
-/** Lee del servidor y guarda la foto; sin conexión devuelve la última foto. */
+/** Con el wifi flojo no se espera más que esto: se enseña la última foto y la respuesta, si llega, se guarda. */
+const SLOW_MS = 8000
+
+/**
+ * Lee del servidor y guarda la foto; sin conexión devuelve la última foto. Si
+ * la conexión es tan lenta que tarda más de 8 s y hay foto, devuelve la foto
+ * para no dejar la pantalla esperando.
+ */
 export async function fetchWithSnapshot<T>(key: string, load: () => Promise<T>): Promise<{ data: T; savedAt: string; fromCache: boolean } | null> {
   try {
     if (typeof navigator !== 'undefined' && !navigator.onLine) throw new Error('offline')
-    const data = await load()
-    await saveSnapshot(key, data)
-    setState({ online: true })
-    return { data, savedAt: new Date().toISOString(), fromCache: false }
+    const request = load().then(async data => {
+      await saveSnapshot(key, data)
+      setState({ online: true })
+      return { data, savedAt: new Date().toISOString(), fromCache: false }
+    })
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const slow = new Promise<'slow'>(resolve => { timer = setTimeout(() => resolve('slow'), SLOW_MS) })
+    const first = await Promise.race([request, slow]).finally(() => clearTimeout(timer))
+    if (first !== 'slow') return first
+    const snap = await readSnapshot<T>(key)
+    if (!snap) return await request
+    request.catch(() => {}) // sigue en marcha: si llega, deja la foto al día para el siguiente refresco
+    return { data: snap.data, savedAt: snap.savedAt, fromCache: true }
   } catch (e) {
     // Solo es «sin conexión» si falla la red; un error del servidor no lo es
     const offline = (typeof navigator !== 'undefined' && !navigator.onLine) || (e as any)?.message === 'offline' || e instanceof TypeError

@@ -86,7 +86,7 @@ function PlantaPedidos() {
   const [filter, setFilter] = useState<PlantaTask | 'todos'>('todos')
   const [search, setSearch] = useState('')
   const [showSearch, setShowSearch] = useState(false)
-  const [unreadNotes, setUnreadNotes] = useState<Record<string, number>>({})
+  const [notesByOrder, setNotesByOrder] = useState<Record<string, { total: number; unread: number }>>({})
 
   // Acciones guardadas en la tablet aún sin enviar, pintadas encima de la lista
   const pedidos = useMemo(() => basePedidos.map(p => applyPendingToOrder(p, pending)), [basePedidos, pending])
@@ -97,17 +97,17 @@ function PlantaPedidos() {
       const r = await fetchWithSnapshot('orders', () => getOrdersForPlanta())
       if (r) {
         const data = r.data || []
-        setBasePedidos(data)
+        setBasePedidos(prev => { try { return JSON.stringify(prev) === JSON.stringify(data) ? prev : data } catch { return data } })
         setSavedAt(r.savedAt)
         setFromCache(r.fromCache)
         if (!r.fromCache && data.length) {
-          const { getUnreadNotesCountByOrders } = await import('@/app/actions/order-notes')
-          const u = await fetchWithSnapshot('unread', () => getUnreadNotesCountByOrders(data.map((p: any) => p.id)))
-          if (u) setUnreadNotes(u.data)
+          const { getNotesSummaryByOrders } = await import('@/app/actions/order-notes')
+          const u = await fetchWithSnapshot('notes-summary', () => getNotesSummaryByOrders(data.map((p: any) => p.id)))
+          if (u) setNotesByOrder(u.data)
           void prefetchForOffline(data)
         } else if (r.fromCache) {
-          const u = await readSnapshot<Record<string, number>>('unread')
-          if (u) setUnreadNotes(u.data)
+          const u = await readSnapshot<Record<string, { total: number; unread: number }>>('notes-summary')
+          if (u) setNotesByOrder(u.data)
         }
       }
     } catch (error) {
@@ -124,6 +124,9 @@ function PlantaPedidos() {
       return
     }
     setOperator(JSON.parse(operatorData))
+    // Primero lo guardado en la tablet (al instante) y después lo del servidor
+    readSnapshot<any[]>('orders').then(s => { if (s?.data?.length) { setBasePedidos(prev => prev.length ? prev : s.data); setLoading(false) } })
+    readSnapshot<Record<string, { total: number; unread: number }>>('notes-summary').then(s => { if (s) setNotesByOrder(prev => Object.keys(prev).length ? prev : s.data) })
     loadPedidos()
   }, [router, loadPedidos])
 
@@ -135,8 +138,11 @@ function PlantaPedidos() {
 
   // Refresco periódico de la lista completa (cambios desde admin, notas nuevas)
   useEffect(() => {
+    let running = false
     const interval = setInterval(() => {
-      if (!document.hidden && !openId) loadPedidos()
+      if (document.hidden || openId || running) return
+      running = true
+      loadPedidos().finally(() => { running = false })
     }, 15000)
     return () => clearInterval(interval)
   }, [openId, loadPedidos])
@@ -214,7 +220,7 @@ function PlantaPedidos() {
         ) : (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {filtered.map(pedido => (
-              <OrderCard key={pedido.id} pedido={pedido} unread={unreadNotes[pedido.id] || 0} onOpen={() => openOrder(pedido.id)} />
+              <OrderCard key={pedido.id} pedido={pedido} notes={notesByOrder[pedido.id]} onOpen={() => openOrder(pedido.id)} />
             ))}
           </div>
         )}
@@ -235,7 +241,9 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
   )
 }
 
-function OrderCard({ pedido, unread, onOpen }: { pedido: any; unread: number; onOpen: () => void }) {
+function OrderCard({ pedido, notes, onOpen }: { pedido: any; notes?: { total: number; unread: number }; onOpen: () => void }) {
+  const unread = notes?.unread || 0
+  const totalNotes = notes?.total || 0
   const task = mainTask(pedido)
   const progress = orderProgress(pedido)
   const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0
@@ -270,7 +278,7 @@ function OrderCard({ pedido, unread, onOpen }: { pedido: any; unread: number; on
       <div className="flex flex-wrap gap-2">
         {visible.map(l => (
           <span key={l.key} className={cn('inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[15px] font-semibold', P.border, l.state === 'terminada' ? 'text-[#4ade80]' : l.state === 'sin_chapa' ? 'text-[#94a3b8] line-through decoration-[#64748b]' : P.text)}>
-            {l.code || '—'} <span className="opacity-70">×{l.qty}</span>
+            <span className={cn('text-[17px] font-extrabold tabular-nums', l.state === 'terminada' || l.state === 'sin_chapa' ? '' : l.state === 'preparar' ? 'text-[#93c5fd]' : 'text-[#fbbf24]')}>{l.qty}</span> <span className="opacity-60">×</span> {l.code || '—'}
           </span>
         ))}
         {lines.length > visible.length && <span className={cn('px-1 py-1 text-[15px]', P.muted)}>+{lines.length - visible.length} más</span>}
@@ -290,9 +298,13 @@ function OrderCard({ pedido, unread, onOpen }: { pedido: any; unread: number; on
               {pedido._pendingOps} sin enviar
             </span>
           )}
-          {unread > 0 && (
+          {unread > 0 ? (
             <span className="inline-flex items-center gap-1.5 rounded-full border border-[#f59e0b]/60 bg-[#f59e0b]/15 px-3 py-1 text-[15px] font-bold text-[#fbbf24]">
-              <MessageSquare className="h-4 w-4" /> {unread} {unread === 1 ? 'nota' : 'notas'}
+              <MessageSquare className="h-4 w-4" /> {unread} {unread === 1 ? 'nota sin leer' : 'notas sin leer'}
+            </span>
+          ) : totalNotes > 0 && (
+            <span className={cn('inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[15px] font-semibold', P.border, P.soft)}>
+              <MessageSquare className="h-4 w-4" /> {totalNotes === 1 ? 'Tiene nota' : `Tiene ${totalNotes} notas`}
             </span>
           )}
         </div>

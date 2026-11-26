@@ -114,7 +114,7 @@ export function PlantaOfflineBanner({ savedAt, fromCache }: { savedAt: string | 
   if (s.online && !fromCache) return null
   return (
     <div className="border-b border-[#f59e0b]/40 bg-[#f59e0b]/10 px-6 py-2.5 text-center text-[15px] font-semibold text-[#fbbf24]">
-      Sin conexión · datos de las {hora(savedAt)} · lo que hagas se guarda en la tablet y se envía al volver la conexión
+      {s.online ? 'Conexión lenta' : 'Sin conexión'} · datos de las {hora(savedAt)} · lo que hagas se guarda en la tablet y se envía {s.online ? 'en cuanto pueda' : 'al volver la conexión'}
     </div>
   )
 }

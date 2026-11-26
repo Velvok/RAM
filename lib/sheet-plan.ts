@@ -72,6 +72,33 @@ export function cutOutcome(sheetLength: number, pieceLength: number, pieces: num
   }
 }
 
+export interface SheetLayout {
+  /** Cuántas chapas quedan así */
+  count: number
+  /** Piezas que salen de cada una */
+  pieces: number
+  /** Trozo que sobra de cada una, en metros (0 si se aprovecha entera) */
+  leftover: number
+}
+
+/**
+ * Cómo queda cada chapa al cortar `pieces` piezas, para dibujarlo: primero las
+ * chapas aprovechadas enteras (agrupadas) y después la última, de la que solo
+ * salen las piezas que faltan y sobra el resto en un único trozo.
+ */
+export function sheetLayouts(sheetLength: number, pieceLength: number, pieces: number): SheetLayout[] {
+  const pps = piecesPerSheet(sheetLength, pieceLength)
+  const k = Math.max(0, Math.floor(num(pieces)))
+  if (pps === 0 || k === 0) return []
+  if (isExactLength(sheetLength, pieceLength)) return [{ count: k, pieces: 1, leftover: 0 }]
+  const full = Math.floor(k / pps)
+  const rest = k % pps
+  const out: SheetLayout[] = []
+  if (full > 0) out.push({ count: full, pieces: pps, leftover: round2(Math.max(0, sheetLength - pps * pieceLength)) })
+  if (rest > 0) out.push({ count: 1, pieces: rest, leftover: round2(sheetLength - rest * pieceLength) })
+  return out
+}
+
 export interface SheetCandidate {
   id: string
   length: number

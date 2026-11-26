@@ -17,7 +17,8 @@ import { PlantaSyncBanner } from '@/components/pedido/planta-sync-banner'
 import { DeleteOrderButton } from '@/components/pedido/delete-order-button'
 import { OrderHistory } from '@/components/pedido/order-history'
 import { userMessage } from '@/lib/user-error'
-import { sheetsFor } from '@/lib/sheet-plan'
+import { cutOutcome, describeLeftovers, sheetsFor } from '@/lib/sheet-plan'
+import { productLength } from '@/lib/planta-tasks'
 
 const n = (v: unknown) => Number(v) || 0
 
@@ -338,7 +339,11 @@ export default function OrderDetailClient({ initialOrder, canDelete }: { initial
                                 {/* Chapas que hacen falta para lo pedido: de cada una pueden salir varias piezas */}
                                 de <strong>{c.material_base?.code === c.product?.code ? '' : `${sheetsFor(n(c.quantity_requested), n(c.pieces_per_sheet) || 1)} × `}{c.material_base?.code || 'chapa asignada'}</strong>
                                 {c.material_base?.code === c.product?.code && <span className="ml-1.5"><Pill tone="ok">exacta</Pill></span>}
-                                {n(c.pieces_per_sheet) > 1 && <span className="ml-1.5 text-xs text-muted-foreground">{n(c.pieces_per_sheet)} por chapa</span>}
+                                {c.material_base?.code !== c.product?.code && (() => {
+                                  // Lo que sobra al cortar lo pedido, no lo que cabe en la chapa
+                                  const o = cutOutcome(productLength(c.material_base), productLength(c.product), n(c.quantity_requested))
+                                  return o.sheets > 0 ? <span className="ml-1.5 text-xs text-muted-foreground">{o.leftovers.length ? `sobra ${describeLeftovers(o.leftovers)}` : 'sin sobrante'}</span> : null
+                                })()}
                               </span>
                             ) : c.status === 'pendiente_confirmacion' ? (
                               <span className="text-xs text-muted-foreground">reasignada de otro pedido</span>

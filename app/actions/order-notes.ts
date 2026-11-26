@@ -145,6 +145,33 @@ export async function getUnreadNotesCountByOrders(orderIds: string[]): Promise<R
   return counts
 }
 
+/**
+ * Notas de la oficina por pedido para la lista de planta: cuántas hay y cuántas
+ * siguen sin leer. Las respuestas de la propia planta no cuentan.
+ */
+export async function getNotesSummaryByOrders(orderIds: string[]): Promise<Record<string, { total: number; unread: number }>> {
+  await requireStaff()
+
+  if (!orderIds.length) return {}
+  const supabase = createAdminClient()
+
+  const { data, error } = await supabase
+    .from('order_notes')
+    .select('order_id, read_at, created_by_name')
+    .in('order_id', orderIds)
+
+  if (error) throw error
+
+  const summary: Record<string, { total: number; unread: number }> = {}
+  for (const row of data || []) {
+    if (String(row.created_by_name || '').endsWith('(planta)')) continue
+    const s = (summary[row.order_id] ||= { total: 0, unread: 0 })
+    s.total++
+    if (!row.read_at) s.unread++
+  }
+  return summary
+}
+
 export async function deleteOrderNote(noteId: string, orderId: string): Promise<void> {
   await requireAdmin()
 

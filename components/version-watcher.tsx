@@ -7,10 +7,10 @@ import { looksLikeStaleDeploy, STALE_CHECK_EVENT } from '@/lib/stale-deploy'
 // pestaña abierta durante horas (la tablet de planta, el panel) no se quede
 // llamando a acciones que ya no existen. Solo recarga si no hay nada a medias:
 // sin modales ni paneles abiertos, sin un campo con el foco y sin tocar la
-// pantalla en los últimos segundos.
+// pantalla en el último minuto.
 const CHECK_EVERY_MS = 2 * 60 * 1000
 const RETRY_MS = 10 * 1000
-const IDLE_MS = 20 * 1000
+const IDLE_MS = 60 * 1000
 const LOOP_KEY = 'ram-reloaded-for-version'
 
 export function VersionWatcher() {

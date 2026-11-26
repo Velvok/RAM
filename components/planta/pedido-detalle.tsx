@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { ArrowLeft, Check, ChevronRight, MessageSquare, X } from 'lucide-react'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
-import { enqueue, fetchWithSnapshot, pendingFor, type QueuedOp } from '@/lib/planta-offline/store'
+import { enqueue, fetchWithSnapshot, pendingFor, readSnapshot, type QueuedOp } from '@/lib/planta-offline/store'
 import { applyPendingToNotes, applyPendingToOrder } from '@/lib/planta-offline/apply'
 import { PlantaOfflineBanner, PlantaRefreshButton, PlantaSyncBadge, useSyncState } from '@/components/planta/sync-status'
 import { BigButton, Label, P, PlantaHeader, PlantaStepper } from './planta-ui'
@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils'
 import { userMessage } from '@/lib/user-error'
 import { sinOrdenDeCorte } from '@/lib/planta-texto'
 import { cutOutcome, describeLeftovers, sheetsFor } from '@/lib/sheet-plan'
+import { SheetMini, SheetPlan } from '@/components/sheet-bar'
 
 // Respuestas de la tablet a las notas del admin: acuse, confirmación o duda
 const QUICK_REPLIES = ['Recibido', 'Confirmado', 'Tengo una duda']
@@ -33,6 +34,8 @@ const STATE_LABEL: Record<CutCardState, { text: string; tone: 'amber' | 'green' 
 type Done = { title: string; lines: string[] }
 
 const n = (v: unknown) => Number(v) || 0
+/** ¿Los datos nuevos son iguales a los que ya se ven? Entonces no se repinta nada. */
+const same = (a: unknown, b: unknown) => { try { return JSON.stringify(a) === JSON.stringify(b) } catch { return false } }
 
 const TZ = 'America/Argentina/Buenos_Aires'
 /** Hora de Argentina; si no es de hoy (en Argentina), con el día delante: «23/11 19:00». */
@@ -78,7 +81,7 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
   const loadPedido = useCallback(async () => {
     const { getOrderById } = await import('@/app/actions/client-queries')
     const r = await fetchWithSnapshot(`order:${pedidoId}`, () => getOrderById(pedidoId))
-    if (r) { setBase(r.data); setSavedAt(r.savedAt); setFromCache(r.fromCache) }
+    if (r) { setBase((prev: any) => same(prev, r.data) ? prev : r.data); setSavedAt(r.savedAt); setFromCache(r.fromCache) }
     return r?.data
   }, [pedidoId])
 
@@ -86,7 +89,7 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
     try {
       const { getOrderNotes } = await import('@/app/actions/order-notes')
       const r = await fetchWithSnapshot(`notes:${pedidoId}`, () => getOrderNotes(pedidoId))
-      if (r) setRawNotes(r.data)
+      if (r) setRawNotes(prev => same(prev, r.data) ? prev : r.data)
     } catch (e) {
       console.error('Error cargando notas:', e)
     }
@@ -96,7 +99,7 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
     try {
       const { getPlantaOrderActivity } = await import('@/app/actions/client-queries')
       const r = await fetchWithSnapshot(`activity:${pedidoId}`, () => getPlantaOrderActivity(pedidoId))
-      if (r) setActivity(r.data)
+      if (r) setActivity(prev => same(prev, r.data) ? prev : r.data)
     } catch (e) {
       console.error('Error cargando actividad:', e)
     }
@@ -109,7 +112,11 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
       return
     }
     setOperator(JSON.parse(operatorData))
-    loadPedido().catch(e => console.error('Error cargando pedido:', e)).finally(() => setLoading(false))
+    // Primero lo guardado en la tablet (al instante) y después lo del servidor
+    let fresh = false
+    readSnapshot<any>(`order:${pedidoId}`).then(s => { if (s && !fresh) { setBase((prev: any) => prev ?? s.data); setLoading(false) } })
+    readSnapshot<any[]>(`notes:${pedidoId}`).then(s => { if (s && !fresh) setRawNotes(prev => prev.length ? prev : s.data) })
+    loadPedido().catch(e => console.error('Error cargando pedido:', e)).finally(() => { fresh = true; setLoading(false) })
     loadNotes()
     loadActivity()
     refreshPending()
@@ -119,14 +126,18 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
   useEffect(() => { refreshPending() }, [sync.pending, refreshPending])
   // Tras enviar, traer el estado real del servidor
   useEffect(() => {
-    if (sync.lastSyncAt && sync.online) { loadPedido().catch(() => {}); loadNotes(); loadActivity(); setStockByCut({}) }
+    // El stock no se vacía con el selector de chapas abierto: se quedaría sin opciones a media elección
+    if (sync.lastSyncAt && sync.online) { loadPedido().catch(() => {}); loadNotes(); loadActivity(); if (!changeFor) setStockByCut({}) }
   }, [sync.lastSyncAt]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cambios desde admin (asignaciones, notas, reasignaciones) sin recargar la página
   useAutoRefresh(pedidoId, loadPedido, { enabled: true, interval: 10, onChange: () => {} })
   useEffect(() => {
+    let running = false
     const interval = setInterval(() => {
-      if (!document.hidden) { loadNotes(); loadActivity() }
+      if (document.hidden || running) return
+      running = true
+      Promise.all([loadNotes(), loadActivity()]).finally(() => { running = false })
     }, 15000)
     return () => clearInterval(interval)
   }, [loadNotes, loadActivity])
@@ -330,6 +341,29 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
       />
       <PlantaOfflineBanner savedAt={savedAt} fromCache={fromCache} />
 
+      {/* Las notas de la oficina sustituyen al papel: fijas arriba durante todo el pedido, leídas o no */}
+      {adminNotes.length > 0 && (
+        <div className="mx-auto max-w-[1180px] px-6 pt-5">
+          <div className="flex flex-col gap-3 rounded-2xl border-2 border-[#f59e0b] bg-[#f59e0b]/10 p-5">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="h-5 w-5 text-[#fbbf24]" />
+              <Label tone="amber">{adminNotes.length === 1 ? 'Nota de la oficina' : `Notas de la oficina · ${adminNotes.length}`}</Label>
+            </div>
+            {adminNotes.map(note => (
+              <div key={note.id} className="flex items-start justify-between gap-4 border-t border-[#f59e0b]/30 pt-3 first:border-t-0 first:pt-0">
+                <div className="min-w-0">
+                  <div className={cn('whitespace-pre-wrap text-[22px] font-bold leading-snug', P.text)}>{note.content}</div>
+                  <div className={cn('mt-1 text-[14px]', P.muted)}>{note.created_by_name || 'Oficina'} · {hora(note.created_at)}</div>
+                </div>
+                {note.read_at
+                  ? <span className="inline-flex shrink-0 items-center gap-1 pt-1 text-[15px] font-semibold text-[#4ade80]"><Check className="h-5 w-5" /> Leída</span>
+                  : <BigButton tone="amber" className="h-14 shrink-0 px-6 text-lg" onClick={() => handleMarkRead(note.id)}>Leída</BigButton>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <main className="mx-auto grid max-w-[1180px] grid-cols-1 gap-5 px-6 py-5 lg:grid-cols-[1fr_380px]">
         <section className="flex flex-col gap-4">
           <div className="flex items-center justify-between">
@@ -380,12 +414,15 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
               const finished = remaining <= 0
               return (
                 <div key={item.id} className={cn('flex flex-col gap-3 rounded-xl border p-3', P.border, P.panel)}>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className={cn('text-lg font-bold leading-tight', P.text)}>{item.product?.name}</div>
-                      <div className={cn('text-[15px]', P.muted)}>{item.product?.code}{!item.assigned_inventory && !finished && ' · sin stock asignado, prepara lo que haya'}</div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex w-[64px] shrink-0 flex-col items-center">
+                      <span className={cn('text-[36px] font-extrabold leading-none tabular-nums', finished ? 'text-[#4ade80]' : 'text-[#93c5fd]')}>{finished ? total : remaining}</span>
+                      <span className={cn('text-[12px] font-semibold', P.muted)}>{finished ? 'listas' : remaining === 1 ? 'unidad' : 'unidades'}</span>
                     </div>
-                    <span className={cn('shrink-0 text-lg font-bold tabular-nums', finished ? 'text-[#4ade80]' : P.soft)}>{doneQ}/{total}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className={cn('text-[17px] font-bold leading-tight', P.text)}>{item.product?.name}</div>
+                      <div className={cn('text-[15px]', P.muted)}>{item.product?.code} · {doneQ} de {total}{!item.assigned_inventory && !finished && ' · sin stock asignado, prepara lo que haya'}</div>
+                    </div>
                   </div>
                   {finished ? (
                     <div className="inline-flex items-center gap-2 text-base font-semibold text-[#4ade80]"><Check className="h-5 w-5" /> Preparado</div>
@@ -524,39 +561,44 @@ function ActiveCutCard({ cut, rows, qty, onQty, busy, onCut, onChange }: {
   const otherOptions = (rows || []).filter(r => r.product_id !== cut.material_base_id).length
 
   return (
-    <div className={cn('flex flex-col gap-5 rounded-2xl border-2 border-[#f59e0b] p-6', P.card)}>
+    <div className={cn('flex flex-col gap-7 rounded-2xl border-2 border-[#f59e0b] p-7', P.card)}>
+      {/* La cantidad manda: es lo primero y lo más grande, para que nadie la confunda con un número del nombre */}
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <div className={cn('text-[30px] font-extrabold leading-tight', P.text)}>{cut.product?.name || cut.product?.code}</div>
-          <div className={cn('text-lg', P.muted)}>{cut.product?.code}</div>
+          <Label tone="amber">{doneQ > 0 ? 'Faltan por cortar' : 'Hay que cortar'}</Label>
+          <div className="flex items-baseline gap-3">
+            <span className="text-[84px] font-extrabold leading-none tabular-nums text-[#fbbf24]">{remaining}</span>
+            <span className={cn('text-[30px] font-extrabold leading-tight', P.text)}>
+              {remaining === 1 ? 'pieza' : 'piezas'}{pieceLength ? ` de ${formatMeters(pieceLength)}` : ''}
+            </span>
+          </div>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           <Label tone="amber">{doneQ > 0 ? 'Cortando' : 'Por empezar'}</Label>
-          <span className={cn('text-2xl font-extrabold tabular-nums', P.text)}>{doneQ}/{total}</span>
+          <span className={cn('text-lg font-semibold tabular-nums', P.soft)}>{doneQ} de {total} cortadas</span>
         </div>
       </div>
-
-      <div className="grid grid-cols-3 gap-3">
-        <Box label="Chapa asignada" value={cut.material_product?.code || '—'} hint={materialLength ? `${sheetsNeeded} ${sheetsNeeded === 1 ? 'chapa' : 'chapas'} de ${formatMeters(materialLength)}${assigned ? ` · ${n(assigned.stock_disponible)} más disponibles` : ''}` : 'Sin largo conocido'} />
-        <Box
-          label={plan.exact ? 'Largo' : 'De cada chapa salen'}
-          value={plan.exact ? formatMeters(pieceLength) : plan.piecesPerSheet ? `${plan.piecesPerSheet} ${plan.piecesPerSheet === 1 ? 'pieza' : 'piezas'}` : '—'}
-          hint={plan.exact ? 'Chapa exacta: no hay que cortar' : pieceLength ? `de ${formatMeters(pieceLength)}` : undefined}
-        />
-        <Box
-          label="Sobrante"
-          value={out.leftovers.length ? describeLeftovers(out.leftovers) : 'Ninguno'}
-          hint={plan.exact ? 'Chapa exacta' : out.leftovers.length ? 'va al estante de remanentes' : 'se aprovecha toda la chapa'}
-          tone={out.leftovers.length ? 'default' : 'green'}
-        />
+      <div className="-mt-2 min-w-0">
+        <div className={cn('text-xl font-semibold leading-snug', P.soft)}>{cut.product?.name || cut.product?.code}</div>
+        <div className={cn('text-base', P.muted)}>{cut.product?.code}</div>
       </div>
 
-      {!plan.exact && out.sheets > 0 && (
-        <div className={cn('rounded-xl border px-4 py-3 text-base', P.border, P.text)}>
-          Gastas <strong>{out.sheets} {out.sheets === 1 ? 'chapa' : 'chapas'} de {formatMeters(materialLength)}</strong> y salen <strong>{value} {value === 1 ? 'pieza' : 'piezas'} de {formatMeters(pieceLength)}</strong>.
-          {out.leftovers.length > 0 && <span className="text-[#fbbf24]"> Sobra {describeLeftovers(out.leftovers)}: va al estante{remaining - value > 0 ? ` y quedan ${remaining - value} por cortar` : ''}.</span>}
+      {/* Plano de corte: de qué chapa sale, qué sobra y el dibujo a escala, en su propio recuadro */}
+      <div className={cn('flex flex-col gap-5 rounded-2xl border px-6 pb-6 pt-5', P.panel, P.border)}>
+        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+          <div className="min-w-0">
+            <Label>Se corta de</Label>
+            <div className={cn('text-[22px] font-extrabold leading-tight', P.text)}>{sheetsNeeded} {sheetsNeeded === 1 ? 'chapa' : 'chapas'} {cut.material_product?.code || '—'}</div>
+            {assigned && <div className={cn('text-[14px]', P.muted)}>{n(assigned.stock_disponible)} más disponibles</div>}
+          </div>
+          <div className="text-right">
+            <Label>Sobrante</Label>
+            <div className={cn('text-[22px] font-extrabold leading-tight', out.leftovers.length ? 'text-[#7dd3fc]' : 'text-[#4ade80]')}>{out.leftovers.length ? describeLeftovers(out.leftovers) : 'Ninguno'}</div>
+            {plan.exact && <div className={cn('text-[14px]', P.muted)}>Chapa exacta: no hay que cortar</div>}
+          </div>
         </div>
-      )}
+        {!plan.exact && out.sheets > 0 && <SheetPlan variant="planta" sheetLength={materialLength} pieceLength={pieceLength} pieces={value} />}
+      </div>
 
       <div className="flex items-center gap-4">
         <div className="flex flex-col gap-1.5">
@@ -572,18 +614,8 @@ function ActiveCutCard({ cut, rows, qty, onQty, busy, onCut, onChange }: {
         <BigButton tone="ghost" className="h-12" disabled={!rows || otherOptions === 0} onClick={onChange}>
           Usar otra chapa{rows && otherOptions > 0 ? ` (${otherOptions})` : ''}
         </BigButton>
-        <span className={cn('text-[15px]', P.muted)}>{remaining === 1 ? 'Queda 1 pieza' : `Quedan ${remaining} piezas`}</span>
+        {remaining - value > 0 && <span className={cn('text-[15px]', P.muted)}>Después de este corte quedan {remaining - value} por cortar</span>}
       </div>
-    </div>
-  )
-}
-
-function Box({ label, value, hint, tone = 'default', warn }: { label: string; value: string; hint?: string; tone?: 'default' | 'green'; warn?: boolean }) {
-  return (
-    <div className={cn('flex flex-col gap-1 rounded-xl border p-4', P.panel, warn ? 'border-[#f59e0b]/60' : P.border)}>
-      <Label>{label}</Label>
-      <div className={cn('text-[26px] font-extrabold leading-tight', tone === 'green' ? 'text-[#4ade80]' : P.text)}>{value}</div>
-      {hint && <div className={cn('text-[14px] leading-snug', warn ? 'text-[#fbbf24]' : P.muted)}>{hint}</div>}
     </div>
   )
 }
@@ -598,6 +630,8 @@ function CutRow({ cut, state, busy, onSelect, onConfirm, onAssign, onNotify }: {
   onNotify: () => void
 }) {
   const total = n(cut.quantity_requested), doneQ = n(cut.quantity_cut)
+  const remaining = Math.max(0, total - doneQ)
+  const pieceLength = productLength(cut.product)
   const label = STATE_LABEL[state]
   const selectable = state === 'cortando' || state === 'por_empezar'
   const Wrapper: any = selectable ? 'button' : 'div'
@@ -609,16 +643,23 @@ function CutRow({ cut, state, busy, onSelect, onConfirm, onAssign, onNotify }: {
       className={cn('flex flex-col gap-3 rounded-2xl border p-5 text-left', P.card, state === 'confirmar_recogida' ? 'border-[#f59e0b]' : state === 'terminada' ? 'border-[#16a34a]/50' : P.border, selectable && 'hover:border-[#f59e0b]/60 active:bg-[#162138]')}
     >
       <div className="flex items-center justify-between gap-4">
-        <div className="min-w-0">
-          <div className={cn('text-[22px] font-bold leading-tight', state === 'terminada' ? P.soft : P.text)}>{cut.product?.name || cut.product?.code}</div>
-          <div className={cn('text-base', P.muted)}>
-            {cut.product?.code}{cut.material_product?.code ? ` · de ${cut.material_product.code}` : ''}
+        <div className="flex min-w-0 items-center gap-4">
+          {/* Cantidad delante y grande, igual que en la tarjeta activa */}
+          <div className="flex w-[92px] shrink-0 flex-col items-center">
+            <span className={cn('text-[44px] font-extrabold leading-none tabular-nums', state === 'terminada' ? 'text-[#4ade80]' : state === 'sin_chapa' ? P.soft : 'text-[#fbbf24]')}>{state === 'terminada' ? total : remaining}</span>
+            <span className={cn('text-[13px] font-semibold', P.muted)}>{state === 'terminada' ? 'cortadas' : remaining === 1 ? 'pieza' : 'piezas'}</span>
+          </div>
+          <div className="min-w-0">
+            <div className={cn('text-[20px] font-bold leading-tight', state === 'terminada' ? P.soft : P.text)}>{cut.product?.name || cut.product?.code}</div>
+            <div className={cn('text-base', P.muted)}>
+              {cut.product?.code}{pieceLength ? ` · ${formatMeters(pieceLength)} cada una` : ''}{cut.material_product?.code ? ` · de ${cut.material_product.code}` : ''}
+            </div>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-4">
           <div className="flex flex-col items-end">
             <Label tone={label.tone}>{label.text}</Label>
-            <span className={cn('text-xl font-bold tabular-nums', state === 'terminada' ? 'text-[#4ade80]' : P.text)}>{doneQ}/{total}</span>
+            <span className={cn('text-base font-semibold tabular-nums', state === 'terminada' ? 'text-[#4ade80]' : P.soft)}>{doneQ} de {total}</span>
           </div>
           {selectable && <ChevronRight className={cn('h-7 w-7', P.muted)} />}
           {state === 'terminada' && <Check className="h-7 w-7 text-[#4ade80]" />}
@@ -691,27 +732,40 @@ function ChangeSheetModal({ cut, rows, selected, onSelect, qty, onQty, busy, onC
           </div>
           <button type="button" onClick={onClose} aria-label="Cerrar" className={cn('inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border', P.border, P.card, P.muted)}><X className="h-6 w-6" /></button>
         </div>
-        <div className="flex-1 space-y-2.5 overflow-y-auto px-6 py-4">
+        <div className="min-h-[140px] flex-1 space-y-3 overflow-y-auto px-6 py-4">
           {options.length === 0 && <div className={cn('text-lg', P.muted)}>No hay otra chapa de esta familia con stock.</div>}
           {options.map(r => {
             const len = extractSizeFromCode(r.code)
             const plan = cutPlan(len, pieceLength)
             const active = selected?.id === r.id
+            // Lo que pasaría con las piezas que faltan (no con la chapa aprovechada entera)
+            const can = Math.min(remaining, Math.floor(r.stock_disponible) * plan.piecesPerSheet)
+            const o = cutOutcome(len, pieceLength, can)
             return (
-              <button key={r.id} type="button" onClick={() => onSelect(r)} className={cn('flex w-full items-center justify-between gap-4 rounded-2xl border p-4 text-left', active ? 'border-[#f59e0b] bg-[#f59e0b]/10' : cn(P.border, P.card))}>
-                <div>
+              <button key={r.id} type="button" onClick={() => onSelect(r)} className={cn('grid w-full grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_auto] items-center gap-5 rounded-2xl border px-5 py-[18px] text-left', active ? 'border-[#f59e0b] bg-[#f59e0b]/10' : cn(P.border, P.card))}>
+                <div className="min-w-0">
                   <div className={cn('text-xl font-bold', P.text)}>{r.code}</div>
-                  <div className={cn('text-[15px]', P.muted)}>Chapa de {formatMeters(len)} · {Math.floor(r.stock_disponible)} disponibles · {plan.exact ? 'no hay que cortar' : `salen ${plan.piecesPerSheet} por chapa`}</div>
+                  <div className={cn('text-[15px]', P.muted)}>{formatMeters(len)} · {Math.floor(r.stock_disponible)} disponibles{can < remaining ? ` · alcanza para ${can}` : ''}</div>
                 </div>
-                <div className="text-right">
-                  <Label tone={plan.remnant === 0 ? 'green' : 'muted'}>Sobra por chapa</Label>
-                  <div className={cn('text-xl font-extrabold', plan.remnant === 0 ? 'text-[#4ade80]' : P.text)}>{plan.remnant === 0 ? 'Nada' : formatMeters(plan.remnant)}</div>
+                {plan.exact
+                  ? <div className={cn('text-[15px]', P.muted)}>Medida exacta: no hay que cortar</div>
+                  : <SheetMini variant="planta" sheetLength={len} pieceLength={pieceLength} pieces={can} />}
+                <div className="shrink-0 whitespace-nowrap text-right">
+                  <Label>{o.sheets} {o.sheets === 1 ? 'chapa' : 'chapas'}{plan.exact ? '' : ' · sobra'}</Label>
+                  <div className={cn('text-xl font-extrabold', o.leftovers.length === 0 ? 'text-[#4ade80]' : P.text)}>{o.leftovers.length === 0 ? 'Nada' : describeLeftovers(o.leftovers)}</div>
                 </div>
               </button>
             )
           })}
         </div>
-        <div className="flex items-center justify-between gap-4 border-t border-[#1e293b] px-6 py-5">
+        {selected && result && !result.exact && (
+          <div className="border-t border-[#1e293b] px-6 pt-5">
+            <div className={cn('rounded-2xl border px-6 py-5', P.card, P.border)}>
+              <SheetPlan variant="planta" sheetLength={choice.length} pieceLength={pieceLength} pieces={pieces} />
+            </div>
+          </div>
+        )}
+        <div className={cn('flex items-center justify-between gap-4 px-6 py-5', !(selected && result && !result.exact) && 'border-t border-[#1e293b]')}>
           <div className="flex flex-col gap-1.5">
             <Label>Chapas a usar</Label>
             <PlantaStepper size="md" value={sheets} onChange={onQty} min={1} max={max} />

@@ -19,9 +19,25 @@ export default function PlantaLoginPage() {
       setError('El PIN tiene entre 4 y 6 dígitos')
       return
     }
+    if (loading) return
     setLoading(true)
     setError(null)
-    const result = await loginWithPin(pin)
+    // Con el wifi flojo la llamada puede no volver nunca: se corta a los 15 s y se avisa
+    let result: Awaited<ReturnType<typeof loginWithPin>> | null = null
+    try {
+      result = await Promise.race([
+        loginWithPin(pin),
+        new Promise<null>(resolve => setTimeout(() => resolve(null), 15000)),
+      ])
+    } catch (e) {
+      console.error('Error entrando con PIN:', e)
+    }
+    if (!result) {
+      setError('No hay conexión con la oficina. Acércate al wifi y vuelve a marcar el PIN.')
+      setLoading(false)
+      setPin('')
+      return
+    }
     if (result.error) {
       setError(result.error)
       setLoading(false)
@@ -57,6 +73,7 @@ export default function PlantaLoginPage() {
           <div role="alert" className="w-[390px] rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-center text-base text-red-300">{error}</div>
         )}
         <PlantaPinPad value={pin} onChange={v => { setPin(v); setError(null) }} onSubmit={handleSubmit} disabled={loading} submitLabel={loading ? '...' : 'Entrar'} />
+        {loading && <div className={cn('text-lg font-semibold', P.muted)} role="status">Entrando… puede tardar unos segundos si el wifi va lento</div>}
       </main>
     </div>
   )

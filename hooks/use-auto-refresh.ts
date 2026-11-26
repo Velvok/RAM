@@ -34,9 +34,13 @@ export function useAutoRefresh(
     lastDataRef.current = null
     let cancelled = false
 
+    let inFlight = false
     const checkForChanges = async () => {
       // Sin consultas con la pestaña en segundo plano
       if (typeof document !== 'undefined' && document.hidden) return
+      // Con conexión lenta la consulta anterior puede seguir en marcha: no se apilan
+      if (inFlight) return
+      inFlight = true
       try {
         const currentData = await fetchRef.current()
         if (cancelled) return
@@ -55,6 +59,8 @@ export function useAutoRefresh(
       } catch (error) {
         console.error('Error checking for changes:', error)
         reportPossibleStaleDeploy(error)
+      } finally {
+        inFlight = false
       }
     }
 

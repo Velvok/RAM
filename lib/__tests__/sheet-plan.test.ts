@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cutOutcome, cutReservation, describeLeftovers, isExactLength, piecesPerSheet, proposePlan, sheetsFor } from '../sheet-plan'
+import { cutOutcome, cutReservation, describeLeftovers, isExactLength, piecesPerSheet, proposePlan, sheetLayouts, sheetsFor } from '../sheet-plan'
 
 describe('piecesPerSheet y sheetsFor', () => {
   it('de 12 m salen 3 piezas de 4 m, justas', () => {
@@ -67,6 +67,40 @@ describe('cutOutcome', () => {
   it('chapa que no sirve o cantidad 0: nada', () => {
     expect(cutOutcome(3, 4, 2).sheets).toBe(0)
     expect(cutOutcome(12, 4, 0).sheets).toBe(0)
+  })
+})
+
+describe('sheetLayouts', () => {
+  it('5 de 0,5 m de una chapa de 6 m: 5 piezas y un solo trozo de 3,5 m', () => {
+    expect(sheetLayouts(6, 0.5, 5)).toEqual([{ count: 1, pieces: 5, leftover: 3.5 }])
+  })
+
+  it('5 de 0,5 m de una chapa de 7 m: sobra un trozo de 4,5 m', () => {
+    expect(sheetLayouts(7, 0.5, 5)).toEqual([{ count: 1, pieces: 5, leftover: 4.5 }])
+  })
+
+  it('varias chapas: las completas agrupadas y la última a medias', () => {
+    expect(sheetLayouts(12, 4.5, 5)).toEqual([{ count: 2, pieces: 2, leftover: 3 }, { count: 1, pieces: 1, leftover: 7.5 }])
+    expect(sheetLayouts(12, 4, 6)).toEqual([{ count: 2, pieces: 3, leftover: 0 }])
+  })
+
+  it('largo exacto: una pieza por chapa, sin sobrante', () => {
+    expect(sheetLayouts(4, 4, 3)).toEqual([{ count: 3, pieces: 1, leftover: 0 }])
+  })
+
+  it('cuadra con cutOutcome', () => {
+    for (const [l, p, k] of [[12, 4.5, 5], [6, 0.5, 5], [9.5, 5, 2], [12, 4, 7]] as const) {
+      const layouts = sheetLayouts(l, p, k)
+      const out = cutOutcome(l, p, k)
+      expect(layouts.reduce((s, x) => s + x.count, 0)).toBe(out.sheets)
+      expect(layouts.reduce((s, x) => s + x.count * x.pieces, 0)).toBe(k)
+      expect(Math.round(layouts.reduce((s, x) => s + x.count * x.leftover, 0) * 100) / 100).toBe(out.leftoverMeters)
+    }
+  })
+
+  it('chapa que no sirve o nada que cortar: vacío', () => {
+    expect(sheetLayouts(3, 4, 2)).toEqual([])
+    expect(sheetLayouts(12, 4, 0)).toEqual([])
   })
 })
 

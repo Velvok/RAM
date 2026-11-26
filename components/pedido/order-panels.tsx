@@ -8,7 +8,8 @@ import { cn } from '@/lib/utils'
 import { extractSizeFromCode } from '@/lib/product-utils'
 import { cutPlan, formatMeters, productLength, sortByRemnant } from '@/lib/planta-tasks'
 import { userMessage } from '@/lib/user-error'
-import { cutOutcome, proposePlan, round2 } from '@/lib/sheet-plan'
+import { cutOutcome, describeLeftovers, proposePlan, round2 } from '@/lib/sheet-plan'
+import { SheetMini, SheetPlan } from '@/components/sheet-bar'
 
 // Paneles laterales del detalle de pedido: asignar o cambiar la chapa/stock de
 // una línea y traer chapas cortadas de otro pedido. Sustituyen a los modales
@@ -105,19 +106,6 @@ function OptionRow({ active, onClick, title, badge, detail, rightLabel, right, r
 const Pill = ({ children, tone = 'muted' }: { children: ReactNode; tone?: 'muted' | 'ok' }) => (
   <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-semibold', tone === 'ok' ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground')}>{children}</span>
 )
-
-/** Dibujo de una chapa partida en sus piezas y lo que sobra. */
-function SheetBar({ sheetLength, pieceLength, pieces }: { sheetLength: number; pieceLength: number; pieces: number }) {
-  const rest = round2(sheetLength - pieces * pieceLength)
-  return (
-    <div className="flex h-5 overflow-hidden rounded border border-border text-[10px] font-semibold leading-none" aria-hidden>
-      {Array.from({ length: pieces }, (_, i) => (
-        <span key={i} style={{ flex: pieceLength }} className="flex min-w-0 items-center justify-center border-r border-card bg-primary/80 text-primary-foreground">{pieces <= 6 ? formatMeters(pieceLength) : ''}</span>
-      ))}
-      {rest > 0.009 && <span style={{ flex: rest }} className="flex min-w-0 items-center justify-center whitespace-nowrap bg-warning/20 px-1 text-warning">sobra {formatMeters(rest)}</span>}
-    </div>
-  )
-}
 
 /**
  * Asignar o cambiar las chapas de una orden de corte. De cada chapa salen todas
@@ -225,7 +213,7 @@ function AssignSheetsPanel({ order, item, onClose, onDone }: { order: any; item:
         </Button>
       }
     >
-      <div className="flex max-h-[360px] flex-col gap-2 overflow-y-auto pr-1">
+      <div className="flex max-h-[360px] flex-col gap-2.5 overflow-y-auto pr-1">
         {rows === null && <div className="py-6 text-center text-sm text-muted-foreground">Buscando stock…</div>}
         {rows?.length === 0 && (
           <div className="rounded-lg border border-warning/40 bg-warning/10 px-3.5 py-3 text-sm text-warning">
@@ -239,23 +227,37 @@ function AssignSheetsPanel({ order, item, onClose, onDone }: { order: any; item:
           const coveredByOthers = covered - p.pieces
           const max = isCurrent ? 0 : Math.max(0, Math.min(Math.floor(r.stock_disponible), Math.ceil(Math.max(0, remaining - coveredByOthers) / p.pps)))
           const sheets = use[r.id] || 0
+          // Sin elegir todavía: lo que daría esta chapa para las piezas que siguen sin cubrir
+          const previewPieces = p.pieces > 0 ? p.pieces : Math.min(alloc.left > 0 ? alloc.left : remaining, Math.floor(r.stock_disponible) * p.pps)
+          const preview = cutOutcome(r.length, pieceLength, previewPieces)
           return (
-            <div key={r.id} className={cn('flex flex-col gap-2 rounded-lg border bg-card px-3.5 py-3', p.pieces > 0 ? 'border-primary shadow-[0_0_0_2px_hsl(var(--primary)/0.15)]' : 'border-border')}>
-              <div className="flex items-center justify-between gap-3">
+            <div key={r.id} className={cn('flex flex-col gap-2.5 rounded-lg border bg-card px-4 py-3.5', p.pieces > 0 ? 'border-primary shadow-[0_0_0_3px_hsl(var(--primary)/0.12)]' : 'border-border')}>
+              <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-foreground">{r.code}{isCurrent ? <Pill>actual</Pill> : plan.exact ? <Pill tone="ok">exacta</Pill> : null}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {new Intl.NumberFormat('es-AR').format(Math.floor(r.stock_disponible))} disponibles · {plan.exact ? 'no hay que cortar' : `salen ${p.pps} por chapa · ${plan.remnant > 0 ? `sobra ${formatMeters(plan.remnant)}` : 'sin sobrante'}`}
+                  <div className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-foreground">{r.code}{isCurrent ? <Pill>actual</Pill> : plan.exact ? <Pill tone="ok">exacta</Pill> : preview.leftovers.length === 0 ? <Pill tone="ok">sin sobrante</Pill> : null}</div>
+                  <div className="text-[13px] text-muted-foreground">
+                    {new Intl.NumberFormat('es-AR').format(Math.floor(r.stock_disponible))} disponibles · {plan.exact ? 'no hay que cortar' : `${preview.sheets} chapa${preview.sheets !== 1 ? 's' : ''} para ${previewPieces} pieza${previewPieces !== 1 ? 's' : ''}${preview.leftovers.length ? ` · sobra ${describeLeftovers(preview.leftovers)}` : ''}`}
                   </div>
                 </div>
                 {!isCurrent && <Stepper value={Math.min(sheets, Math.max(max, 0))} onChange={v => setUse(u => ({ ...u, [r.id]: v }))} min={0} max={max} />}
               </div>
-              {!plan.exact && <SheetBar sheetLength={r.length} pieceLength={pieceLength} pieces={p.pps} />}
-              {p.pieces > 0 && <div className="text-xs font-medium text-foreground">{p.sheets} chapa{p.sheets !== 1 ? 's' : ''} → {p.pieces} pieza{p.pieces !== 1 ? 's' : ''}{p.leftover > 0 ? ` · sobran ${formatMeters(p.leftover)}` : ''}</div>}
+              {!plan.exact && !isCurrent && <SheetMini sheetLength={r.length} pieceLength={pieceLength} pieces={previewPieces} className={p.pieces > 0 ? undefined : 'opacity-60'} />}
             </div>
           )
         })}
       </div>
+
+      {chosen.some(p => !cutPlan(p.row.length, pieceLength).exact) && (
+        <div className="flex flex-col gap-4 rounded-lg border border-border bg-muted/40 px-4 py-4">
+          <div className="text-[11px] font-bold uppercase tracking-[0.09em] text-muted-foreground">Así queda el corte</div>
+          {chosen.filter(p => !cutPlan(p.row.length, pieceLength).exact).map(p => (
+            <div key={p.row.id} className="flex flex-col gap-2">
+              {chosen.length > 1 && <div className="text-xs font-semibold text-foreground">{p.row.code}</div>}
+              <SheetPlan sheetLength={p.row.length} pieceLength={pieceLength} pieces={p.pieces} />
+            </div>
+          ))}
+        </div>
+      )}
 
       {summary.length > 0 && <Summary rows={summary} />}
     </PanelShell>
