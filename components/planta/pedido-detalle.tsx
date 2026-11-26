@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { ArrowLeft, Check, ChevronRight, MessageSquare, X } from 'lucide-react'
+import { ArrowLeft, Check, ChevronRight, X } from 'lucide-react'
 import { useAutoRefresh } from '@/hooks/use-auto-refresh'
 import { enqueue, fetchWithSnapshot, pendingFor, readSnapshot, type QueuedOp } from '@/lib/planta-offline/store'
 import { applyPendingToNotes, applyPendingToOrder } from '@/lib/planta-offline/apply'
@@ -14,12 +14,8 @@ import { extractSizeFromCode } from '@/lib/product-utils'
 import { getOrderStatusConfig } from '@/lib/order-status'
 import { cn } from '@/lib/utils'
 import { userMessage } from '@/lib/user-error'
-import { sinOrdenDeCorte } from '@/lib/planta-texto'
 import { cutOutcome, describeLeftovers, sheetsFor } from '@/lib/sheet-plan'
 import { SheetMini, SheetPlan } from '@/components/sheet-bar'
-
-// Respuestas de la tablet a las notas del admin: acuse, confirmación o duda
-const QUICK_REPLIES = ['Recibido', 'Confirmado', 'Tengo una duda']
 
 const STATE_RANK: Record<CutCardState, number> = { confirmar_recogida: 0, cortando: 1, por_empezar: 2, sin_chapa: 3, terminada: 4 }
 
@@ -69,7 +65,6 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
   const [changeQty, setChangeQty] = useState(1)
   const [done, setDone] = useState<Done | null>(null)
   const [rawNotes, setRawNotes] = useState<any[]>([])
-  const [showNotes, setShowNotes] = useState(false)
   const [activity, setActivity] = useState<{ activity: any[]; evo: { pending: number; failed: number } }>({ activity: [], evo: { pending: 0, failed: 0 } })
 
   // Lo que el operario ya hizo y aún no ha llegado al servidor, pintado encima
@@ -313,9 +308,9 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
     )
   }
 
-  const unread = notes.filter(x => !x.read_at).length
   const status = getOrderStatusConfig(pedido.status)
   const adminNotes = notes.filter(x => !String(x.created_by_name || '').endsWith('(planta)'))
+  const unread = adminNotes.filter(x => !x.read_at).length
   const evo = activity.evo
 
   return (
@@ -333,36 +328,10 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
           <>
           <PlantaSyncBadge />
           <PlantaRefreshButton onRefresh={() => { setStockByCut({}); return Promise.all([loadPedido(), loadNotes(), loadActivity()]) }} />
-          <button type="button" onClick={() => setShowNotes(true)} className={cn('relative inline-flex h-14 items-center gap-2 rounded-2xl border px-4 text-base font-semibold', unread ? 'border-[#f59e0b] bg-[#f59e0b]/15 text-[#fbbf24]' : cn(P.border, P.card, P.muted))}>
-            <MessageSquare className="h-5 w-5" /> Notas{unread ? ` · ${unread}` : ''}
-          </button>
           </>
         }
       />
       <PlantaOfflineBanner savedAt={savedAt} fromCache={fromCache} />
-
-      {/* Las notas de la oficina sustituyen al papel: fijas arriba durante todo el pedido, leídas o no */}
-      {adminNotes.length > 0 && (
-        <div className="mx-auto max-w-[1180px] px-6 pt-5">
-          <div className="flex flex-col gap-3 rounded-2xl border-2 border-[#f59e0b] bg-[#f59e0b]/10 p-5">
-            <div className="flex items-center gap-2">
-              <MessageSquare className="h-5 w-5 text-[#fbbf24]" />
-              <Label tone="amber">{adminNotes.length === 1 ? 'Nota de la oficina' : `Notas de la oficina · ${adminNotes.length}`}</Label>
-            </div>
-            {adminNotes.map(note => (
-              <div key={note.id} className="flex items-start justify-between gap-4 border-t border-[#f59e0b]/30 pt-3 first:border-t-0 first:pt-0">
-                <div className="min-w-0">
-                  <div className={cn('whitespace-pre-wrap text-[22px] font-bold leading-snug', P.text)}>{note.content}</div>
-                  <div className={cn('mt-1 text-[14px]', P.muted)}>{note.created_by_name || 'Oficina'} · {hora(note.created_at)}</div>
-                </div>
-                {note.read_at
-                  ? <span className="inline-flex shrink-0 items-center gap-1 pt-1 text-[15px] font-semibold text-[#4ade80]"><Check className="h-5 w-5" /> Leída</span>
-                  : <BigButton tone="amber" className="h-14 shrink-0 px-6 text-lg" onClick={() => handleMarkRead(note.id)}>Leída</BigButton>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       <main className="mx-auto grid max-w-[1180px] grid-cols-1 gap-5 px-6 py-5 lg:grid-cols-[1fr_380px]">
         <section className="flex flex-col gap-4">
@@ -439,21 +408,21 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
             })}
           </div>
 
-          <div className={cn('flex flex-col gap-2 rounded-2xl border p-4', P.card, P.border)}>
-            <Label>Último movimiento</Label>
-            {activity.activity.length === 0 && <div className={cn('text-base', P.muted)}>Todavía no se ha cortado ni preparado nada.</div>}
-            {activity.activity.slice(0, 3).map((a, i) => (
-              <div key={i} className="flex gap-3 text-[15px]">
-                <span className={cn('shrink-0 tabular-nums', P.muted)}>{hora(a.created_at)}</span>
-                {/* Un corte que el admin deshizo: tachado, para que no se cuente como hecho */}
-                {a.activity_type === 'cut_completed' && a.metadata?.reverted_at ? (
-                  <span className="flex min-w-0 flex-col gap-1">
-                    <span className={cn('line-through', P.muted)}>{sinOrdenDeCorte(a.description)}</span>
-                    <span className="self-start rounded bg-[#f59e0b]/15 px-1.5 py-0.5 text-[12px] font-semibold uppercase tracking-wide text-[#fbbf24]">Deshecho por la oficina</span>
-                  </span>
-                ) : (
-                  <span className={P.soft}>{sinOrdenDeCorte(a.description)}</span>
-                )}
+          {/* Las notas de la oficina sustituyen al papel: fijas aquí durante todo el pedido, leídas o no */}
+          <div className={cn('flex flex-col gap-3.5 rounded-2xl p-4', unread ? 'border-2 border-[#f59e0b] bg-[#f59e0b]/10' : cn('border', P.card, P.border))}>
+            <div className="flex items-center justify-between gap-3">
+              <Label tone={adminNotes.length ? 'amber' : 'muted'}>Notas de la oficina</Label>
+              {unread > 0 && <span className="rounded-full bg-[#f59e0b] px-2.5 py-0.5 text-[13px] font-extrabold text-[#0b1220]">{unread} sin leer</span>}
+            </div>
+            {adminNotes.length === 0 && <div className={cn('text-base', P.muted)}>La oficina no ha dejado notas en este pedido.</div>}
+            {adminNotes.map(note => (
+              <div key={note.id} className="flex flex-col gap-2.5 border-t border-[#233052] pt-3.5 first:border-t-0 first:pt-0">
+                <div className={cn('whitespace-pre-wrap break-words text-[20px] leading-snug', note.read_at ? cn('font-semibold', P.soft) : cn('font-bold', P.text))}>{note.content}</div>
+                <div className={cn('flex items-center justify-between gap-3 text-[14px]', P.muted)}>
+                  <span>{note.created_by_name || 'Oficina'} · {hora(note.created_at)}</span>
+                  {note.read_at && <span className="inline-flex shrink-0 items-center gap-1 font-semibold text-[#4ade80]"><Check className="h-4 w-4" /> Leída</span>}
+                </div>
+                {!note.read_at && <BigButton tone="amber" className="h-[52px] text-[17px]" onClick={() => handleMarkRead(note.id)}>Marcar como leída</BigButton>}
               </div>
             ))}
           </div>
@@ -500,41 +469,6 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
         />
       )}
 
-      {showNotes && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-[#0b1220]/70" onClick={() => setShowNotes(false)}>
-          <div className={cn('flex h-full w-full max-w-[460px] flex-col border-l', P.panel, P.border)} onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-[#1e293b] px-5 py-4">
-              <div className={cn('text-xl font-bold', P.text)}>Notas del pedido</div>
-              <button type="button" onClick={() => setShowNotes(false)} aria-label="Cerrar notas" className={cn('inline-flex h-12 w-12 items-center justify-center rounded-xl border', P.border, P.card, P.muted)}><X className="h-6 w-6" /></button>
-            </div>
-            <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
-              {notes.length === 0 && <div className={cn('text-base', P.muted)}>El admin no ha dejado notas en este pedido.</div>}
-              {notes.map(note => {
-                const mine = String(note.created_by_name || '').endsWith('(planta)')
-                return (
-                  <div key={note.id} className={cn('flex flex-col gap-2 rounded-xl border p-4', mine ? cn(P.border, P.card) : note.read_at ? cn(P.border, P.card) : 'border-[#f59e0b] bg-[#f59e0b]/10')}>
-                    <div className={cn('text-[17px] leading-snug', P.text)}>{note.content}</div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span className={cn('text-[14px]', P.muted)}>{note.created_by_name || 'Admin'} · {hora(note.created_at)}</span>
-                      {!mine && !note.read_at && <BigButton tone="amber" className="h-12 px-5" onClick={() => handleMarkRead(note.id)}>Leída</BigButton>}
-                      {!mine && note.read_at && <span className="inline-flex items-center gap-1 text-[14px] text-[#4ade80]"><Check className="h-4 w-4" /> Leída</span>}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-            <div className="border-t border-[#1e293b] px-5 py-4">
-              <Label>Responder al admin</Label>
-              <div className="mt-3 grid grid-cols-3 gap-2.5">
-                {QUICK_REPLIES.map(r => (
-                  <BigButton key={r} tone="ghost" className="h-14 text-[15px]" disabled={busy === 'note'} onClick={() => sendNote(r, 'Respuesta enviada')}>{r}</BigButton>
-                ))}
-              </div>
-              {adminNotes.length === 0 && <div className={cn('mt-3 text-[14px]', P.muted)}>El admin verá tu respuesta en el detalle del pedido.</div>}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
