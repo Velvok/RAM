@@ -7,6 +7,14 @@ describe('isMostrador', () => {
     expect(isMostrador({ codter: ' mostrado ' })).toBe(true)
   })
 
+  it('reconoce todos los terceros que empiezan por MOSTRA (MOSTRAD4, MOSTRAD5, MOSTRA20)', () => {
+    expect(isMostrador({ codter: 'MOSTRAD4' })).toBe(true)
+    expect(isMostrador({ codter: 'MOSTRAD5' })).toBe(true)
+    expect(isMostrador({ codter: 'MOSTRA20' })).toBe(true)
+    expect(isMostrador({ codter: 'MOSTR' })).toBe(false)
+    expect(shouldAutoApprove({ refEvo: { codter: 'MOSTRAD4' }, missingProducts: 0 })).toBe(true)
+  })
+
   it('un cliente normal no es Mostrador', () => {
     expect(isMostrador({ codter: '22624' })).toBe(false)
     expect(isMostrador({ codter: '' })).toBe(false)

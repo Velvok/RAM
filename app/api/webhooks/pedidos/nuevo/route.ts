@@ -273,7 +273,7 @@ async function processPedidoNuevo(payload: PedidoNuevoPayload, eventKey: string)
         clientId = existingClient.id
         console.log(`✅ Found existing client by evo_client_id: ${clientId}`)
         // Si es MOSTRADO, asegurar que el nombre esté correcto
-        if (ref_evo.codter === 'MOSTRADO') {
+        if (isMostrador(ref_evo)) {
           let correctName = 'Cliente Mostrador'
           if (payload.cliente.nombre && payload.cliente.nombre !== 'SinNombre') {
             correctName = `Cliente Mostrador - ${payload.cliente.nombre}`
@@ -283,7 +283,7 @@ async function processPedidoNuevo(payload: PedidoNuevoPayload, eventKey: string)
       } else {
         // Lógica especial para MOSTRADO
         let clientName: string
-        if (ref_evo.codter === 'MOSTRADO') {
+        if (isMostrador(ref_evo)) {
           clientName = 'Cliente Mostrador'
           if (payload.cliente.nombre && payload.cliente.nombre !== 'SinNombre') {
             clientName = `Cliente Mostrador - ${payload.cliente.nombre}`
@@ -322,7 +322,7 @@ async function processPedidoNuevo(payload: PedidoNuevoPayload, eventKey: string)
       } else {
         // Lógica especial para MOSTRADO
         let clientName: string
-        if (ref_evo.codter === 'MOSTRADO') {
+        if (isMostrador(ref_evo)) {
           clientName = 'Cliente Mostrador'
           if (payload.cliente?.nombre && payload.cliente.nombre !== 'SinNombre') {
             clientName = `Cliente Mostrador - ${payload.cliente.nombre}`
