@@ -6,6 +6,7 @@ import { createWebhookVerifier } from '@/lib/webhook-security'
 import { applyOrderModification, MODIFIABLE_APPROVED_STATUSES } from '@/lib/order-modification'
 import { approveOrderOnHold, updateOrderStatus } from '@/app/actions/orders'
 import { isMostrador, shouldAutoApprove } from '@/lib/mostrador'
+import { cleanEvoDescription } from '@/lib/line-description'
 import { runAsSystem } from '@/lib/auth/guards'
 
 export const dynamic = 'force-dynamic'
@@ -34,6 +35,7 @@ interface PedidoNuevoPayload {
     id_articulo: string
     cantidad: number
     nro_item?: number
+    descripcion?: string
   }>
   estado?: 'nuevo' | 'pendiente'
 }
@@ -519,7 +521,8 @@ async function processPedidoNuevo(payload: PedidoNuevoPayload, eventKey: string)
         quantity: item.cantidad,
         unit_price: 0,
         subtotal: 0,
-        evo_item_number: item.nro_item != null ? String(item.nro_item) : null
+        evo_item_number: item.nro_item != null ? String(item.nro_item) : null,
+        evo_description: cleanEvoDescription(item.descripcion)
       }))
 
     if (orderLines.length > 0) {

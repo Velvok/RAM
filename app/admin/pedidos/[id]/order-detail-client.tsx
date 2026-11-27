@@ -19,6 +19,7 @@ import { OrderHistory } from '@/components/pedido/order-history'
 import { userMessage } from '@/lib/user-error'
 import { cutOutcome, describeLeftovers, sheetsFor } from '@/lib/sheet-plan'
 import { productLength } from '@/lib/planta-tasks'
+import { descriptionsByProduct, lineDisplayName } from '@/lib/line-description'
 
 const n = (v: unknown) => Number(v) || 0
 
@@ -139,6 +140,7 @@ export default function OrderDetailClient({ initialOrder, canDelete }: { initial
   // Orden estable: la base no garantiza el orden de las relaciones
   const byCreated = (a: any, b: any) => String(a.created_at).localeCompare(String(b.created_at))
   const cuts: any[] = [...(order.cut_orders || [])].sort(byCreated)
+  const evoNames = descriptionsByProduct(order.lines)
   const preps: any[] = [...(order.preparation_items || [])].sort(byCreated)
   const missing = unassignedLines(order)
   const pendingLines = (order.lines || []).filter((l: any) => n(l.quantity_pending_approval) > 0)
@@ -276,7 +278,7 @@ export default function OrderDetailClient({ initialOrder, canDelete }: { initial
                   const add = n(l.quantity_pending_approval)
                   return (
                     <tr key={l.id} className={add ? 'bg-warning/5' : ''}>
-                      <td className={td}><span className="font-semibold">{l.product?.code}</span>{!before && add ? <span className="ml-2"><Pill tone="warn">nueva</Pill></span> : null}<div className="text-xs text-muted-foreground">{l.product?.name}</div></td>
+                      <td className={td}><span className="font-semibold">{l.product?.code}</span>{!before && add ? <span className="ml-2"><Pill tone="warn">nueva</Pill></span> : null}<div className="text-xs text-muted-foreground">{lineDisplayName(l, l.product)}</div></td>
                       <td className={cn(td, 'text-right tabular-nums text-muted-foreground')}>{before || '—'}</td>
                       <td className={cn(td, 'text-right font-semibold tabular-nums')}>{before + add}</td>
                       <td className={cn(td, 'text-right font-semibold tabular-nums', add ? 'text-success' : 'text-muted-foreground')}>{add ? `+${add}` : '='}</td>
@@ -330,7 +332,7 @@ export default function OrderDetailClient({ initialOrder, canDelete }: { initial
                         <tr key={c.id} className={cn(activeLineId === c.id && 'bg-primary/5', st.tone === 'bad' && activeLineId !== c.id && 'bg-destructive/5')}>
                           <td className={td}>
                             <div className="font-semibold text-foreground">{c.product?.code}</div>
-                            <div className="text-xs text-muted-foreground">{c.product?.name}</div>
+                            <div className="text-xs text-muted-foreground">{evoNames.get(c.product_id) || c.product?.name}</div>
                           </td>
                           <td className={cn(td, 'text-right tabular-nums')}>{n(c.quantity_requested)}</td>
                           <td className={td}>
@@ -375,7 +377,7 @@ export default function OrderDetailClient({ initialOrder, canDelete }: { initial
                         <tr key={p.id} className={cn(activeLineId === p.id && 'bg-primary/5', st.tone === 'bad' && activeLineId !== p.id && 'bg-destructive/5')}>
                           <td className={td}>
                             <div className="font-semibold text-foreground">{p.product?.code}</div>
-                            <div className="text-xs text-muted-foreground">{p.product?.name}</div>
+                            <div className="text-xs text-muted-foreground">{evoNames.get(p.product_id) || p.product?.name}</div>
                           </td>
                           <td className={cn(td, 'text-right tabular-nums')}>{n(p.quantity_requested)}</td>
                           <td className={td}>
@@ -416,7 +418,7 @@ export default function OrderDetailClient({ initialOrder, canDelete }: { initial
                   <tbody className="divide-y divide-border/60">
                     {(order.lines || []).map((l: any) => (
                       <tr key={l.id}>
-                        <td className={td}><span className="font-semibold">{l.product?.code}</span> <span className="text-muted-foreground">{l.product?.name}</span></td>
+                        <td className={td}><span className="font-semibold">{l.product?.code}</span> <span className="text-muted-foreground">{lineDisplayName(l, l.product)}</span></td>
                         <td className={cn(td, 'text-right tabular-nums')}>{l.units || Math.ceil(l.quantity) || 0}{n(l.quantity_pending_approval) ? <span className="ml-1 text-warning">+{l.quantity_pending_approval}</span> : null}</td>
                         <td className={cn(td, 'text-right tabular-nums text-muted-foreground')}>{formatCurrency(l.unit_price)}</td>
                         <td className={cn(td, 'text-right tabular-nums')}>{formatCurrency(l.subtotal)}</td>

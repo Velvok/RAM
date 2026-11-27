@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils'
 import { userMessage } from '@/lib/user-error'
 import { cutOutcome, describeLeftovers, sheetsFor } from '@/lib/sheet-plan'
 import { SheetMini, SheetPlan } from '@/components/sheet-bar'
+import { descriptionsByProduct } from '@/lib/line-description'
 
 const STATE_RANK: Record<CutCardState, number> = { confirmar_recogida: 0, cortando: 1, por_empezar: 2, sin_chapa: 3, terminada: 4 }
 
@@ -69,6 +70,8 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
 
   // Lo que el operario ya hizo y aún no ha llegado al servidor, pintado encima
   const pedido = useMemo(() => (base ? applyPendingToOrder(base, pendingOps) : null), [base, pendingOps])
+  // Descripción de EVO de cada artículo (trae las unidades); si no llega, el nombre del catálogo
+  const evoNames = useMemo(() => descriptionsByProduct(pedido?.order_lines), [pedido])
   const notes = useMemo(() => applyPendingToNotes(rawNotes, pendingOps, pedidoId, operator?.full_name || ''), [rawNotes, pendingOps, pedidoId, operator])
 
   const refreshPending = useCallback(async () => setPendingOps(await pendingFor(pedidoId)), [pedidoId])
@@ -348,6 +351,7 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
                 <ActiveCutCard
                   key={cut.id}
                   cut={cut}
+                  evoName={evoNames.get(cut.product_id)}
                   rows={stockByCut[cut.id]}
                   qty={qty[cut.id]}
                   onQty={v => setQty(prev => ({ ...prev, [cut.id]: v }))}
@@ -361,6 +365,7 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
               <CutRow
                 key={cut.id}
                 cut={cut}
+                evoName={evoNames.get(cut.product_id)}
                 state={state}
                 busy={busy === cut.id || busy === 'note'}
                 onSelect={() => setActiveCutId(cut.id)}
@@ -389,7 +394,7 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
                       <span className={cn('text-[12px] font-semibold', P.muted)}>{finished ? 'listas' : remaining === 1 ? 'unidad' : 'unidades'}</span>
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className={cn('text-[17px] font-bold leading-tight', P.text)}>{item.product?.name}</div>
+                      <div className={cn('text-[17px] font-bold leading-tight', P.text)}>{evoNames.get(item.product_id) || item.product?.name}</div>
                       <div className={cn('text-[15px]', P.muted)}>{item.product?.code} · {doneQ} de {total}{!item.assigned_inventory && !finished && ' · sin stock asignado, prepara lo que haya'}</div>
                     </div>
                   </div>
@@ -473,8 +478,9 @@ export function PedidoDetalle({ pedidoId, onBack }: { pedidoId: string; onBack: 
   )
 }
 
-function ActiveCutCard({ cut, rows, qty, onQty, busy, onCut, onChange }: {
+function ActiveCutCard({ cut, evoName, rows, qty, onQty, busy, onCut, onChange }: {
   cut: any
+  evoName?: string
   rows?: any[]
   qty?: number
   onQty: (v: number) => void
@@ -513,7 +519,7 @@ function ActiveCutCard({ cut, rows, qty, onQty, busy, onCut, onChange }: {
         </div>
       </div>
       <div className="-mt-2 min-w-0">
-        <div className={cn('text-xl font-semibold leading-snug', P.soft)}>{cut.product?.name || cut.product?.code}</div>
+        <div className={cn('text-xl font-semibold leading-snug', P.soft)}>{evoName || cut.product?.name || cut.product?.code}</div>
         <div className={cn('text-base', P.muted)}>{cut.product?.code}</div>
       </div>
 
@@ -554,8 +560,9 @@ function ActiveCutCard({ cut, rows, qty, onQty, busy, onCut, onChange }: {
   )
 }
 
-function CutRow({ cut, state, busy, onSelect, onConfirm, onAssign, onNotify }: {
+function CutRow({ cut, evoName, state, busy, onSelect, onConfirm, onAssign, onNotify }: {
   cut: any
+  evoName?: string
   state: CutCardState
   busy: boolean
   onSelect: () => void
@@ -584,7 +591,7 @@ function CutRow({ cut, state, busy, onSelect, onConfirm, onAssign, onNotify }: {
             <span className={cn('text-[13px] font-semibold', P.muted)}>{state === 'terminada' ? 'cortadas' : remaining === 1 ? 'pieza' : 'piezas'}</span>
           </div>
           <div className="min-w-0">
-            <div className={cn('text-[20px] font-bold leading-tight', state === 'terminada' ? P.soft : P.text)}>{cut.product?.name || cut.product?.code}</div>
+            <div className={cn('text-[20px] font-bold leading-tight', state === 'terminada' ? P.soft : P.text)}>{evoName || cut.product?.name || cut.product?.code}</div>
             <div className={cn('text-base', P.muted)}>
               {cut.product?.code}{pieceLength ? ` · ${formatMeters(pieceLength)} cada una` : ''}{cut.material_product?.code ? ` · de ${cut.material_product.code}` : ''}
             </div>

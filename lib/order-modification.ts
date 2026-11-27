@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { moveCutReservation, type CutForReservation } from '@/lib/cut-reservations'
+import { cleanEvoDescription } from './line-description'
 
 type SupabaseAdmin = ReturnType<typeof createAdminClient>
 
@@ -12,6 +13,7 @@ export interface ModificationItem {
   id_articulo: string
   cantidad: number
   nro_item?: number
+  descripcion?: string
 }
 
 interface FulfillmentItem {
@@ -130,21 +132,22 @@ export async function applyOrderModification(
   const warnings: string[] = []
 
   // Cantidad objetivo por producto (sumando líneas del mismo artículo)
-  const targets = new Map<string, { quantity: number; evoItemNumber: string | null }>()
+  const targets = new Map<string, { quantity: number; evoItemNumber: string | null; description: string | null }>()
   for (const item of items) {
     const product = productIds.get(item.id_articulo)
     if (!product) continue
     const prev = targets.get(product.id)
     targets.set(product.id, {
       quantity: (prev?.quantity || 0) + Number(item.cantidad),
-      evoItemNumber: prev?.evoItemNumber ?? (item.nro_item != null ? String(item.nro_item) : null)
+      evoItemNumber: prev?.evoItemNumber ?? (item.nro_item != null ? String(item.nro_item) : null),
+      description: prev?.description ?? cleanEvoDescription(item.descripcion)
     })
   }
 
   const [linesRes, cutsRes, prepsRes] = await Promise.all([
     supabase
       .from('order_lines')
-      .select('id, product_id, quantity, units, quantity_pending_approval, evo_item_number, created_at')
+      .select('id, product_id, quantity, units, quantity_pending_approval, evo_item_number, evo_description, created_at')
       .eq('order_id', order.id)
       .order('created_at', { ascending: true }),
     supabase
@@ -207,6 +210,16 @@ export async function applyOrderModification(
   for (const productId of productIdsInOrder) {
     const productLines = lines.filter(l => l.product_id === productId)
     const target = targets.get(productId)?.quantity || 0
+
+    // Descripción de EVO al día en las líneas que siguen (no es crítica: si falla, se avisa y se sigue)
+    const description = targets.get(productId)?.description
+    if (description) {
+      const stale = productLines.filter(l => l.evo_description !== description).map(l => l.id)
+      if (stale.length) {
+        const { error } = await supabase.from('order_lines').update({ evo_description: description }).in('id', stale)
+        if (error) console.warn('⚠️ No se pudo actualizar la descripción de EVO:', error.message)
+      }
+    }
     const approved = productLines.reduce((sum, l) => sum + lineUnits(l), 0)
 
     // EVO retira una línea que solo tenía unidades pendientes de aprobar: se elimina
@@ -233,6 +246,7 @@ export async function applyOrderModification(
           unit_price: 0,
           subtotal: 0,
           evo_item_number: targets.get(productId)?.evoItemNumber ?? null,
+          evo_description: targets.get(productId)?.description ?? null,
         })
         if (error) throw new Error(`Error creando línea nueva: ${error.message}`)
         continue
